@@ -1,0 +1,24 @@
+# File: config.json
+
+{
+  "thresholds": {
+    "temperature": 28.5,
+    "humidity": 65.0
+  },
+  "mongodb_uri": "mongodb://mongodb:27017",
+  "email": {
+    "server": "smtp.gmail.com",
+    "port": 465,
+    "sender": "your_email@gmail.com",
+    "password": "your_app_password",
+    "receiver": "receiver_email@gmail.com"
+  },
+  "telegram": {
+    "bot_token": "your_telegram_bot_token",
+    "chat_id": "your_chat_id"
+  },
+  "zalo": {
+    "access_token": "your_zalo_access_token",
+    "user_id": "your_zalo_user_id"
+  }
+}

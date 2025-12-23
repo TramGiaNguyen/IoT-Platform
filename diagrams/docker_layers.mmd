@@ -1,0 +1,56 @@
+%% Sơ đồ 2: Docker Container Layer Architecture
+%% Hiển thị phân lớp kiến trúc
+
+graph TB
+    subgraph PRESENTATION["PRESENTATION LAYER"]
+        direction LR
+        WEB["react_dashboard<br/>:3000<br/>Node.js + React"]
+        GRAF["grafana<br/>:3001<br/>grafana/grafana:latest"]
+        API["fastapi_backend<br/>:8000<br/>Python FastAPI"]
+    end
+
+    subgraph PROCESSING["PROCESSING LAYER"]
+        direction LR
+        SPARK["spark_processor<br/>PySpark Streaming<br/>Aggregation"]
+        RULE["rule_engine<br/>Python Custom<br/>Automation Rules"]
+        DC["device_control<br/>:8100<br/>Command Sender"]
+    end
+
+    subgraph MESSAGING["MESSAGING LAYER"]
+        direction LR
+        MQTT["mqtt<br/>:1883<br/>eclipse-mosquitto:2.0"]
+        BRIDGE["mqtt_to_kafka<br/>Python Bridge"]
+        KAFKA["kafka<br/>:9092<br/>confluentinc/cp-kafka:7.5.0"]
+    end
+
+    subgraph STORAGE["STORAGE LAYER"]
+        direction LR
+        MONGO[("mongodb<br/>:27017<br/>Data Lake<br/>iot.events")]
+        MYSQL[("mysql<br/>:3306<br/>Data Warehouse<br/>thong_ke_gio, thong_ke_ngay")]
+        ZK["zookeeper<br/>:2181<br/>Kafka Coordination"]
+    end
+
+    subgraph DEVICE["DEVICE LAYER"]
+        direction LR
+        SIM["device_simulator<br/>Python Simulator"]
+        ESP["ESP32 Devices<br/>Sensors + Actuators"]
+    end
+
+    %% Layer connections
+    DEVICE --> MESSAGING
+    MESSAGING --> PROCESSING
+    PROCESSING --> STORAGE
+    STORAGE --> PRESENTATION
+
+    %% Styling
+    classDef presentation fill:#667eea,stroke:#333,color:#fff
+    classDef processing fill:#f093fb,stroke:#333,color:#fff
+    classDef messaging fill:#4facfe,stroke:#333,color:#fff
+    classDef storage fill:#43e97b,stroke:#333,color:#000
+    classDef device fill:#fa709a,stroke:#333,color:#fff
+
+    class WEB,GRAF,API presentation
+    class SPARK,RULE,DC processing
+    class MQTT,BRIDGE,KAFKA messaging
+    class MONGO,MYSQL,ZK storage
+    class SIM,ESP device

@@ -1,0 +1,176 @@
+services:
+  mqtt:
+    build:
+      context: ./mqtt_auth_sync
+    container_name: mqtt
+    restart: always
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_USER=iot
+      - MYSQL_PASSWORD=iot123
+      - MYSQL_DATABASE=iot_data
+      - SYNC_INTERVAL=30
+      - MQTT_TO_KAFKA_PASSWORD=mqtt2kafka_secret
+      - SIMULATOR_PASSWORD=simulator_secret
+      - RULE_ENGINE_PASSWORD=ruleengine_secret
+    depends_on:
+      - mysql
+    volumes:
+      - mqtt-data:/mosquitto/data
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      # Single-broker cluster: lower replication factors to 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
+    depends_on:
+      - zookeeper
+
+  zookeeper:
+    image: zookeeper:latest
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  mongodb:
+    image: mongo
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    restart: always
+    volumes:
+      - mongo-data:/data/db
+
+  mysql:
+    image: mysql:5.7
+    container_name: mysql
+    ports:
+      - "3308:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: iot_data
+      MYSQL_USER: iot
+      MYSQL_PASSWORD: iot123
+    restart: always
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./data.sql:/docker-entrypoint-initdb.d/data.sql
+
+  fastapi-backend:
+    build:
+      context: ./fastapi_backend
+    container_name: fastapi_backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongodb
+      - mysql
+    restart: unless-stopped
+    environment:
+      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-192.168.1.7}
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  mqtt-to-kafka:
+    build:
+      context: ./mqtt_to_kafka
+    container_name: mqtt_to_kafka
+    environment:
+      - MQTT_USERNAME=mqtt_to_kafka
+      - MQTT_PASSWORD=mqtt2kafka_secret
+    depends_on:
+      - mqtt
+      - kafka
+    restart: unless-stopped
+
+  spark-processor:
+    build:
+      context: ./spark_jobs
+    container_name: spark_processor
+    depends_on:
+      - kafka
+      - mongodb
+      - mysql
+    restart: always
+    healthcheck:
+      test: ["CMD", "python3", "/app/healthcheck.py"]
+      interval: 120s
+      timeout: 30s
+      retries: 2
+      start_period: 180s
+
+  frontend:
+    build:
+      context: ./react_dashboard
+    container_name: react_dashboard
+    ports:
+      - "3000:3000"
+    depends_on:
+      - fastapi-backend
+    restart: unless-stopped
+
+  device-control:
+    build:
+      context: ./device_control
+    container_name: device_control
+    ports:
+      - "8100:8000"
+    depends_on:
+      - mqtt
+      - mongodb
+    restart: unless-stopped
+
+  simulator:
+    build:
+      context: ./simulators
+    container_name: device_simulator
+    environment:
+      - MQTT_USERNAME=device_simulator
+      - MQTT_PASSWORD=simulator_secret
+    depends_on:
+      - mqtt
+    restart: unless-stopped
+
+  rule-engine:
+    build:
+      context: ./rule_engine
+    container_name: rule_engine
+    environment:
+      - MQTT_USERNAME=rule_engine
+      - MQTT_PASSWORD=ruleengine_secret
+    depends_on:
+      - mqtt
+      - device-control
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - mongodb
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  mongo-data:
+  mqtt-data:

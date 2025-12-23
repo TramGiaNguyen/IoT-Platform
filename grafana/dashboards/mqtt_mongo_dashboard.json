@@ -1,0 +1,10 @@
+# File: grafana/dashboards/mqtt_mongo_dashboard.json
+# (Chứa nội dung JSON thiết kế dashboard MongoDB hiển thị dữ liệu IoT)
+# Bạn có thể chỉnh sửa bằng Grafana UI và export lại
+{
+  "annotations": { ... },
+  "panels": [ ... ],
+  "title": "MQTT Sensor Data",
+  "time": { ... },
+  ...
+}

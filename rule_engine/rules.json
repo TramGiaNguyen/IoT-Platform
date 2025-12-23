@@ -1,0 +1,70 @@
+[
+  {
+    "condition": {
+      "field": "temperature",
+      "operator": ">",
+      "value": 30
+    },
+    "action": {
+      "device_id": "relay-1",
+      "command": "turn_on"
+    }
+  },
+  {
+    "condition": {
+      "field": "temperature",
+      "operator": "<=",
+      "value": 24
+    },
+    "action": {
+      "device_id": "relay-1",
+      "command": "turn_off"
+    }
+  },
+  {
+    "condition": {
+      "field": "humidity",
+      "operator": "<",
+      "value": 40
+    },
+    "action": {
+      "device_id": "humidifier-1",
+      "command": "turn_on"
+    }
+  },
+  {
+    "condition": {
+      "field": "humidity",
+      "operator": ">=",
+      "value": 60
+    },
+    "action": {
+      "device_id": "humidifier-1",
+      "command": "turn_off"
+    }
+  },
+  {
+    "condition": {
+      "field": "temperature",
+      "operator": ">=",
+      "value": 25
+    },
+    "action": {
+      "device_id": "ac-bdu-001",
+      "command": "SET_TEMP:28"
+    },
+    "description": "Nếu nhiệt độ >= 25°C, tăng AC lên 28°C"
+  },
+  {
+    "condition": {
+      "field": "temperature",
+      "operator": ">=",
+      "value": 26
+    },
+    "action": {
+      "device_id": "ac-bdu-001",
+      "command": "SET_TEMP:29"
+    },
+    "description": "Nếu nhiệt độ >= 26°C, tăng AC lên 29°C"
+  }
+]

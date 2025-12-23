@@ -1,0 +1,7 @@
+{
+  "mqtt_broker": "mqtt",
+  "mqtt_port": 1883,
+  "mqtt_topic": "iot/+/data",
+  "kafka_broker": "kafka:9092",
+  "kafka_topic": "iot-events"
+}

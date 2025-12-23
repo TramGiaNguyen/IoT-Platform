@@ -1,0 +1,5 @@
+# requirements.txt
+paho-mqtt
+requests
+kafka-python
+mysql-connector-python

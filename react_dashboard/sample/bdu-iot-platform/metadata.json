@@ -1,0 +1,5 @@
+{
+  "name": "BDU IoT Platform",
+  "description": "IoT Platform dashboard with secure JWT login and real-time WebSocket data visualization.",
+  "requestFramePermissions": []
+}

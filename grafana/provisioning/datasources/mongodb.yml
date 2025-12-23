@@ -1,0 +1,10 @@
+# File: grafana/provisioning/datasources/mongodb.yml
+apiVersion: 1
+datasources:
+  - name: MongoDB
+    type: marcusolsson-mongodb-datasource
+    access: proxy
+    jsonData:
+      database: iot
+      timeField: timestamp
+    editable: true

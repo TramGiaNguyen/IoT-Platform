@@ -1,0 +1,5 @@
+{
+  "name": "Smart Garden IoT",
+  "description": "A comprehensive IoT dashboard for smart gardening, featuring real-time sensor monitoring, device control, and AI-powered plant recognition.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,11 @@
+# fastapi_backend/requirements.txt
+fastapi
+uvicorn[standard]
+python-jose
+passlib
+pymongo
+mysql-connector-python
+python-multipart
+kafka-python
+websockets
+paho-mqtt

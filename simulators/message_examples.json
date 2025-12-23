@@ -1,0 +1,144 @@
+{
+  "description": "Ví dụ messages mà Device Simulator publish lên MQTT",
+  
+  "sensor_data": {
+    "topic": "iot/devices/sensor-bdu-001/data",
+    "example": {
+      "device_id": "sensor-bdu-001",
+      "temperature": 24.78,
+      "humidity": 55.20,
+      "timestamp": 1721989259.456
+    },
+    "description": "Dữ liệu cảm biến nhiệt độ/độ ẩm, publish mỗi 5 giây"
+  },
+
+  "ac1_status": {
+    "topic": "iot/devices/ac-bdu-001/status",
+    "examples": {
+      "when_on": {
+        "device_id": "ac-bdu-001",
+        "type": "air_conditioner",
+        "state": "ON",
+        "setpoint": 26.0,
+        "brightness": null,
+        "timestamp": 1721989259.789
+      },
+      "when_off": {
+        "device_id": "ac-bdu-001",
+        "type": "air_conditioner",
+        "state": "OFF",
+        "setpoint": 24.0,
+        "brightness": null,
+        "timestamp": 1721989264.123
+      }
+    },
+    "description": "Trạng thái điều hòa 1, publish mỗi 5 giây"
+  },
+
+  "ac2_status": {
+    "topic": "iot/devices/ac-bdu-002/status",
+    "example": {
+      "device_id": "ac-bdu-002",
+      "type": "air_conditioner",
+      "state": "OFF",
+      "setpoint": 24.0,
+      "brightness": null,
+      "timestamp": 1721989259.456
+    },
+    "description": "Trạng thái điều hòa 2, publish mỗi 5 giây"
+  },
+
+  "light_status": {
+    "topic": "iot/devices/light-bdu-001/status",
+    "examples": {
+      "when_on": {
+        "device_id": "light-bdu-001",
+        "type": "light",
+        "state": "ON",
+        "setpoint": null,
+        "brightness": 80,
+        "timestamp": 1721989259.123
+      },
+      "when_off": {
+        "device_id": "light-bdu-001",
+        "type": "light",
+        "state": "OFF",
+        "setpoint": null,
+        "brightness": 0,
+        "timestamp": 1721989264.456
+      }
+    },
+    "description": "Trạng thái đèn, publish mỗi 5 giây"
+  },
+
+  "commands_received": {
+    "description": "Commands mà simulator nhận được và xử lý",
+    
+    "ac_commands": {
+      "topic": "iot/devices/ac-bdu-001/control",
+      "examples": [
+        {
+          "command": "ON",
+          "effect": "AC chuyển sang trạng thái ON"
+        },
+        {
+          "command": "OFF",
+          "effect": "AC chuyển sang trạng thái OFF"
+        },
+        {
+          "command": "SET_TEMP:26",
+          "effect": "AC chuyển sang ON và set nhiệt độ = 26°C"
+        },
+        {
+          "command": "SET_TEMP:24.5",
+          "effect": "AC chuyển sang ON và set nhiệt độ = 24.5°C"
+        }
+      ]
+    },
+
+    "light_commands": {
+      "topic": "iot/devices/light-bdu-001/control",
+      "examples": [
+        {
+          "command": "ON",
+          "effect": "Đèn bật, nếu brightness = 0 thì tự động set = 100"
+        },
+        {
+          "command": "OFF",
+          "effect": "Đèn tắt, brightness = 0"
+        },
+        {
+          "command": "BRIGHTNESS:80",
+          "effect": "Đèn bật với độ sáng 80%"
+        },
+        {
+          "command": "BRIGHTNESS:0",
+          "effect": "Đèn tắt (brightness = 0)"
+        }
+      ]
+    }
+  },
+
+  "message_flow": {
+    "publish_every_5_seconds": [
+      "iot/devices/sensor-bdu-001/data",
+      "iot/devices/ac-bdu-001/status",
+      "iot/devices/ac-bdu-002/status",
+      "iot/devices/light-bdu-001/status"
+    ],
+    "subscribe_for_commands": [
+      "iot/devices/ac-bdu-001/control",
+      "iot/devices/ac-bdu-002/control",
+      "iot/devices/light-bdu-001/control"
+    ]
+  }
+}
+
+
+
+
+
+
+
+
+

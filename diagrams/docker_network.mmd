@@ -1,0 +1,71 @@
+%% Sơ đồ 1: Docker Container Network Diagram
+%% Hiển thị kết nối giữa các containers
+
+graph TB
+    subgraph "Device Layer"
+        SIM[device_simulator]
+        ESP[ESP32 / IoT Devices]
+    end
+
+    subgraph "Messaging Layer"
+        MQTT[mqtt<br/>:1883, :9001<br/>eclipse-mosquitto:2.0]
+        BRIDGE[mqtt_to_kafka<br/>Python Bridge]
+        KAFKA[kafka<br/>:9092<br/>confluentinc/cp-kafka:7.5.0]
+        ZK[zookeeper<br/>:2181]
+    end
+
+    subgraph "Processing Layer"
+        SPARK[spark_processor<br/>PySpark Streaming]
+        RULE[rule_engine<br/>Python Custom]
+        DC[device_control<br/>:8100]
+    end
+
+    subgraph "Storage Layer"
+        MONGO[(mongodb<br/>:27017<br/>Data Lake)]
+        MYSQL[(mysql<br/>:3306<br/>Data Warehouse)]
+    end
+
+    subgraph "Application Layer"
+        API[fastapi_backend<br/>:8000]
+        WEB[react_dashboard<br/>:3000]
+        GRAF[grafana<br/>:3001]
+    end
+
+    %% Device connections
+    ESP -->|MQTT Publish| MQTT
+    SIM -->|MQTT Publish| MQTT
+    MQTT -->|Subscribe| DC
+
+    %% Messaging flow
+    MQTT --> BRIDGE
+    BRIDGE --> KAFKA
+    ZK -.->|Coordinate| KAFKA
+
+    %% Processing
+    KAFKA --> SPARK
+    KAFKA --> RULE
+    RULE -->|Commands| DC
+    DC -->|MQTT Control| MQTT
+
+    %% Storage
+    SPARK --> MONGO
+    SPARK --> MYSQL
+    
+    %% Application
+    MONGO --> API
+    MYSQL --> API
+    API --> WEB
+    MONGO --> GRAF
+
+    %% Styling
+    classDef device fill:#ffd93d,stroke:#333,color:#000
+    classDef messaging fill:#ff6b6b,stroke:#333,color:#fff
+    classDef processing fill:#4ecdc4,stroke:#333,color:#000
+    classDef storage fill:#95e1d3,stroke:#333,color:#000
+    classDef app fill:#a8e6cf,stroke:#333,color:#000
+
+    class ESP,SIM device
+    class MQTT,BRIDGE,KAFKA,ZK messaging
+    class SPARK,RULE,DC processing
+    class MONGO,MYSQL storage
+    class API,WEB,GRAF app

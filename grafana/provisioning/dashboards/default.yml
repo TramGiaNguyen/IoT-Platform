@@ -1,0 +1,10 @@
+# File: grafana/provisioning/dashboards/default.yaml
+apiVersion: 1
+dependencies:
+  - name: default
+    orgId: 1
+    folder: "Mongo Dashboards"
+    type: file
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards

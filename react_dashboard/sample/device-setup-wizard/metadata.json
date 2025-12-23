@@ -1,0 +1,5 @@
+{
+  "name": "Device Setup Wizard",
+  "description": "IoT device setup and scanning interface replicating the provided design using React, Tailwind, and simulated WebSocket/Axios interactions.",
+  "requestFramePermissions": []
+}

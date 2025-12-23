@@ -1,0 +1,5 @@
+{
+  "name": "BDU IoT Dashboard",
+  "description": "A futuristic IoT dashboard for monitoring ACs, sensors, and lights with real-time updates.",
+  "requestFramePermissions": []
+}
