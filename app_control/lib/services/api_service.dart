@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../models/room.dart';
+import '../models/room_data.dart';
 
 class ApiService {
   // Thay YOUR_SERVER_IP bằng IP thực tế của server
-  static const String baseUrl = 'http://192.168.190.51:8001';
+  static const String baseUrl = 'http://192.168.1.8:8001';
   
   final storage = const FlutterSecureStorage();
   String? _token;
@@ -179,6 +181,92 @@ class ApiService {
     } else {
       final error = jsonDecode(response.body);
       throw Exception(error['detail'] ?? 'Điều khiển máy lạnh thất bại');
+    }
+  }
+
+  // ========== NEW ROOM-BASED APIs ==========
+
+  // Get list of rooms user has access to
+  Future<List<Room>> getRooms() async {
+    if (_token == null) await loadToken();
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/rooms'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final roomsList = <Room>[];
+      
+      for (var roomJson in data['rooms'] as List) {
+        roomsList.add(Room.fromJson(roomJson as Map<String, dynamic>));
+      }
+      
+      return roomsList;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được danh sách phòng');
+    }
+  }
+
+  // Get room data with all devices and metrics
+  Future<RoomData> getRoomData(int roomId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/rooms/$roomId/data'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return RoomData.fromJson(data);
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['detail'] ?? 'Không lấy được dữ liệu phòng');
+    }
+  }
+
+  // Control relay in a room
+  Future<void> controlRoomRelay({
+    required int roomId,
+    required String deviceId,
+    required int relay,
+    required String state,
+  }) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/rooms/$roomId/control'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'device_id': deviceId,
+        'relay': relay,
+        'state': state,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['detail'] ?? 'Điều khiển thất bại');
     }
   }
 }

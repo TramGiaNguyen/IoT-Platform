@@ -284,7 +284,100 @@ TTL Index: Tự động xóa documents sau 30 ngày
 6. **WebSocket → Frontend**: React nhận real-time updates
 
 
-## Testing
+## 🔄 Data Migration
+
+### Chuyển dữ liệu giữa các máy
+
+Khi bạn build lại project trên máy mới và muốn giữ lại dữ liệu từ máy cũ:
+
+**Trên máy CŨ:**
+```bash
+# Windows
+pwsh scripts/migrate_data.ps1
+# Chọn option 1 (Export)
+
+# Linux/Mac
+bash scripts/migrate_data.sh
+# Chọn option 1 (Export)
+```
+
+**Copy folder `backup/` sang máy MỚI**
+
+**Trên máy MỚI:**
+```bash
+# Khởi động containers trước
+docker-compose up -d
+
+# Import dữ liệu
+pwsh scripts/migrate_data.ps1  # Windows
+bash scripts/migrate_data.sh   # Linux/Mac
+# Chọn option 2 (Import)
+
+# Restart
+docker-compose restart
+```
+
+📖 **Chi tiết**: Xem [docs/DATA_MIGRATION.md](docs/DATA_MIGRATION.md)
+
+---
+
+## 🧪 Testing
+
+### Rebuild specific service
+
+```bash
+# Rebuild backend
+docker-compose build --no-cache fastapi-backend
+docker-compose up -d fastapi-backend
+
+# Rebuild frontend
+docker-compose build --no-cache frontend
+docker-compose up -d frontend
+
+# Rebuild spark processor
+docker-compose build --no-cache spark-processor
+docker-compose up -d spark-processor
+```
+
+### View logs
+
+```bash
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f fastapi-backend
+docker-compose logs -f rule-engine
+```
+
+### Access database
+
+**MySQL:**
+```bash
+docker exec -it mysql mysql -u iot -piot123 iot_data
+```
+
+**MongoDB:**
+```bash
+docker exec -it mongodb mongosh iot
+```
+
+### Run utility scripts
+
+**Setup MongoDB TTL:**
+```bash
+python scripts/setup_mongodb_ttl.py
+```
+
+**Manual cleanup old data:**
+```bash
+python scripts/cleanup_mysql_old_data.py
+```
+
+**Test scheduled rules:**
+```bash
+pwsh scripts/test-scheduled-rules.ps1
+```
 
 ### Test MQTT connection
 

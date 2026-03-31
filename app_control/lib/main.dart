@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
-import 'screens/control_screen.dart';
+import 'screens/room_list_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -13,7 +13,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BDU IoT Control',
+      title: 'BDU IoT',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.blue,
@@ -49,7 +49,7 @@ class _SplashScreenState extends State<SplashScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => isLoggedIn
-              ? const ControlScreen()
+              ? const RoomListScreen()
               : const LoginScreen(),
         ),
       );
@@ -81,7 +81,7 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
               SizedBox(height: 24),
               Text(
-                'BDU IoT Control',
+                'BDU IoT',
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
