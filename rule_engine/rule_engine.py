@@ -416,8 +416,24 @@ def device_offline_check_loop():
                 )
                 offline_devices = cursor.fetchall()
                 logging.info(f"[DEVICE_OFFLINE] Found {len(offline_devices)} offline devices")
+                
+                # Update device status to offline
                 for dev in offline_devices:
+                    device_id = dev["id"]
                     ma_thiet_bi = dev["ma_thiet_bi"]
+                    
+                    # Update status to offline
+                    cursor.execute(
+                        """
+                        UPDATE thiet_bi 
+                        SET trang_thai = 'offline'
+                        WHERE id = %s AND trang_thai != 'offline'
+                        """,
+                        (device_id,),
+                    )
+                    if cursor.rowcount > 0:
+                        logging.info(f"[DEVICE_OFFLINE] Updated {ma_thiet_bi} status to offline")
+                    
                     # Kiểm tra đã có alarm chưa giải quyết cho device này chưa
                     cursor.execute(
                         """
@@ -447,6 +463,9 @@ def device_offline_check_loop():
                             alarm_id, tin_nhan, phong_id=dev.get("phong_id")
                         )
                         logging.info(f"[DEVICE_OFFLINE] Alarm created for {ma_thiet_bi}")
+                
+                # Commit all updates
+                conn.commit()
             finally:
                 cursor.close()
                 conn.close()

@@ -106,14 +106,16 @@ export default function RoomManagement({ token, onBack }) {
   };
 
   const handleCopyApiUrl = (roomId) => {
-    const url = `${window.location.protocol}//${window.location.host.replace(':3000', '')}:8000/rooms/${roomId}/data`; 
-    // Using simple replacement for testing, but let's use API_BASE correctly if it's an absolute URL
-    // Actually API_BASE might be absolute like 'http://192.168.1.6:8000'
-    const finalUrl = API_BASE.startsWith('http') ? `${API_BASE}/rooms/${roomId}/data` : `${window.location.origin}${API_BASE}/rooms/${roomId}/data`;
+    // Build API URL with token
+    const baseUrl = API_BASE.startsWith('http') ? API_BASE : `${window.location.origin}${API_BASE}`;
+    const urlWithToken = `${baseUrl}/rooms/${roomId}/data?token=${token}`;
     
-    navigator.clipboard.writeText(finalUrl)
-      .then(() => alert('Đã copy API Endpoint của phòng!'))
-      .catch((err) => console.error('Copy failed', err));
+    navigator.clipboard.writeText(urlWithToken)
+      .then(() => alert('Đã copy API URL (có kèm token)!\n\nBạn có thể paste trực tiếp vào browser.'))
+      .catch((err) => {
+        console.error('Copy failed', err);
+        alert('Copy thất bại. Vui lòng thử lại.');
+      });
   };
 
   const handleDownloadApiDocs = async (room) => {

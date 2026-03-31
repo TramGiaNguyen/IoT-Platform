@@ -141,3 +141,53 @@ def get_current_user_or_internal(
     except JWTError as e:
         logging.warning(f"[AUTH] JWT validation failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+
+def get_current_user_optional(
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Auth cho phép token qua query parameter hoặc header.
+    
+    - Nếu có ?token=xxx → validate token đó
+    - Nếu không → validate Authorization header như bình thường
+    
+    Dùng cho các endpoint cần truy cập từ browser (copy URL)
+    """
+    import logging
+    
+    # Try query parameter first
+    if token:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            username = payload.get("sub")
+            if username is None:
+                raise HTTPException(status_code=401, detail="Invalid token")
+            logging.info(f"[AUTH] Query token validated for user: {username}")
+            return username
+        except JWTError as e:
+            logging.warning(f"[AUTH] Query token validation failed: {e}")
+            raise HTTPException(status_code=401, detail="Invalid token")
+    
+    # Fallback to Authorization header
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authentication")
+    
+    # Extract token from "Bearer <token>"
+    header_token = None
+    if authorization.startswith("Bearer "):
+        header_token = authorization[7:]
+    else:
+        header_token = authorization
+    
+    try:
+        payload = jwt.decode(header_token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return username
+    except JWTError as e:
+        logging.warning(f"[AUTH] Header token validation failed: {e}")
+        raise HTTPException(status_code=401, detail="Invalid token")

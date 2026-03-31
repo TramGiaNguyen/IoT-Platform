@@ -13,6 +13,9 @@ dependencies:
   # HTTP client
   http: ^1.1.0
   
+  # WebSocket
+  web_socket_channel: ^2.4.0
+  
   # Secure storage for token
   flutter_secure_storage: ^9.0.0
   

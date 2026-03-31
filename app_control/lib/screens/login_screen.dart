@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
-import 'control_screen.dart';
+import 'room_list_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -38,7 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const ControlScreen()),
+          MaterialPageRoute(builder: (_) => const RoomListScreen()),
         );
       }
     } catch (e) {
@@ -104,7 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     
                     // Title
                     const Text(
-                      'BDU IoT Control',
+                      'BDU IoT',
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
@@ -125,8 +125,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextFormField(
                       controller: _usernameController,
                       decoration: InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: const Icon(Icons.email),
+                        labelText: 'Tên đăng nhập',
+                        prefixIcon: const Icon(Icons.person),
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
@@ -134,10 +134,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           borderSide: BorderSide.none,
                         ),
                       ),
-                      keyboardType: TextInputType.emailAddress,
+                      keyboardType: TextInputType.text,
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Vui lòng nhập email';
+                          return 'Vui lòng nhập tên đăng nhập';
                         }
                         return null;
                       },

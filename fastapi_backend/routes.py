@@ -13,7 +13,7 @@ import requests
 import paho.mqtt.publish as publish
 import paho.mqtt.client as mqtt
 
-from auth import authenticate_user, create_access_token, get_current_user, get_current_user_or_internal
+from auth import authenticate_user, create_access_token, get_current_user, get_current_user_or_internal, get_current_user_optional
 from database import get_mongo, get_mysql
 from kafka_consumer import get_latest_events
 from device_config import (
@@ -2128,41 +2128,114 @@ def delete_device(
 @router.get("/rooms")
 def list_rooms(
     workspace_id: Optional[int] = Query(None),
-    current_user: str = Depends(get_current_user)
+    token: Optional[str] = None,
+    current_user: str = Depends(get_current_user_optional)
 ):
     """
     Lấy danh sách phòng.
-    - Tất cả users đều xem được tất cả rooms
-    - Response bao gồm thông tin owner để frontend biết ai có quyền edit/delete
+    - Admin: Tất cả rooms
+    - Teacher: Rooms của mình + Rooms của học viên trong lớp
+    - Student: Chỉ rooms của mình
+    - Response bao gồm device_count và online_count cho mobile app
+    
+    Có thể truyền token qua:
+    - Header: Authorization: Bearer <token>
+    - Query param: ?token=<token>
     """
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
     try:
         # Get current user info
-        cursor.execute("SELECT id, vai_tro FROM nguoi_dung WHERE email = %s", (current_user,))
+        cursor.execute("SELECT id, vai_tro, lop_hoc_id FROM nguoi_dung WHERE email = %s", (current_user,))
         user = cursor.fetchone()
-        user_id = user["id"] if user else None
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
         
-        # Get all rooms with owner info
-        cursor.execute("""
-            SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta, 
-                   p.nguoi_quan_ly_id, p.nguoi_so_huu_id, p.ngay_tao,
-                   u.ten as nguoi_so_huu_ten, u.vai_tro as nguoi_so_huu_role
-            FROM phong p
-            LEFT JOIN nguoi_dung u ON p.nguoi_so_huu_id = u.id
-            ORDER BY p.ten_phong
-        """)
+        user_id = user["id"]
+        user_role = user["vai_tro"]
+        
+        # Build query based on role
+        if user_role == "admin":
+            # Admin sees all rooms
+            query = """
+                SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta, 
+                       p.nguoi_quan_ly_id, p.nguoi_so_huu_id, p.ngay_tao,
+                       u.ten as nguoi_so_huu_ten, u.vai_tro as nguoi_so_huu_role,
+                       COUNT(DISTINCT t.id) as device_count,
+                       SUM(CASE WHEN t.trang_thai = 'online' THEN 1 ELSE 0 END) as online_count
+                FROM phong p
+                LEFT JOIN nguoi_dung u ON p.nguoi_so_huu_id = u.id
+                LEFT JOIN thiet_bi t ON p.id = t.phong_id AND t.is_active = 1
+                GROUP BY p.id
+                ORDER BY p.ten_phong
+            """
+            cursor.execute(query)
+        elif user_role == "teacher":
+            # Teacher sees own rooms + student rooms in their class
+            query = """
+                SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta, 
+                       p.nguoi_quan_ly_id, p.nguoi_so_huu_id, p.ngay_tao,
+                       u.ten as nguoi_so_huu_ten, u.vai_tro as nguoi_so_huu_role,
+                       COUNT(DISTINCT t.id) as device_count,
+                       SUM(CASE WHEN t.trang_thai = 'online' THEN 1 ELSE 0 END) as online_count
+                FROM phong p
+                LEFT JOIN nguoi_dung u ON p.nguoi_so_huu_id = u.id
+                LEFT JOIN thiet_bi t ON p.id = t.phong_id AND t.is_active = 1
+                WHERE p.nguoi_so_huu_id = %s
+                   OR p.nguoi_so_huu_id IN (
+                       SELECT nd.id 
+                       FROM nguoi_dung nd
+                       INNER JOIN lop_hoc lh ON nd.lop_hoc_id = lh.id
+                       WHERE lh.giao_vien_id = %s
+                   )
+                GROUP BY p.id
+                ORDER BY p.ten_phong
+            """
+            cursor.execute(query, (user_id, user_id))
+        else:
+            # Student sees only own rooms
+            query = """
+                SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta, 
+                       p.nguoi_quan_ly_id, p.nguoi_so_huu_id, p.ngay_tao,
+                       u.ten as nguoi_so_huu_ten, u.vai_tro as nguoi_so_huu_role,
+                       COUNT(DISTINCT t.id) as device_count,
+                       SUM(CASE WHEN t.trang_thai = 'online' THEN 1 ELSE 0 END) as online_count
+                FROM phong p
+                LEFT JOIN nguoi_dung u ON p.nguoi_so_huu_id = u.id
+                LEFT JOIN thiet_bi t ON p.id = t.phong_id AND t.is_active = 1
+                WHERE p.nguoi_so_huu_id = %s
+                GROUP BY p.id
+                ORDER BY p.ten_phong
+            """
+            cursor.execute(query, (user_id,))
+        
         rooms = cursor.fetchall()
         
-        # Add permission flags for each room
+        # Format for mobile app
+        formatted_rooms = []
         for room in rooms:
-            room["can_edit"] = (
-                user and user["vai_tro"] == "admin" or 
-                room["nguoi_so_huu_id"] == user_id
-            )
-            room["can_delete"] = room["can_edit"]
+            formatted_rooms.append({
+                "id": room["id"],
+                "name": room["ten_phong"],
+                "description": room["mo_ta"],
+                "device_count": int(room["device_count"] or 0),
+                "online_count": int(room["online_count"] or 0),
+                "last_update": room["ngay_tao"].isoformat() if room["ngay_tao"] else None,
+                # Keep original fields for web dashboard
+                "ten_phong": room["ten_phong"],
+                "ma_phong": room["ma_phong"],
+                "vi_tri": room["vi_tri"],
+                "mo_ta": room["mo_ta"],
+                "nguoi_quan_ly_id": room["nguoi_quan_ly_id"],
+                "nguoi_so_huu_id": room["nguoi_so_huu_id"],
+                "ngay_tao": room["ngay_tao"],
+                "nguoi_so_huu_ten": room["nguoi_so_huu_ten"],
+                "nguoi_so_huu_role": room["nguoi_so_huu_role"],
+                "can_edit": user_role == "admin" or room["nguoi_so_huu_id"] == user_id,
+                "can_delete": user_role == "admin" or room["nguoi_so_huu_id"] == user_id,
+            })
         
-        return {"rooms": rooms}
+        return {"rooms": formatted_rooms}
     finally:
         cursor.close()
         conn.close()
@@ -2350,16 +2423,29 @@ def list_devices_by_room(room_id: int, current_user: str = Depends(get_current_u
 
 
 @router.get("/rooms/{room_id}/data")
-def get_room_device_data(room_id: int):
+def get_room_device_data(
+    room_id: int,
+    token: Optional[str] = None,
+    current_user: str = Depends(get_current_user_optional)
+):
     """
     Lấy dữ liệu mới nhất của tất cả thiết bị (bao gồm giá trị data) thuộc một phòng cụ thể.
-    Trả về danh sách thiết bị + latest data per key.
+    Format cho mobile app với dynamic metrics và controls.
+    
+    Có thể truyền token qua:
+    - Header: Authorization: Bearer <token>
+    - Query param: ?token=<token>
     """
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
     try:
+        # Get room info
+        cursor.execute("SELECT id, ten_phong FROM phong WHERE id = %s", (room_id,))
+        room = cursor.fetchone()
+        if not room:
+            raise HTTPException(status_code=404, detail="Room not found")
+        
         # Decide "online/offline" for the API response based on whether we have recent data.
-        # This avoids UI showing "offline" while telemetry records are already present.
         online_threshold_minutes = int(os.getenv("DEVICE_OFFLINE_THRESHOLD_MINUTES", "10"))
         now_utc = datetime.utcnow()
 
@@ -2375,7 +2461,11 @@ def get_room_device_data(room_id: int):
         )
         devices = cursor.fetchall()
         if not devices:
-            return {"devices": []}
+            return {
+                "room_id": room_id,
+                "room_name": room["ten_phong"],
+                "devices": []
+            }
 
         device_ids = [str(d["id"]) for d in devices]
         placeholders = ",".join(["%s"] * len(device_ids))
@@ -2456,7 +2546,7 @@ def get_room_device_data(room_id: int):
         if device_ids:
             cursor.execute(
                 f"""
-                SELECT thiet_bi_id, relay_number, ten_duong, topic
+                SELECT thiet_bi_id, relay_number, ten_duong, topic, hien_thi_ttcds
                 FROM control_lines
                 WHERE thiet_bi_id IN ({placeholders})
                 ORDER BY thiet_bi_id, relay_number
@@ -2465,18 +2555,23 @@ def get_room_device_data(room_id: int):
             )
             relay_rows = cursor.fetchall()
             for row in relay_rows:
-                did = row["thiet_bi_id"]
-                relay_config_by_device.setdefault(did, [])
-                relay_config_by_device[did].append({
-                    "relay_number": row["relay_number"],
-                    "ten_relay": row["ten_duong"],  # Cột tên là ten_duong
-                    "topic": row["topic"]
-                })
+                # Only include relays marked for display in mobile app
+                if row.get("hien_thi_ttcds") in [True, 1, "1"]:
+                    did = row["thiet_bi_id"]
+                    relay_config_by_device.setdefault(did, [])
+                    relay_config_by_device[did].append({
+                        "relay_number": row["relay_number"],
+                        "ten_relay": row["ten_duong"],  # Cột tên là ten_duong
+                        "topic": row.get("topic")
+                    })
 
         # Kết quả cuối
         result = []
         for d in devices:
-            effective_status = "offline"
+            # ALWAYS use database status (updated by rule engine)
+            # Rule engine is the source of truth for device online/offline status
+            db_status = (d.get("trang_thai") or "offline").lower()
+            effective_status = db_status if db_status in ["online", "offline"] else "offline"
             effective_last_seen = None
 
             # MySQL latest timestamp (any key, including cmd_*)
@@ -2487,16 +2582,14 @@ def get_room_device_data(room_id: int):
             dev_id_str = d["ma_thiet_bi"]
             latest_kafka_ts_sec = kafka_latest_ts_by_device_id.get(dev_id_str)
 
-            # Use the more recent timestamp for online/offline + last_seen
+            # Use the more recent timestamp for last_seen display only
             effective_ts_sec = None
             if latest_mysql_ts_sec is not None:
                 effective_ts_sec = latest_mysql_ts_sec
             if latest_kafka_ts_sec is not None and (effective_ts_sec is None or latest_kafka_ts_sec > effective_ts_sec):
                 effective_ts_sec = latest_kafka_ts_sec
-
+            
             if effective_ts_sec is not None:
-                diff_minutes = (now_utc.timestamp() - effective_ts_sec) / 60.0
-                effective_status = "online" if diff_minutes < online_threshold_minutes else "offline"
                 effective_last_seen = int(effective_ts_sec)
 
             # Merge data:
@@ -2540,26 +2633,195 @@ def get_room_device_data(room_id: int):
                             "timestamp": kafka_event_ts_int,
                         }
 
-            # Thêm relay config vào response
-            relay_config = relay_config_by_device.get(d["id"], [])
+            # Transform data to mobile-friendly format
+            # 1. Build metrics (exclude relay state keys and metadata)
+            metrics = {}
+            processed_keys = set()  # Track keys we've already processed
+            
+            # List of keys to skip (metadata, config, etc.)
+            skip_keys = {
+                'device_id', 'data_device_id', 'mqtt_broker_host', 'mqtt_broker_port',
+                'mqtt_broker_publish', 'mqtt_topic_publish', 'json_to_mqtt_topic',
+                'last_update', 'data_last_update', 'cmd_raw', 'cmd_edge_relay',
+                'control_commands', 'fan_mode', 'on', 'alarm_status', 'data_alarm_status'
+            }
+            
+            for key, data in merged_data.items():
+                # Skip if already processed
+                if key in processed_keys:
+                    continue
+                
+                # Skip relay state keys (they go in controls)
+                if key.startswith("relay_") and (key.endswith("_state") or (key.split("_")[1].isdigit() if len(key.split("_")) > 1 else False)):
+                    continue
+                
+                # Skip relay metadata keys (data_relay_X_gpio, data_relay_X_port, data_relay_X_on, etc.)
+                if key.startswith("data_relay_"):
+                    continue
+                
+                # Skip metadata and config keys
+                if key in skip_keys or key.startswith('data_mqtt') or key.startswith('mqtt_'):
+                    continue
+                
+                # Check if this is a unit key (e.g., current_unit, voltage_unit)
+                if key.endswith('_unit'):
+                    continue
+                
+                # Check if this key ends with _is_data (boolean flags)
+                if key.endswith('_is_data'):
+                    continue
+                
+                # Get value
+                value = data.get("value")
+                
+                # Skip if value is not numeric or is a string that looks like metadata
+                if isinstance(value, str):
+                    # Skip JSON strings, device IDs, IP addresses, etc.
+                    if value.startswith('{') or value.startswith('[') or 'gateway-' in value or '.' in value and value.count('.') >= 3:
+                        continue
+                    # Try to convert to number
+                    try:
+                        value = float(value)
+                    except (ValueError, TypeError):
+                        # Skip non-numeric strings unless they're short status values
+                        if len(value) > 20:
+                            continue
+                
+                # Skip boolean False values (not useful to display)
+                if isinstance(value, bool) and not value:
+                    continue
+                
+                # Look for corresponding unit key
+                unit_key = f"{key}_unit"
+                unit = data.get("don_vi")
+                if unit_key in merged_data:
+                    unit_data = merged_data[unit_key]
+                    unit = unit_data.get("value") or unit
+                    processed_keys.add(unit_key)  # Mark unit key as processed
+                
+                # Detect metric type for dynamic rendering
+                metric_type = _detect_metric_type(key, value)
+                
+                # Only add if it's a meaningful metric
+                if isinstance(value, (int, float)) or (isinstance(value, str) and len(value) < 20):
+                    metrics[key] = {
+                        "value": value,
+                        "unit": unit,
+                        "type": metric_type,
+                        "min": _get_metric_min(key),
+                        "max": _get_metric_max(key),
+                    }
+                    processed_keys.add(key)
+            
+            # 2. Build controls from relay config
+            controls = []
+            relay_configs = relay_config_by_device.get(d["id"], [])
+            for relay_cfg in relay_configs:
+                relay_num = relay_cfg["relay_number"]
+                
+                # Get current state from merged_data
+                state = "OFF"
+                state_key = f"relay_{relay_num}_state"
+                alt_state_key = f"relay_{relay_num}"
+                
+                if state_key in merged_data:
+                    state_val = merged_data[state_key].get("value", "OFF")
+                    if isinstance(state_val, str):
+                        state = state_val.upper() if state_val.upper() in ["ON", "OFF"] else "OFF"
+                elif alt_state_key in merged_data:
+                    state_val = merged_data[alt_state_key].get("value", "OFF")
+                    if isinstance(state_val, str):
+                        state = state_val.upper() if state_val.upper() in ["ON", "OFF"] else "OFF"
+                
+                controls.append({
+                    "relay": relay_num,
+                    "name": relay_cfg["ten_relay"] or f"Relay {relay_num}",
+                    "state": state,
+                    "controllable": True,
+                })
+            
+            # Build device object for mobile app
+            result.append({
+                "device_id": d["ma_thiet_bi"],
+                "name": d["ten_thiet_bi"],
+                "type": d["loai_thiet_bi"],
+                "status": effective_status,
+                "last_seen": datetime.fromtimestamp(effective_last_seen).isoformat() if effective_last_seen else None,
+                "metrics": metrics,
+                "controls": controls,
+                # Keep original fields for web dashboard compatibility
+                "ten_thiet_bi": d["ten_thiet_bi"],
+                "loai_thiet_bi": d["loai_thiet_bi"],
+                "trang_thai": effective_status,
+                "phong_id": d["phong_id"],
+                "data": merged_data,  # Keep for backward compatibility
+                "relays": relay_config_by_device.get(d["id"], []),  # Keep for backward compatibility
+            })
 
-            result.append(
-                {
-                    "device_id": d["ma_thiet_bi"],
-                    "ten_thiet_bi": d["ten_thiet_bi"],
-                    "loai_thiet_bi": d["loai_thiet_bi"],
-                    "trang_thai": effective_status,
-                    "last_seen": effective_last_seen,
-                    "phong_id": d["phong_id"],
-                    "data": merged_data,
-                    "relays": relay_config,
-                }
-            )
-
-        return {"devices": result}
+        return {
+            "room_id": room_id,
+            "room_name": room["ten_phong"],
+            "devices": result
+        }
     finally:
         cursor.close()
         conn.close()
+
+
+def _detect_metric_type(key: str, value) -> str:
+    """
+    Detect metric type for dynamic rendering in mobile app.
+    Returns: "gauge", "number", "boolean", or "text"
+    """
+    key_lower = key.lower()
+    
+    # Gauge types (circular progress indicators)
+    if any(x in key_lower for x in ["temp", "humi", "soil", "moisture"]):
+        return "gauge"
+    
+    # Number types (simple display with icon)
+    if any(x in key_lower for x in ["volt", "current", "power", "energy", "freq", "pf", "factor", "watt", "amp"]):
+        return "number"
+    
+    # Boolean types
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, str) and value.lower() in ["true", "false", "on", "off"]:
+        return "boolean"
+    
+    # Text types
+    if isinstance(value, str):
+        try:
+            float(value)
+            return "number"
+        except (ValueError, TypeError):
+            return "text"
+    
+    # Default to number for numeric values
+    if isinstance(value, (int, float)):
+        return "number"
+    
+    return "text"
+
+
+def _get_metric_min(key: str) -> Optional[float]:
+    """Get minimum value for gauge metrics"""
+    key_lower = key.lower()
+    if "temp" in key_lower:
+        return 0.0
+    if any(x in key_lower for x in ["humi", "soil", "moisture"]):
+        return 0.0
+    return None
+
+
+def _get_metric_max(key: str) -> Optional[float]:
+    """Get maximum value for gauge metrics"""
+    key_lower = key.lower()
+    if "temp" in key_lower:
+        return 50.0
+    if any(x in key_lower for x in ["humi", "soil", "moisture"]):
+        return 100.0
+    return None
 
 
 @router.get("/devices/latest-all")
