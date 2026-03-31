@@ -6,7 +6,7 @@ import 'react-resizable/css/styles.css';
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
-export default function Canvas({ widgets, onLayoutChange, onWidgetSelect, onWidgetDelete }) {
+export default function Canvas({ widgets, onLayoutChange, onWidgetSelect, onWidgetDelete, token, dashboardId }) {
   // Convert widgets to grid layout format
   const layouts = {
     lg: widgets.map(w => ({
@@ -71,6 +71,8 @@ export default function Canvas({ widgets, onLayoutChange, onWidgetSelect, onWidg
                 widget={widget}
                 onSelect={onWidgetSelect}
                 onDelete={onWidgetDelete}
+                token={token}
+                dashboardId={dashboardId}
               />
             </div>
           ))}

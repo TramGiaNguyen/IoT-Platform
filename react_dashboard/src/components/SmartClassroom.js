@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { fetchDevicesLatestAll, fetchDeviceData } from '../services'; // Assuming fetchDeviceData exists or we use fetchDevicesLatestAll
 import SmartClassroomDashboard from './SmartClassroomDashboard';
 import axios from 'axios';
-
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
+import { API_BASE, WS_URL } from '../config/api';
 
 const SmartClassroom = ({ token, onBack }) => {
     const [devices, setDevices] = useState([]);
@@ -62,7 +61,6 @@ const SmartClassroom = ({ token, onBack }) => {
         loadLogs();
 
         // WebSocket for real-time updates
-        const WS_URL = `${API_BASE.replace(/^http/i, 'ws')}/ws/events`;
         const ws = new WebSocket(WS_URL);
 
         ws.onmessage = (event) => {

@@ -9,3 +9,4 @@ python-multipart
 kafka-python
 websockets
 paho-mqtt
+requests

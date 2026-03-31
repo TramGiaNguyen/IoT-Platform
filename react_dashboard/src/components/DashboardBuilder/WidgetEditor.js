@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchDevices, fetchDeviceDataKeys } from '../../services';
+import { fetchDevices, fetchDeviceDataKeys, fetchControlLines } from '../../services';
 
 export default function WidgetEditor({ widget, devices, token, onSave, onCancel }) {
   const [formData, setFormData] = useState({
@@ -11,6 +11,7 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
   });
   const [availableKeys, setAvailableKeys] = useState([]);
   const [loadingKeys, setLoadingKeys] = useState(false);
+  const [controlLines, setControlLines] = useState([]);
 
   useEffect(() => {
     if (widget) {
@@ -19,6 +20,12 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         device_id: widget.cau_hinh?.device_id || '',
         data_keys: widget.cau_hinh?.data_keys || [],
         time_range: widget.cau_hinh?.time_range || '1h',
+        symbol_type: widget.cau_hinh?.symbol_type || 'light',
+        data_key: widget.cau_hinh?.data_key || 'state',
+        control_command: widget.cau_hinh?.control_command || 'toggle',
+        relay_number: widget.cau_hinh?.relay_number || 1,
+        x_key: widget.cau_hinh?.x_key || '',
+        y_key: widget.cau_hinh?.y_key || '',
         ...widget.cau_hinh
       });
     }
@@ -60,6 +67,20 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
     loadDataKeys();
   }, [formData.device_id, token]);
 
+  // Load relay control lines when device changes (for relay_button widget)
+  useEffect(() => {
+    const loadRelayLines = async () => {
+      if (!formData.device_id || !token || widget?.widget_type !== 'relay_button') return;
+      try {
+        const res = await fetchControlLines(formData.device_id, token);
+        setControlLines(res.data.control_lines || []);
+      } catch (err) {
+        setControlLines([]);
+      }
+    };
+    loadRelayLines();
+  }, [formData.device_id, token, widget?.widget_type]);
+
   const handleSave = () => {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WidgetEditor.js:50',message:'handleSave entry',data:{device_id:formData.device_id,data_keys_count:formData.data_keys?.length||0,hasWidget:!!widget},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
@@ -68,21 +89,54 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
       alert('Vui lòng chọn thiết bị');
       return;
     }
-    if (!formData.data_keys || formData.data_keys.length === 0) {
-      alert('Vui lòng chọn ít nhất một data key');
-      return;
+    const isScada = widget?.widget_type === 'scada_symbol';
+    const isRelayButton = widget?.widget_type === 'relay_button';
+    const isScatterPlot = widget?.widget_type === 'scatter_plot';
+
+    if (!isRelayButton && !isScada && (!formData.data_keys || formData.data_keys.length === 0)) {
+      if (!isScatterPlot || (!formData.x_key && !formData.y_key)) {
+        alert('Vui lòng chọn ít nhất một data key');
+        return;
+      }
     }
 
-    const config = {
-      device_id: formData.device_id,
-      data_keys: formData.data_keys,
-      time_range: formData.time_range,
-      ...(formData.colors && { colors: formData.colors }),
-      ...(formData.label && { label: formData.label }),
-      ...(formData.unit && { unit: formData.unit }),
-      ...(formData.min !== undefined && { min: formData.min }),
-      ...(formData.max !== undefined && { max: formData.max }),
-    };
+    let config;
+    if (isScada) {
+      config = {
+        device_id: formData.device_id,
+        symbol_type: formData.symbol_type || 'light',
+        data_key: formData.data_key || 'state',
+        control_command: formData.control_command || 'toggle',
+        time_range: formData.time_range || '1h',
+        data_keys: [formData.data_key || 'state'],
+      };
+    } else if (isRelayButton) {
+      config = {
+        device_id: formData.device_id,
+        relay_number: Number(formData.relay_number) || 1,
+        data_keys: [`relay_${formData.relay_number || 1}`],
+        time_range: formData.time_range || '1h',
+      };
+    } else if (isScatterPlot) {
+      config = {
+        device_id: formData.device_id,
+        x_key: formData.x_key,
+        y_key: formData.y_key,
+        data_keys: [formData.x_key, formData.y_key].filter(Boolean),
+        time_range: formData.time_range,
+      };
+    } else {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        time_range: formData.time_range,
+        ...(formData.colors && { colors: formData.colors }),
+        ...(formData.label && { label: formData.label }),
+        ...(formData.unit && { unit: formData.unit }),
+        ...(formData.min !== undefined && { min: formData.min }),
+        ...(formData.max !== undefined && { max: formData.max }),
+      };
+    }
 
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WidgetEditor.js:71',message:'handleSave calling onSave',data:{widget_id:widget?.id,config_keys:Object.keys(config)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
@@ -163,7 +217,7 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         </select>
       </div>
 
-      {formData.device_id && (
+      {formData.device_id && widget?.widget_type !== 'relay_button' && (
         <div style={{ marginBottom: '16px' }}>
           <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>
             Data Keys * {loadingKeys && <span style={{ fontSize: '11px', color: '#64748b' }}>(Đang tải...)</span>}
@@ -214,7 +268,8 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         </div>
       )}
 
-      <div style={{ marginBottom: '16px' }}>
+      {widget?.widget_type !== 'relay_button' && (
+        <div style={{ marginBottom: '16px' }}>
         <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>
           Time Range
         </label>
@@ -238,6 +293,7 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
           <option value="30d">30 ngày</option>
         </select>
       </div>
+      )}
 
       {/* Widget-specific options */}
       {widget?.widget_type === 'gauge' && (
@@ -283,6 +339,70 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         </>
       )}
 
+      {widget?.widget_type === 'scada_symbol' && (
+        <>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>Loại symbol</label>
+            <select value={formData.symbol_type || 'light'} onChange={(e) => setFormData({ ...formData, symbol_type: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }}>
+              <option value="light">Đèn</option>
+              <option value="ac">Điều hòa</option>
+              <option value="sensor">Cảm biến</option>
+            </select>
+          </div>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>Data key</label>
+            <select value={formData.data_key || 'state'} onChange={(e) => setFormData({ ...formData, data_key: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }}>
+              {availableKeys.map(k => {
+                const key = typeof k === 'string' ? k : k.khoa;
+                const label = typeof k === 'string' ? k : `${k.khoa}${k.don_vi ? ` (${k.don_vi})` : ''}`;
+                return <option key={key} value={key}>{label}</option>;
+              })}
+              {availableKeys.length === 0 && <option value="state">state</option>}
+            </select>
+          </div>
+        </>
+      )}
+
+      {/* Relay button config */}
+      {widget?.widget_type === 'relay_button' && (
+        <>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>Số Relay</label>
+            {controlLines.length > 0 ? (
+              <select value={formData.relay_number || 1} onChange={(e) => setFormData({ ...formData, relay_number: Number(e.target.value) })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }}>
+                {controlLines.map(l => (
+                  <option key={l.relay_number} value={l.relay_number}>{l.ten_duong || `Relay ${l.relay_number}`}</option>
+                ))}
+              </select>
+            ) : (
+              <input type="number" min="1" value={formData.relay_number || 1} onChange={(e) => setFormData({ ...formData, relay_number: Number(e.target.value) })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }} />
+            )}
+            <p style={{ color: '#64748b', fontSize: '11px', marginTop: '6px' }}>Chọn relay cần điều khiển. Trạng thái realtime qua WebSocket.</p>
+          </div>
+        </>
+      )}
+
+      {/* Scatter plot config */}
+      {widget?.widget_type === 'scatter_plot' && formData.device_id && (
+        <>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>Trục X (giá trị ngang) *</label>
+            <select value={formData.x_key || ''} onChange={(e) => setFormData({ ...formData, x_key: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }}>
+              <option value="">-- Chọn key --</option>
+              {availableKeys.map(k => { const key = k.khoa || k; return <option key={key} value={key}>{key}</option>; })}
+            </select>
+          </div>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>Trục Y (giá trị dọc) *</label>
+            <select value={formData.y_key || ''} onChange={(e) => setFormData({ ...formData, y_key: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }}>
+              <option value="">-- Chọn key --</option>
+              {availableKeys.map(k => { const key = k.khoa || k; return <option key={key} value={key}>{key}</option>; })}
+            </select>
+          </div>
+        </>
+      )}
+
+      {/* Stat card config */}
       {widget?.widget_type === 'stat_card' && (
         <>
           <div style={{ marginBottom: '16px' }}>

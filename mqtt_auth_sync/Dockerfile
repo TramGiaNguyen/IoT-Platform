@@ -19,7 +19,8 @@ RUN touch /mosquitto/config/password_file && \
     chmod 600 /mosquitto/config/password_file && \
     mosquitto_passwd -b /mosquitto/config/password_file mqtt_to_kafka mqtt2kafka_secret && \
     mosquitto_passwd -b /mosquitto/config/password_file device_simulator simulator_secret && \
-    mosquitto_passwd -b /mosquitto/config/password_file rule_engine ruleengine_secret
+    mosquitto_passwd -b /mosquitto/config/password_file rule_engine ruleengine_secret && \
+    mosquitto_passwd -b /mosquitto/config/password_file bdu_admin admin_secret
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh

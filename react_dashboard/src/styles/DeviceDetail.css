@@ -415,4 +415,67 @@
   }
 }
 
+/* =========================================================
+   Tab Navigation - Trường dữ liệu
+   ========================================================= */
+.detail-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 0;
+}
 
+.detail-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: #64748b;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 6px 6px 0 0;
+  margin-bottom: -1px;
+}
+
+.detail-tab:hover {
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.detail-tab.active {
+  color: #06b6d4;
+  border-bottom-color: #06b6d4;
+  background: rgba(6, 182, 212, 0.05);
+}
+
+/* Ghost button style (for Detect Keys) */
+.btn-ghost {
+  background: transparent;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+.btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Table row hover in data keys tab */
+.dark-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}

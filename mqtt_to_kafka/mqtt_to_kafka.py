@@ -2,6 +2,7 @@
 
 import json
 import time
+from profile_transformer import apply_profile
 import sys
 import os
 import paho.mqtt.client as mqtt
@@ -20,6 +21,7 @@ MQTT_PASSWORD = os.getenv('MQTT_PASSWORD', None)
 MQTT_TOPICS = [
     ("iot/devices/+/data", 1),
     ("iot/devices/+/status", 1),
+    ("iot/devices/+/control", 1), # Forward control commands to Kafka/WebSocket
     ("garden/+/sensor", 1),      # Smart Garden sensor data
     ("garden/+/detection", 1),   # Smart Garden AI detection
 ]
@@ -86,9 +88,23 @@ def on_message(client, userdata, msg):
         sys.stdout.flush()
         
         payload = json.loads(payload_str)
-        
+
+        # Extract device_id from topic if missing (iot/devices/X/data, garden/X/sensor)
+        device_id = payload.get('device_id')
+        if not device_id:
+            parts = msg.topic.split('/')
+            if len(parts) >= 3 and parts[0] == 'iot' and parts[1] == 'devices':
+                device_id = parts[2]
+            elif len(parts) >= 2 and parts[0] == 'garden':
+                device_id = parts[1]
+            if device_id:
+                payload['device_id'] = device_id
+
+        # Apply device profile (field_mapping, unit_convert, timestamp_format)
+        payload = apply_profile(payload, device_id or payload.get('device_id'), payload.get('type'))
+
         # Tự động thêm timestamp nếu thiếu (fix lỗi Offline status và chart 1970)
-        if 'timestamp' not in payload:
+        if 'timestamp' not in payload or payload.get('timestamp') is None:
             payload['timestamp'] = time.time()
             print(f"🕒 Added timestamp {payload['timestamp']} to payload", flush=True)
 

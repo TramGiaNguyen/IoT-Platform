@@ -1,16 +1,10 @@
 module.exports = function override(config, env) {
-  // Cấu hình allowedHosts cho webpack dev server
+  // Cho phép mọi host truy cập webpack dev server
   if (config.devServer) {
-    config.devServer.allowedHosts = [
-      'cds.bdu.edu.vn',
-      '192.168.69.69'
-    ];
+    config.devServer.allowedHosts = 'all';
   } else {
     config.devServer = {
-      allowedHosts: [
-        'cds.bdu.edu.vn',
-        '192.168.69.69'
-      ]
+      allowedHosts: 'all'
     };
   }
   

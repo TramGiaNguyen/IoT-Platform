@@ -66,6 +66,7 @@ class WidgetDataRequest(BaseModel):
     time_range: Optional[str] = "1h"  # '1h', '6h', '24h', '7d', '30d'
     start_time: Optional[float] = None  # Unix timestamp (optional, overrides time_range)
     end_time: Optional[float] = None  # Unix timestamp (optional)
+    cau_hinh: Optional[Dict[str, Any]] = None
 
 
 class DashboardResponse(BaseModel):

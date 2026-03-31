@@ -240,6 +240,8 @@ export default function DashboardBuilder({ dashboardId, token, onBack, onSave })
           onLayoutChange={handleLayoutChange}
           onWidgetSelect={handleWidgetSelect}
           onWidgetDelete={handleWidgetDelete}
+          token={token}
+          dashboardId={dashboardId}
         />
       </div>
 

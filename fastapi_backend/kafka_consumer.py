@@ -14,11 +14,14 @@ KAFKA_TOPIC = "iot-events"
 latest_events_lock = threading.Lock()
 latest_events: List[dict] = []
 MAX_EVENTS = 100
-
+event_counter = 0
 
 def _add_event(event: dict) -> None:
     """Lưu event mới vào bộ nhớ tạm (vòng tròn, tối đa MAX_EVENTS)."""
+    global event_counter
     with latest_events_lock:
+        event_counter += 1
+        event['_internal_id'] = event_counter
         latest_events.append(event)
         if len(latest_events) > MAX_EVENTS:
             # chỉ giữ lại MAX_EVENTS phần tử gần nhất

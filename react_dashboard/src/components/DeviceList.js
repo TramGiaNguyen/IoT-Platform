@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE } from '../config/api';
 
 const DeviceList = () => {
   const [devices, setDevices] = useState([]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    axios.get('http://localhost:8000/devices', {
+    axios.get(`${API_BASE}/devices`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => setDevices(res.data.devices))
