@@ -25,6 +25,7 @@ DEFAULT_USERS = {
     'mqtt_to_kafka': os.getenv('MQTT_TO_KAFKA_PASSWORD', 'mqtt2kafka_secret'),
     'device_simulator': os.getenv('SIMULATOR_PASSWORD', 'simulator_secret'),
     'rule_engine': os.getenv('RULE_ENGINE_PASSWORD', 'ruleengine_secret'),
+    'bdu_admin': os.getenv('MQTT_ADMIN_PASSWORD', 'admin_secret'),  # Backend publish control commands
 }
 
 

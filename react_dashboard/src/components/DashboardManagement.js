@@ -3,7 +3,7 @@ import { fetchDashboards, createDashboard, updateDashboard, deleteDashboard } fr
 import DashboardBuilder from './DashboardBuilder/DashboardBuilder';
 import '../styles/style.css';
 
-export default function DashboardManagement({ token, onBack }) {
+export default function DashboardManagement({ token, onBack, onDashboardsChange }) {
   const [dashboards, setDashboards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -13,7 +13,6 @@ export default function DashboardManagement({ token, onBack }) {
   const [formData, setFormData] = useState({
     ten_dashboard: '',
     mo_ta: '',
-    icon: 'dashboard',
     mau_sac: '#22d3ee'
   });
 
@@ -39,7 +38,6 @@ export default function DashboardManagement({ token, onBack }) {
     setFormData({
       ten_dashboard: '',
       mo_ta: '',
-      icon: 'dashboard',
       mau_sac: '#22d3ee'
     });
     setEditingDashboard(null);
@@ -55,7 +53,6 @@ export default function DashboardManagement({ token, onBack }) {
     setFormData({
       ten_dashboard: dashboard.ten_dashboard || '',
       mo_ta: dashboard.mo_ta || '',
-      icon: dashboard.icon || 'dashboard',
       mau_sac: dashboard.mau_sac || '#22d3ee'
     });
     setFormVisible(true);
@@ -77,6 +74,7 @@ export default function DashboardManagement({ token, onBack }) {
       resetForm();
       setFormVisible(false);
       await loadDashboards();
+      if (onDashboardsChange) onDashboardsChange();
     } catch (err) {
       console.error('Save dashboard failed:', err);
       alert(err.response?.data?.detail || 'Lưu dashboard thất bại');
@@ -91,6 +89,7 @@ export default function DashboardManagement({ token, onBack }) {
     try {
       await deleteDashboard(dashboardId, token);
       await loadDashboards();
+      if (onDashboardsChange) onDashboardsChange();
     } catch (err) {
       console.error('Delete dashboard failed:', err);
       alert(err.response?.data?.detail || 'Xóa dashboard thất bại');
@@ -110,16 +109,7 @@ export default function DashboardManagement({ token, onBack }) {
     setBuildingDashboardId(dashboardId);
   };
 
-  const iconOptions = [
-    { value: 'dashboard', label: '📊 Dashboard' },
-    { value: 'chart', label: '📈 Chart' },
-    { value: 'monitor', label: '🖥️ Monitor' },
-    { value: 'home', label: '🏠 Home' },
-    { value: 'building', label: '🏢 Building' },
-    { value: 'garden', label: '🌿 Garden' },
-    { value: 'classroom', label: '🏫 Classroom' },
-    { value: 'factory', label: '🏭 Factory' },
-  ];
+
 
   // Show builder if building a dashboard
   if (buildingDashboardId) {
@@ -261,28 +251,7 @@ export default function DashboardManagement({ token, onBack }) {
                 />
               </div>
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '14px' }}>
-                  Icon
-                </label>
-                <select
-                  value={formData.icon}
-                  onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    background: '#111a2d',
-                    border: '1px solid #1f2a44',
-                    borderRadius: '6px',
-                    color: '#e5e7eb',
-                    fontSize: '14px'
-                  }}
-                >
-                  {iconOptions.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
+
 
               <div style={{ marginBottom: '24px' }}>
                 <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '14px' }}>
@@ -411,15 +380,7 @@ export default function DashboardManagement({ token, onBack }) {
                     borderRadius: '8px',
                     border: `1px solid ${dashboard.mau_sac}40`
                   }}>
-                    {dashboard.icon === 'dashboard' && '📊'}
-                    {dashboard.icon === 'chart' && '📈'}
-                    {dashboard.icon === 'monitor' && '🖥️'}
-                    {dashboard.icon === 'home' && '🏠'}
-                    {dashboard.icon === 'building' && '🏢'}
-                    {dashboard.icon === 'garden' && '🌿'}
-                    {dashboard.icon === 'classroom' && '🏫'}
-                    {dashboard.icon === 'factory' && '🏭'}
-                    {!['dashboard', 'chart', 'monitor', 'home', 'building', 'garden', 'classroom', 'factory'].includes(dashboard.icon) && '📊'}
+                    {dashboard.ten_dashboard ? dashboard.ten_dashboard.charAt(0).toUpperCase() : 'D'}
                   </div>
                   <div>
                     <h3 style={{ color: '#e5e7eb', margin: 0, fontSize: '18px' }}>

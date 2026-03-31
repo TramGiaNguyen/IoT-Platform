@@ -14,17 +14,34 @@ CREATE TABLE `nguoi_dung` (
   `email` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `mat_khau_hash` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `vai_tro` ENUM('admin','teacher','student') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'student',
+  `lop_hoc_id` INT DEFAULT NULL,
   `ngay_tao` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- Bảng lop_hoc (lớp học do teacher quản lý)
+-- =========================================================
+CREATE TABLE `lop_hoc` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `ten_lop` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `giao_vien_id` INT NOT NULL,
+  `ngay_tao` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_giao_vien` (`giao_vien_id`),
+  CONSTRAINT `lop_hoc_giao_vien_fk` FOREIGN KEY (`giao_vien_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `nguoi_dung`
+  ADD CONSTRAINT `nguoi_dung_lop_hoc_fk` FOREIGN KEY (`lop_hoc_id`) REFERENCES `lop_hoc` (`id`) ON DELETE SET NULL;
 
 -- Seed user admin mặc định
 INSERT INTO `nguoi_dung` (`ten`, `email`, `mat_khau_hash`, `vai_tro`)
 VALUES (
   'nguyen',
   '22050026@student.bdu.edu.vn',
-  '$2b$12$g.7Y7KeySJuQ0DQrAzk9kuTMxyuvf.WILwogcUD4ghIHgruMl2AzG',
+  '$2b$12$hLW99Na4HJueC6LoUoczT.6sMtexA5y6vUUkeVMxQ5t.L9OFUp6Te',
   'admin'
 );
 
@@ -50,11 +67,14 @@ CREATE TABLE `phong` (
   `mo_ta` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `vi_tri` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `nguoi_quan_ly_id` INT DEFAULT NULL,
+  `nguoi_so_huu_id` INT DEFAULT NULL COMMENT 'Owner của room (admin/teacher/student)',
   `ngay_tao` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `ma_phong` VARCHAR(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `nguoi_quan_ly_id` (`nguoi_quan_ly_id`),
-  CONSTRAINT `phong_ibfk_1` FOREIGN KEY (`nguoi_quan_ly_id`) REFERENCES `nguoi_dung` (`id`)
+  KEY `idx_nguoi_so_huu` (`nguoi_so_huu_id`),
+  CONSTRAINT `phong_ibfk_1` FOREIGN KEY (`nguoi_quan_ly_id`) REFERENCES `nguoi_dung` (`id`),
+  CONSTRAINT `phong_nguoi_so_huu_fk` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
@@ -80,13 +100,33 @@ CREATE TABLE `thiet_bi` (
   `device_type` ENUM('sensor','controller','gateway') COLLATE utf8mb4_unicode_ci DEFAULT 'sensor',
   `provisioned_at` DATETIME DEFAULT NULL,
   `last_auth_at` DATETIME DEFAULT NULL,
+  `edge_control_url` VARCHAR(512) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'HTTP POST relay control, e.g. http://192.168.190.171/api/v1/control',
+  `edge_control_body_template` MEDIUMTEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'JSON template {{relay}} {{state}} {{cmd}}',
+  `nguoi_so_huu_id` INT DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `ma_thiet_bi` (`ma_thiet_bi`),
   KEY `node_id` (`phong_id`),
   KEY `idx_last_seen` (`last_seen`),
   KEY `idx_trang_thai` (`trang_thai`),
   KEY `idx_phong_trang_thai` (`phong_id`,`trang_thai`),
-  CONSTRAINT `thiet_bi_ibfk_1` FOREIGN KEY (`phong_id`) REFERENCES `phong` (`id`)
+  KEY `idx_nguoi_so_huu` (`nguoi_so_huu_id`),
+  CONSTRAINT `thiet_bi_ibfk_1` FOREIGN KEY (`phong_id`) REFERENCES `phong` (`id`),
+  CONSTRAINT `thiet_bi_nguoi_so_huu_fk` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- Bảng device_profiles (cấu hình transform theo device/type)
+-- =========================================================
+CREATE TABLE `device_profiles` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `ten_profile` VARCHAR(255) DEFAULT NULL,
+  `device_id` VARCHAR(255) DEFAULT NULL,
+  `device_type` VARCHAR(100) DEFAULT NULL,
+  `config` JSON NOT NULL,
+  `ngay_tao` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_device_id` (`device_id`),
+  KEY `idx_device_type` (`device_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
@@ -132,10 +172,37 @@ CREATE TABLE `rules` (
   `field` VARCHAR(100) NOT NULL,
   `operator` VARCHAR(10) NOT NULL,
   `value` VARCHAR(100) NOT NULL,
+  `rule_graph` JSON DEFAULT NULL,
   `muc_do_uu_tien` INT DEFAULT '1',
   `trang_thai` ENUM('enabled','disabled') DEFAULT 'enabled',
+  `nguoi_so_huu_id` INT DEFAULT NULL,
   `ngay_tao` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_nguoi_so_huu_rules` (`nguoi_so_huu_id`),
+  CONSTRAINT `rules_nguoi_so_huu_fk` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- Bảng scheduled_rules (rule theo lịch cron)
+-- =========================================================
+CREATE TABLE `scheduled_rules` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `ten_rule` VARCHAR(255) DEFAULT NULL,
+  `phong_id` INT DEFAULT NULL,
+  `cron_expression` VARCHAR(100) NOT NULL,
+  `device_id` VARCHAR(255) NOT NULL,
+  `action_command` VARCHAR(100) NOT NULL,
+  `action_params` JSON DEFAULT NULL,
+  `trang_thai` ENUM('enabled','disabled') DEFAULT 'enabled',
+  `last_run_at` DATETIME DEFAULT NULL,
+  `nguoi_so_huu_id` INT DEFAULT NULL,
+  `ngay_tao` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_scheduled_trang_thai` (`trang_thai`),
+  KEY `idx_scheduled_phong` (`phong_id`),
+  KEY `idx_nguoi_so_huu_scheduled` (`nguoi_so_huu_id`),
+  CONSTRAINT `scheduled_rules_phong_fk` FOREIGN KEY (`phong_id`) REFERENCES `phong` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `scheduled_rules_nguoi_so_huu_fk` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
@@ -187,6 +254,7 @@ CREATE TABLE `canh_bao` (
   `thoi_gian_tao` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   `thoi_gian_giai_quyet` TIMESTAMP NULL DEFAULT NULL,
   `nguoi_xu_ly` INT DEFAULT NULL,
+  `ghi_chu` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `data_context` JSON DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_status_time` (`trang_thai`,`thoi_gian_tao`),
@@ -355,4 +423,19 @@ CREATE TABLE `dashboard_permissions` (
   KEY `idx_permissions_user` (`nguoi_dung_id`, `quyen`),
   CONSTRAINT `dashboard_permissions_dashboard_fk` FOREIGN KEY (`dashboard_id`) REFERENCES `custom_dashboards` (`id`) ON DELETE CASCADE,
   CONSTRAINT `dashboard_permissions_user_fk` FOREIGN KEY (`nguoi_dung_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- Bảng control_lines (đường điều khiển ON/OFF)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `control_lines` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `thiet_bi_id` INT NOT NULL,
+    `relay_number` INT NOT NULL,
+    `ten_duong` VARCHAR(100) DEFAULT NULL COMMENT 'Tên đường điều khiển (VD: Đèn trần, Quạt)',
+    `topic` VARCHAR(255) DEFAULT NULL COMMENT 'Custom MQTT topic',
+    `hien_thi_ttcds` TINYINT(1) DEFAULT 1 COMMENT '0: Ẩn, 1: Hiện trên TTCDS',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (`thiet_bi_id`) REFERENCES `thiet_bi`(`id`) ON DELETE CASCADE,
+    UNIQUE KEY `unique_relay` (`thiet_bi_id`, `relay_number`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

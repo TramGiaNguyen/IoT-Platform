@@ -1,0 +1,24 @@
+# Migration files (redundant với data.sql)
+create_quyen_trang.sql
+migration_custom_dashboards.sql
+migration_registration_first.sql
+
+# Documentation files
+project folder structure.txt
+connect.md
+
+# Common ignores
+node_modules/
+.env
+.env.local
+*.log
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+dist/
+build/

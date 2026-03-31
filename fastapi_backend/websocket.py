@@ -57,24 +57,24 @@ async def websocket_endpoint(websocket: WebSocket):
                     break
 
                 current_events = get_latest_events()
-                last_timestamp = connection_last_timestamps.get(websocket)
+                last_id = connection_last_timestamps.get(websocket)
                 
                 if current_events:
-                    # Tìm events mới hơn timestamp cuối cùng đã gửi
+                    # Tìm events mới hơn ID cuối cùng đã gửi
                     new_events = []
                     for event in current_events:
-                        event_timestamp = event.get('timestamp')
-                        if event_timestamp:
-                            if last_timestamp is None or event_timestamp > last_timestamp:
+                        event_id = event.get('_internal_id')
+                        if event_id:
+                            if last_id is None or event_id > last_id:
                                 new_events.append(event)
                     
                     # Gửi các events mới
                     for event in new_events:
                         await websocket.send_json(event)
-                        # Cập nhật timestamp cuối cùng
-                        event_timestamp = event.get('timestamp')
-                        if event_timestamp:
-                            connection_last_timestamps[websocket] = event_timestamp
+                        # Cập nhật ID cuối cùng
+                        event_id = event.get('_internal_id')
+                        if event_id:
+                            connection_last_timestamps[websocket] = event_id
 
                 # Gửi ping định kỳ để giữ kết nối
                 now = time.time()

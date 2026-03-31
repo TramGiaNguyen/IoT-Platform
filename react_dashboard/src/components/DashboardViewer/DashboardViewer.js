@@ -2,19 +2,19 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 import { fetchDashboard } from '../../services';
 import WidgetRenderer from './WidgetRenderer';
+import { WS_URL } from '../../config/api';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
-
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
-const WS_URL = `${API_BASE.replace(/^http/i, 'ws')}/ws/events`;
 
 export default function DashboardViewer({ dashboardId, token, onBack }) {
   const [dashboard, setDashboard] = useState(null);
   const [widgets, setWidgets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [editMode, setEditMode] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const loadDashboard = useCallback(async () => {
     // #region agent log
@@ -149,8 +149,67 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
       y: w.vi_tri_y || 0,
       w: w.chieu_rong || 4,
       h: w.chieu_cao || 3,
-      static: true // Read-only mode - no drag/resize
+      minW: 2,
+      minH: 2,
+      static: !editMode, // Allow drag/resize only in edit mode
+      isBounded: false // Allow widgets to be placed anywhere
     }))
+  };
+
+  const handleLayoutChange = (layout) => {
+    if (!editMode) return;
+    
+    // Update widgets with new positions
+    const updatedWidgets = widgets.map(widget => {
+      const layoutItem = layout.find(item => item.i === widget.id.toString());
+      if (layoutItem) {
+        return {
+          ...widget,
+          vi_tri_x: layoutItem.x,
+          vi_tri_y: layoutItem.y,
+          chieu_rong: layoutItem.w,
+          chieu_cao: layoutItem.h
+        };
+      }
+      return widget;
+    });
+    
+    setWidgets(updatedWidgets);
+    setHasUnsavedChanges(true);
+  };
+
+  const handleSaveLayout = async () => {
+    try {
+      // Save all widget positions
+      const { updateWidget } = await import('../../services');
+      
+      for (const widget of widgets) {
+        await updateWidget(dashboardId, widget.id, {
+          vi_tri_x: widget.vi_tri_x,
+          vi_tri_y: widget.vi_tri_y,
+          chieu_rong: widget.chieu_rong,
+          chieu_cao: widget.chieu_cao
+        }, token);
+      }
+      
+      setHasUnsavedChanges(false);
+      setEditMode(false);
+      alert('Đã lưu layout thành công!');
+    } catch (err) {
+      console.error('Failed to save layout:', err);
+      alert('Lưu layout thất bại: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleCancelEdit = () => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm('Bạn có thay đổi chưa lưu. Bạn có chắc muốn hủy?')) {
+        return;
+      }
+    }
+    setEditMode(false);
+    setHasUnsavedChanges(false);
+    loadDashboard(); // Reload original layout
   };
 
   return (
@@ -201,10 +260,90 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
             )}
           </div>
         </div>
+        
+        {/* Edit Mode Controls */}
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {editMode ? (
+            <>
+              {hasUnsavedChanges && (
+                <span style={{
+                  color: '#fbbf24',
+                  fontSize: '13px',
+                  padding: '6px 12px',
+                  background: 'rgba(251, 191, 36, 0.1)',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(251, 191, 36, 0.3)'
+                }}>
+                  ⚠️ Có thay đổi chưa lưu
+                </span>
+              )}
+              <button
+                onClick={handleCancelEdit}
+                style={{
+                  padding: '8px 16px',
+                  background: '#111a2d',
+                  border: '1px solid #ef4444',
+                  borderRadius: '6px',
+                  color: '#ef4444',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleSaveLayout}
+                disabled={!hasUnsavedChanges}
+                style={{
+                  padding: '8px 16px',
+                  background: hasUnsavedChanges ? 'linear-gradient(135deg, #10b981, #34d399)' : '#1f2a44',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: hasUnsavedChanges ? '#0b1224' : '#6b7280',
+                  cursor: hasUnsavedChanges ? 'pointer' : 'not-allowed',
+                  fontWeight: '600',
+                  fontSize: '14px'
+                }}
+              >
+                💾 Lưu Layout
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setEditMode(true)}
+              style={{
+                padding: '8px 16px',
+                background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
+                border: 'none',
+                borderRadius: '6px',
+                color: '#0b1224',
+                cursor: 'pointer',
+                fontWeight: '600',
+                fontSize: '14px'
+              }}
+            >
+              ✏️ Chỉnh sửa Layout
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Canvas */}
       <div style={{ padding: '20px' }}>
+        {editMode && (
+          <div style={{
+            marginBottom: '16px',
+            padding: '12px 16px',
+            background: 'rgba(34, 211, 238, 0.1)',
+            border: '1px solid rgba(34, 211, 238, 0.3)',
+            borderRadius: '8px',
+            color: '#22d3ee',
+            fontSize: '14px'
+          }}>
+            <strong>📝 Chế độ chỉnh sửa:</strong> Kéo và thả các widget để sắp xếp lại. Kéo góc để thay đổi kích thước.
+          </div>
+        )}
+        
         {widgets.length === 0 ? (
           <div style={{
             textAlign: 'center',
@@ -225,12 +364,25 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
             breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
             cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
             rowHeight={60}
-            isDraggable={false}
-            isResizable={false}
+            onLayoutChange={handleLayoutChange}
+            isDraggable={editMode}
+            isResizable={editMode}
+            compactType={null}
+            preventCollision={true}
+            allowOverlap={true}
             style={{ minHeight: '100%' }}
           >
             {widgets.map(widget => (
-              <div key={widget.id} style={{ background: 'transparent' }}>
+              <div 
+                key={widget.id} 
+                style={{ 
+                  background: 'transparent',
+                  cursor: editMode ? 'move' : 'default',
+                  border: editMode ? '2px dashed rgba(34, 211, 238, 0.3)' : 'none',
+                  borderRadius: '8px',
+                  transition: 'border 0.2s'
+                }}
+              >
                 <WidgetRenderer
                   widget={widget}
                   token={token}

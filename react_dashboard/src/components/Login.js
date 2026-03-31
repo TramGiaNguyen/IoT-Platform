@@ -40,9 +40,9 @@ const Login = ({ setToken }) => {
           </div>
 
           <form className="login-form" onSubmit={handleLogin}>
-            <label>Tài khoản</label>
+            <label>Tên người dùng</label>
             <input
-              placeholder="Email đăng nhập"
+              placeholder="Tên người dùng"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"

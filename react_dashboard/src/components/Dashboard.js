@@ -2,12 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { fetchDevicesLatestAll } from '../services';
+import { API_BASE, WS_URL } from '../config/api';
 import '../styles/Dashboard.css';
-
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
-const WS_URL =
-  process.env.REACT_APP_WS_URL ||
-  `${API_BASE.replace(/^http/i, 'ws')}${API_BASE.endsWith('/') ? '' : ''}/ws/events`;
 
 // Một vài icon dạng SVG nhỏ để mô phỏng phong cách trong sample
 const Icon = {
@@ -60,24 +56,10 @@ const getDefaultKeysForDeviceType = (type) => {
       { khoa: 'Tien_dien', don_vi: 'VND', mo_ta: 'Tiền điện ước tính' }
     ];
   }
-  if (type === 'smart_garden') {
-    return [
-      { khoa: 'temperature', don_vi: '°C', mo_ta: 'Nhiệt độ' },
-      { khoa: 'humidity', don_vi: '%', mo_ta: 'Độ ẩm không khí' },
-      { khoa: 'soil_moisture', don_vi: '%', mo_ta: 'Độ ẩm đất' },
-      { khoa: 'light_level', don_vi: 'Lux', mo_ta: 'Cường độ ánh sáng' },
-      { khoa: 'pump_status', don_vi: '', mo_ta: 'Trạng thái máy bơm' },
-      { khoa: 'lamp_status', don_vi: '', mo_ta: 'Trạng thái đèn' },
-      { khoa: 'fan_status', don_vi: '', mo_ta: 'Trạng thái quạt' },
-      { khoa: 'plant_count', don_vi: '', mo_ta: 'Số cây phát hiện (AI)' },
-      { khoa: 'prediction', don_vi: '', mo_ta: 'Kết quả nhận diện (AI)' },
-      { khoa: 'confidence', don_vi: '%', mo_ta: 'Độ tin cậy AI' }
-    ];
-  }
   return [];
 };
 
-const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRooms }) => {
+const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRooms, workspaceId }) => {
   const [devices, setDevices] = useState(initialDevices);
   const [deviceData, setDeviceData] = useState({});
   const [loading, setLoading] = useState(true);
@@ -110,14 +92,23 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   const [detecting, setDetecting] = useState(false);
   const [detectProgress, setDetectProgress] = useState(0);
   const [detectedKeys, setDetectedKeys] = useState([]);
+  // State cho control lines
+  const [controlLines, setControlLines] = useState([]);
+  const [controlLinesSaved, setControlLinesSaved] = useState(false);
+  const [savingControlLines, setSavingControlLines] = useState(false);
 
   // Statistics state
   const [hourlyStats, setHourlyStats] = useState([]);
   const [dailyStats, setDailyStats] = useState([]);
 
+  // Search and Pagination state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const devicesPerPage = 12;
+
   const loadLatestAll = async () => {
     try {
-      const res = await fetchDevicesLatestAll(token);
+      const res = await fetchDevicesLatestAll(token, workspaceId);
       const payload = res.data.devices || [];
       // Cập nhật list devices theo payload (để đồng bộ với latest-all)
       const mappedDevices = payload.map((d) => ({
@@ -127,6 +118,8 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
         trang_thai: d.trang_thai,
         last_seen: d.last_seen,
         phong_id: d.phong_id,
+        ten_phong: d.ten_phong,
+        ma_phong: d.ma_phong,
       }));
       setDevices(mappedDevices);
 
@@ -159,11 +152,13 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   const loadStats = async () => {
     try {
       const [hourlyRes, dailyRes] = await Promise.all([
-        axios.get(`${API_BASE}/stats/hourly?hours=24`, {
-          headers: { Authorization: `Bearer ${token}` }
+        axios.get(`${API_BASE}/stats/hourly`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { hours: 24, ...(workspaceId ? { workspace_id: workspaceId } : {}) }
         }),
-        axios.get(`${API_BASE}/stats/daily?days=7`, {
-          headers: { Authorization: `Bearer ${token}` }
+        axios.get(`${API_BASE}/stats/daily`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { days: 7, ...(workspaceId ? { workspace_id: workspaceId } : {}) }
         })
       ]);
       setHourlyStats(hourlyRes.data.stats || []);
@@ -181,13 +176,13 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     }
   }, [initialDevices]);
 
-  // Load stats on mount and every 1 minute for responsive updates
+  // Load stats on mount and every 5 seconds for realtime updates
   useEffect(() => {
     if (!token) return;
     loadStats();
-    const interval = setInterval(loadStats, 60000); // 1 minute
+    const interval = setInterval(loadStats, 5000); // 5 seconds
     return () => clearInterval(interval);
-  }, [token]);
+  }, [token, workspaceId]);
 
   useEffect(() => {
     if (!token || devices.length === 0) return;
@@ -270,7 +265,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     loadLatestAll();
     const interval = setInterval(loadLatestAll, 5000);
     return () => clearInterval(interval);
-  }, [token]);
+  }, [token, workspaceId]);
 
   const formatValue = (value, unit = '') => {
     if (value === null || value === undefined) return 'N/A';
@@ -513,35 +508,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                 </div>
               </div>
 
-              {/* Temperature Gauge Card */}
-              <div className="chart-card gauge-card">
-                <h4>Nhiệt độ</h4>
-                <div className="gauge-value temp">
-                  {chartStats.currentTemp !== null ? chartStats.currentTemp.toFixed(1) : '--'}
-                  <span className="unit">°C</span>
-                </div>
-                <div className="gauge-bar">
-                  <div
-                    className="gauge-fill temp"
-                    style={{ width: `${Math.min(100, Math.max(0, ((chartStats.currentTemp || 0) - 15) / 25 * 100))}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Humidity Gauge Card */}
-              <div className="chart-card gauge-card">
-                <h4>Độ ẩm</h4>
-                <div className="gauge-value humidity">
-                  {chartStats.currentHumidity !== null ? chartStats.currentHumidity.toFixed(1) : '--'}
-                  <span className="unit">%</span>
-                </div>
-                <div className="gauge-bar">
-                  <div
-                    className="gauge-fill humidity"
-                    style={{ width: `${chartStats.currentHumidity || 0}%` }}
-                  />
-                </div>
-              </div>
+              {/* Removed Temp and Humidity Gauges */}
 
               {/* Device Status Donut */}
               <div className="chart-card donut-card">
@@ -582,67 +549,40 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                 </div>
               </div>
 
-              {/* Hourly Stats - Area Chart (24h) */}
-              <div className="chart-card wide-chart">
-                <h4>📊 Thống kê 24 giờ qua</h4>
-                {hourlyStats.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={180}>
-                    <AreaChart data={hourlyStats}>
-                      <defs>
-                        <linearGradient id="colorTemp" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8} />
-                          <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.1} />
-                        </linearGradient>
-                        <linearGradient id="colorHum" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.8} />
-                          <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.1} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2a44" />
-                      <XAxis dataKey="label" stroke="#64748b" tick={{ fontSize: 10 }} />
-                      <YAxis yAxisId="temp" orientation="left" stroke="#f59e0b" domain={[20, 40]} tick={{ fontSize: 10 }} />
-                      <YAxis yAxisId="hum" orientation="right" stroke="#06b6d4" domain={[40, 80]} tick={{ fontSize: 10 }} />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1f2a44' }}
-                        labelStyle={{ color: '#94a3b8' }}
-                      />
-                      <Legend />
-                      <Area yAxisId="temp" type="monotone" dataKey="nhiet_do_tb" name="Nhiệt độ (°C)" stroke="#f59e0b" fill="url(#colorTemp)" />
-                      <Area yAxisId="hum" type="monotone" dataKey="do_am_tb" name="Độ ẩm (%)" stroke="#06b6d4" fill="url(#colorHum)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="no-data">Chưa có dữ liệu thống kê giờ</div>
-                )}
-              </div>
 
-              {/* Daily Stats - Combo Chart (7 days) */}
-              <div className="chart-card wide-chart">
-                <h4>📈 Thống kê 7 ngày qua</h4>
-                {dailyStats.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={180}>
-                    <ComposedChart data={dailyStats}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2a44" />
-                      <XAxis dataKey="label" stroke="#64748b" tick={{ fontSize: 11 }} />
-                      <YAxis yAxisId="temp" orientation="left" stroke="#f59e0b" domain={[20, 40]} tick={{ fontSize: 10 }} />
-                      <YAxis yAxisId="hum" orientation="right" stroke="#06b6d4" domain={[40, 80]} tick={{ fontSize: 10 }} />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1f2a44' }}
-                        labelStyle={{ color: '#94a3b8' }}
-                      />
-                      <Legend />
-                      <Bar yAxisId="hum" dataKey="do_am_tb" name="Độ ẩm (%)" fill="#06b6d4" radius={[4, 4, 0, 0]} />
-                      <Line yAxisId="temp" type="monotone" dataKey="nhiet_do_tb" name="Nhiệt độ (°C)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 4 }} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="no-data">Chưa có dữ liệu thống kê ngày</div>
-                )}
-              </div>
+            </div>
+
+            <div className="device-controls-bar" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'flex-start' }}>
+              <input 
+                type="text" 
+                className="device-search-input" 
+                style={{
+                  padding: '10px 15px', borderRadius: '8px', border: '1px solid #1f2a44',
+                  backgroundColor: '#0f172a', color: '#e2e8f0', width: '300px', fontSize: '14px',
+                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
+                }}
+                placeholder="🔍 Tìm kiếm thiết bị (Tên / Mã)..." 
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+              />
             </div>
 
             <div className="devices-grid neo-grid">
-              {devices.map((device) => {
+              {(() => {
+                const filteredDevices = devices.filter(d => 
+                  (d.ten_thiet_bi || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                  (d.ma_thiet_bi || '').toLowerCase().includes(searchQuery.toLowerCase())
+                );
+                const totalPages = Math.ceil(filteredDevices.length / devicesPerPage);
+                const validCurrentPage = Math.min(currentPage, Math.max(1, totalPages));
+                const indexOfLastDevice = validCurrentPage * devicesPerPage;
+                const indexOfFirstDevice = indexOfLastDevice - devicesPerPage;
+                const currentDevices = filteredDevices.slice(indexOfFirstDevice, indexOfLastDevice);
+
+                return currentDevices.map((device) => {
                 const data = deviceData[device.ma_thiet_bi] || {};
                 const status = getStatus(device);
                 const deviceKeys = data.data || {};
@@ -736,8 +676,45 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                     </button>
                   </div>
                 );
-              })}
+                });
+              })()}
             </div>
+
+            {(() => {
+              const filteredDevices = devices.filter(d => 
+                (d.ten_thiet_bi || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                (d.ma_thiet_bi || '').toLowerCase().includes(searchQuery.toLowerCase())
+              );
+              const totalPages = Math.ceil(filteredDevices.length / devicesPerPage);
+              const validCurrentPage = Math.min(currentPage, Math.max(1, totalPages));
+              
+              if (totalPages > 1) {
+                return (
+                  <div className="pagination-controls" style={{
+                    display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px', marginTop: '30px', marginBottom: '10px'
+                  }}>
+                    <button 
+                      className="btn"
+                      style={{ padding: '8px 16px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#cbd5e1', cursor: validCurrentPage === 1 ? 'not-allowed' : 'pointer', opacity: validCurrentPage === 1 ? 0.5 : 1 }}
+                      disabled={validCurrentPage === 1} 
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    >
+                      Trang trước
+                    </button>
+                    <span className="page-info" style={{ color: '#94a3b8', fontSize: '14px' }}>Trang {validCurrentPage} / {totalPages}</span>
+                    <button 
+                      className="btn"
+                      style={{ padding: '8px 16px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#cbd5e1', cursor: validCurrentPage === totalPages ? 'not-allowed' : 'pointer', opacity: validCurrentPage === totalPages ? 0.5 : 1 }}
+                      disabled={validCurrentPage === totalPages} 
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    >
+                      Trang sau
+                    </button>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </>
         )}
 
@@ -801,14 +778,6 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                                   protocol: 'mqtt',
                                   data_keys: getDefaultKeysForDeviceType('smart_classroom_energy')
                                 }));
-                              } else if (val === 'smart_garden') {
-                                setProvisionForm(prev => ({
-                                  ...prev,
-                                  device_type: 'sensor',
-                                  loai_thiet_bi: 'smart_garden',
-                                  protocol: 'mqtt',
-                                  data_keys: getDefaultKeysForDeviceType('smart_garden')
-                                }));
                               } else if (val === 'custom') {
                                 setProvisionForm(prev => ({
                                   ...prev,
@@ -823,7 +792,6 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                           >
                             <option value="custom">Tùy chỉnh (Tự nhập)</option>
                             <option value="smart_classroom">🏫 Lớp học thông minh (Smart Classroom)</option>
-                            <option value="smart_garden">🌿 Vườn thông minh (Smart Garden)</option>
                           </select>
                         </div>
 
@@ -1018,17 +986,132 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                           </button>
                         </div>
 
+                        {/* Control Lines Section */}
+                        <div className="result-section detect-section">
+                          <h4>🎮 Đường điều khiển (Relay/Output)</h4>
+                          <p style={{ fontSize: '0.85rem', color: '#888', marginBottom: '12px' }}>
+                            Thêm các đường relay/output → mỗi đường sẽ có lệnh ON/OFF riêng trong file config
+                          </p>
+
+                          {controlLines.map((line, idx) => (
+                            <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                              <span style={{ color: '#60a5fa', fontWeight: 'bold', minWidth: '60px' }}>Relay {line.relay_number}</span>
+                              <input
+                                type="text"
+                                value={line.ten_duong}
+                                onChange={(e) => {
+                                  const updated = [...controlLines];
+                                  updated[idx] = { ...updated[idx], ten_duong: e.target.value };
+                                  setControlLines(updated);
+                                  setControlLinesSaved(false);
+                                }}
+                                placeholder={`Tên đường ${line.relay_number} (VD: Đèn, Quạt...)`}
+                                style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0' }}
+                              />
+                              <button
+                                onClick={() => {
+                                  const updated = controlLines.filter((_, i) => i !== idx);
+                                  // Re-number relays
+                                  const renumbered = updated.map((l, i) => ({ ...l, relay_number: i + 1 }));
+                                  setControlLines(renumbered);
+                                  setControlLinesSaved(false);
+                                }}
+                                style={{ background: '#ef4444', border: 'none', color: 'white', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer' }}
+                                title="Xóa đường này"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                            <button
+                              onClick={() => {
+                                const nextNum = controlLines.length + 1;
+                                setControlLines([...controlLines, { relay_number: nextNum, ten_duong: '' }]);
+                                setControlLinesSaved(false);
+                              }}
+                              style={{ background: '#334155', border: '1px solid #475569', color: '#e2e8f0', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer' }}
+                            >
+                              ➕ Thêm đường
+                            </button>
+
+                            {controlLines.length > 0 && (
+                              <button
+                                disabled={savingControlLines}
+                                onClick={async () => {
+                                  setSavingControlLines(true);
+                                  try {
+                                    await axios.post(
+                                      `${API_BASE}/devices/${provisionResult.credentials?.device_id}/control-lines`,
+                                      { lines: controlLines },
+                                      { headers: { Authorization: `Bearer ${token}` } }
+                                    );
+                                    setControlLinesSaved(true);
+                                  } catch (err) {
+                                    alert('Lỗi lưu: ' + (err.response?.data?.detail || err.message));
+                                  } finally {
+                                    setSavingControlLines(false);
+                                  }
+                                }}
+                                style={{
+                                  background: controlLinesSaved ? '#22c55e' : '#3b82f6',
+                                  border: 'none', color: 'white', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer'
+                                }}
+                              >
+                                {savingControlLines ? '⏳ Đang lưu...' : controlLinesSaved ? '✅ Đã lưu' : '💾 Lưu đường điều khiển'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
                         <div className="result-actions">
                           <button
                             className="btn-secondary"
-                            onClick={() => {
-                              const configJson = JSON.stringify(provisionResult, null, 2);
-                              const blob = new Blob([configJson], { type: 'application/json' });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = `device-${provisionResult.credentials?.device_id}.json`;
-                              a.click();
+                            onClick={async () => {
+                              try {
+                                const deviceId = provisionResult.credentials?.device_id;
+                                
+                                // Cảnh báo nếu có control lines chưa lưu
+                                if (controlLines.length > 0 && !controlLinesSaved) {
+                                  const confirmDownload = window.confirm(
+                                    '⚠️ Bạn có đường điều khiển chưa lưu!\n\n' +
+                                    'Nhấn OK để tự động lưu và download config.\n' +
+                                    'Nhấn Cancel để quay lại.'
+                                  );
+                                  if (!confirmDownload) return;
+                                  
+                                  // Tự động lưu control lines trước
+                                  try {
+                                    await axios.post(
+                                      `${API_BASE}/devices/${deviceId}/control-lines`,
+                                      { lines: controlLines },
+                                      { headers: { Authorization: `Bearer ${token}` } }
+                                    );
+                                    setControlLinesSaved(true);
+                                  } catch (saveErr) {
+                                    alert('❌ Lỗi lưu đường điều khiển: ' + (saveErr.response?.data?.detail || saveErr.message));
+                                    return;
+                                  }
+                                }
+                                
+                                // Lấy full config từ backend
+                                const res = await axios.get(`${API_BASE}/devices/${deviceId}/full-config`, {
+                                  headers: { Authorization: `Bearer ${token}` }
+                                });
+                                
+                                const configJson = JSON.stringify(res.data, null, 2);
+                                const blob = new Blob([configJson], { type: 'application/json' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `device-${deviceId}.json`;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                              } catch (err) {
+                                console.error('Download config error:', err);
+                                alert('❌ Lỗi tải config: ' + (err.response?.data?.detail || err.message) + '\n\nVui lòng thử lại hoặc liên hệ admin.');
+                              }
                             }}
                           >
                             📥 Download Config
@@ -1041,6 +1124,8 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                               setProvisionResult(null);
                               setProvisionForm({ ten_thiet_bi: '', phong_id: '', protocol: 'mqtt', device_type: 'sensor', loai_thiet_bi: '', data_keys: [] });
                               setDetectedKeys([]);
+                              setControlLines([]);
+                              setControlLinesSaved(false);
                               loadLatestAll();
                             }}
                           >

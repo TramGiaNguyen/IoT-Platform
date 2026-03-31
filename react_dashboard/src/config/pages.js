@@ -5,9 +5,10 @@ export const PAGES = [
     { id: 'dashboard', label: 'Dashboard', path: '' },
     { id: 'rooms', label: 'Quản lý phòng', path: 'rooms' },
     { id: 'rules', label: 'Quản lý rule', path: 'rules' },
+    { id: 'alerts', label: 'Quản lý cảnh báo', path: 'alerts' },
+    { id: 'device-profiles', label: 'Device Profiles', path: 'device-profiles' },
     { id: 'dashboards', label: 'Quản lý Dashboard', path: 'dashboards-manage' },
-    { id: 'garden', label: 'Vườn thông minh', path: 'garden' },
-    { id: 'classroom', label: 'Lớp học thông minh', path: 'classroom' },
+    { id: 'ttcds', label: 'Trung tâm chuyển đổi số', path: 'ttcds' },
 ];
 
 // Pages only visible to admin (not shown in permission checkboxes)

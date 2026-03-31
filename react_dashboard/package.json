@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "@xyflow/react": "^12.10.1",
     "axios": "^1.6.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
-    "recharts": "^2.10.3",
     "react-grid-layout": "^1.4.4",
-    "react-resizable": "^3.0.5"
+    "react-resizable": "^3.0.5",
+    "react-scripts": "5.0.1",
+    "recharts": "^2.10.3"
   },
   "devDependencies": {
     "eslint-plugin-react-hooks": "^4.6.0",

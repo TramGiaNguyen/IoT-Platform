@@ -17,7 +17,8 @@ services:
       - SIMULATOR_PASSWORD=simulator_secret
       - RULE_ENGINE_PASSWORD=ruleengine_secret
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
     volumes:
       - mqtt-data:/mosquitto/data
 
@@ -38,7 +39,15 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   zookeeper:
     image: zookeeper:latest
@@ -47,6 +56,13 @@ services:
       - "2181:2181"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/2181' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   mongodb:
     image: mongo
@@ -54,6 +70,11 @@ services:
     ports:
       - "27017:27017"
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --eval 'db.adminCommand(\"ping\")' || mongo --eval 'db.adminCommand(\"ping\")'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - mongo-data:/data/db
 
@@ -63,11 +84,17 @@ services:
     ports:
       - "3308:3306"
     environment:
+      TZ: Asia/Ho_Chi_Minh
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: iot_data
       MYSQL_USER: iot
       MYSQL_PASSWORD: iot123
     restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - mysql-data:/var/lib/mysql
       - ./data.sql:/docker-entrypoint-initdb.d/data.sql
@@ -79,12 +106,31 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - mongodb
-      - mysql
+      mongodb:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     environment:
-      - MQTT_BROKER_HOST=${MQTT_BROKER_HOST:-192.168.1.7}
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      - TZ=Asia/Ho_Chi_Minh
+      - MQTT_BROKER_HOST=mqtt
+      - MQTT_USERNAME=bdu_admin
+      - MQTT_PASSWORD=admin_secret
+      - ALLOWED_ORIGINS=*
+      - DEBUG_LOG_PATH=/workspace/debug-6eeaf8.log
+      - INTERNAL_API_KEY=internal-rule-engine-key-change-in-production
+      # Gửi X-API-Key = http_api_key của thiết bị (cùng ak_... trong file config tải về) khi POST relay xuống edge
+      - EDGE_CONTROL_USE_DEVICE_HTTP_KEY=1
+      # Hoặc key cố định cho mọi thiết bị: EDGE_CONTROL_API_KEY=ak_...
+      # Chẩn đoán: docs/EDGE_CONTROL_DEBUG.md, scripts/verify-edge-control.ps1
+    volumes:
+      - .:/workspace
+    command: sh -c "python /workspace/update_password_hash.py || true && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
 
   mqtt-to-kafka:
     build:
@@ -93,19 +139,52 @@ services:
     environment:
       - MQTT_USERNAME=mqtt_to_kafka
       - MQTT_PASSWORD=mqtt2kafka_secret
+      - MYSQL_HOST=mysql
+      - MYSQL_USER=iot
+      - MYSQL_PASSWORD=iot123
+      - MYSQL_DATABASE=iot_data
     depends_on:
-      - mqtt
-      - kafka
+      mqtt:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
     restart: unless-stopped
+
+  http-to-kafka:
+    build:
+      context: ./http_to_kafka
+    container_name: http_to_kafka
+    ports:
+      - "5000:5000"
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=iot-events
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   spark-processor:
     build:
       context: ./spark_jobs
     container_name: spark_processor
     depends_on:
-      - kafka
-      - mongodb
-      - mysql
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
     restart: always
     healthcheck:
       test: ["CMD", "python3", "/app/healthcheck.py"]
@@ -121,7 +200,25 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - fastapi-backend
+      fastapi-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend-app-control:
+    build:
+      context: ./backend_app_control
+    container_name: backend_app_control
+    ports:
+      - "8001:8001"
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+      - IOT_PLATFORM_URL=http://fastapi-backend:8000
+      - JWT_SECRET=your-secret-key-change-in-production
+      - DEVICE_ID=gateway-701e68b1
+      - AC_CONTROL_URL=http://192.168.190.101
+    depends_on:
+      fastapi-backend:
+        condition: service_healthy
     restart: unless-stopped
 
   device-control:
@@ -131,8 +228,12 @@ services:
     ports:
       - "8100:8000"
     depends_on:
-      - mqtt
-      - mongodb
+      mqtt:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
     restart: unless-stopped
 
   simulator:
@@ -146,16 +247,48 @@ services:
       - mqtt
     restart: unless-stopped
 
+  coap-adapter:
+    build:
+      context: ./coap_adapter
+    container_name: coap_adapter
+    ports:
+      - "5683:5683"
+    environment:
+      - KAFKA_BOOTSTRAP=kafka:9092
+      - KAFKA_TOPIC=iot-events
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
   rule-engine:
     build:
       context: ./rule_engine
     container_name: rule_engine
     environment:
+      - TZ=Asia/Ho_Chi_Minh
       - MQTT_USERNAME=rule_engine
       - MQTT_PASSWORD=ruleengine_secret
+      - MYSQL_HOST=mysql
+      - MYSQL_USER=iot
+      - MYSQL_PASSWORD=iot123
+      - MYSQL_DATABASE=iot_data
+      - DEVICE_OFFLINE_THRESHOLD_MINUTES=10
+      - IOT_PLATFORM_URL=http://fastapi-backend:8000
+      - INTERNAL_API_KEY=internal-rule-engine-key-change-in-production
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - ZALO_ACCESS_TOKEN=${ZALO_ACCESS_TOKEN:-}
+      - SMTP_SERVER=${SMTP_SERVER:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
     depends_on:
-      - mqtt
-      - device-control
+      mqtt:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      device-control:
+        condition: service_started
     restart: unless-stopped
 
   grafana:

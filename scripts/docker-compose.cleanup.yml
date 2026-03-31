@@ -1,0 +1,40 @@
+# Thêm service này vào docker-compose.yml chính
+# hoặc chạy: docker-compose -f docker-compose.yml -f scripts/docker-compose.cleanup.yml up -d
+
+version: '3.8'
+
+services:
+  # Cleanup service - chạy định kỳ để xóa dữ liệu cũ
+  data-cleanup:
+    image: python:3.10-slim
+    container_name: data_cleanup
+    restart: unless-stopped
+    depends_on:
+      - mysql
+      - mongodb
+    volumes:
+      - ./scripts:/scripts
+    environment:
+      - MYSQL_HOST=mysql
+      - MONGODB_HOST=mongodb
+      - CLEANUP_DAYS=30  # Giữ dữ liệu 30 ngày
+      - CLEANUP_INTERVAL=86400  # Chạy mỗi 24h (86400 seconds)
+    command: >
+      bash -c "
+        pip install pymongo mysql-connector-python &&
+        echo 'Setting up MongoDB TTL index...' &&
+        python /scripts/setup_mongodb_ttl.py --days 30 &&
+        echo 'Starting cleanup loop...' &&
+        while true; do
+          echo '[$(date)] Running MySQL cleanup...' &&
+          python /scripts/cleanup_mysql_old_data.py --days 30 &&
+          echo '[$(date)] Cleanup done. Sleeping for 24h...' &&
+          sleep 86400
+        done
+      "
+    networks:
+      - iot-network
+
+networks:
+  iot-network:
+    external: true

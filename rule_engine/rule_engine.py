@@ -1,14 +1,19 @@
 # rule_engine/rule_engine.py
 
 import json
+import os
 import time
 import threading
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from kafka import KafkaConsumer
 import mysql.connector
 import paho.mqtt.client as mqtt
+from croniter import croniter
+import requests
+
+from alarm_service import create_alarm, send_notifications_for_alarm
 
 # -------------------------------------------------
 # Config
@@ -29,11 +34,37 @@ MYSQL_CONFIG = {
 
 RULE_REFRESH_SECONDS = 30
 COMMAND_POLL_SECONDS = 2
+DEVICE_OFFLINE_THRESHOLD_MINUTES = int(os.getenv("DEVICE_OFFLINE_THRESHOLD_MINUTES", "10"))
+DEVICE_OFFLINE_CHECK_INTERVAL = 60  # seconds
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
+
+# #region agent log (debug runtime)
+DEBUG_INGEST_URL = "http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449"
+DEBUG_SESSION_ID = "7926b3"
+
+def debug_log(hypothesis_id: str, location: str, message: str, data: dict):
+    try:
+        requests.post(
+            DEBUG_INGEST_URL,
+            json={
+                "sessionId": DEBUG_SESSION_ID,
+                "location": location,
+                "message": message,
+                "hypothesisId": hypothesis_id,
+                "data": data,
+                "timestamp": int(time.time() * 1000),
+            },
+            headers={"Content-Type": "application/json"},
+            timeout=2,
+        ).raise_for_status()
+    except Exception:
+        # Không làm ảnh hưởng luồng rule engine khi debug server lỗi
+        pass
+# #endregion
 
 
 # -------------------------------------------------
@@ -81,7 +112,7 @@ def load_rules():
     try:
         cursor.execute(
             """
-            SELECT r.id as rule_id, r.ten_rule, r.condition_device_id, r.field, r.operator,
+            SELECT r.id as rule_id, r.ten_rule, r.phong_id, r.condition_device_id, r.field, r.operator,
                    r.value, r.conditions, r.trang_thai, r.muc_do_uu_tien,
                    ra.id as action_id, ra.device_id as action_device_id,
                    ra.action_command, ra.action_params, ra.delay_seconds, ra.thu_tu
@@ -114,6 +145,7 @@ def load_rules():
                 rules[rid] = {
                     "id": rid,
                     "ten_rule": row["ten_rule"],
+                    "phong_id": row.get("phong_id"),
                     "condition_device_id": row["condition_device_id"],
                     "conditions": conds,
                     "muc_do_uu_tien": row["muc_do_uu_tien"],
@@ -169,13 +201,20 @@ def insert_command(rule_id, action, payload):
 # MQTT Publisher
 # -------------------------------------------------
 mqtt_client = mqtt.Client()
+# Set authentication credentials
+mqtt_username = os.getenv("MQTT_USERNAME", "bdu_admin")
+mqtt_password = os.getenv("MQTT_PASSWORD", "admin_secret")
+mqtt_client.username_pw_set(mqtt_username, mqtt_password)
 mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
 mqtt_client.loop_start()
+logging.info(f"[MQTT] Connected to {MQTT_BROKER}:{MQTT_PORT} as {mqtt_username}")
 
 
 def publish_command(cmd):
     topic = f"iot/devices/{cmd['device_id']}/control"
-    payload = {"command": cmd["command"], "params": cmd.get("payload_json")}
+    # Gửi payload trực tiếp, không wrap trong command/params
+    # Thiết bị expect format: {"relay": 1, "state": "OFF"}
+    payload = cmd.get("payload_json", {})
     mqtt_client.publish(topic, json.dumps(payload), qos=1)
     logging.info(f"[MQTT] Sent command -> {topic} {payload}")
 
@@ -280,6 +319,27 @@ def evaluate_event(event):
                 passed = False
                 break
         if passed:
+            # Tạo alarm rule_triggered và gửi thông báo
+            cond_summary = ", ".join(
+                f"{c.get('field')}{c.get('operator')}{c.get('value')}"
+                for c in conditions[:3]
+            )
+            tin_nhan = (
+                f"Rule '{rule.get('ten_rule', rule['id'])}' kích hoạt trên thiết bị {device_id}. "
+                f"Điều kiện: {cond_summary}"
+            )
+            alarm_id = create_alarm(
+                loai="rule_triggered",
+                tin_nhan=tin_nhan,
+                device_id=device_id,
+                rule_id=rule["id"],
+                muc_do="medium",
+                data_context={"event": event, "rule_name": rule.get("ten_rule")},
+            )
+            if alarm_id:
+                send_notifications_for_alarm(
+                    alarm_id, tin_nhan, phong_id=rule.get("phong_id")
+                )
             for action in rule.get("actions", []):
                 payload = action.get("action_params")
                 insert_command(rule["id"], action, payload)
@@ -330,6 +390,254 @@ def kafka_consumer_loop():
             time.sleep(10)
 
 
+def device_offline_check_loop():
+    """
+    Job định kỳ: kiểm tra thiết bị offline (last_seen > threshold).
+    Tạo alarm device_offline và gửi thông báo.
+    """
+    logging.info("[DEVICE_OFFLINE] Thread started")
+    while not should_stop:
+        try:
+            time.sleep(DEVICE_OFFLINE_CHECK_INTERVAL)
+            logging.info(f"[DEVICE_OFFLINE] Starting check cycle (threshold: {DEVICE_OFFLINE_THRESHOLD_MINUTES} min)")
+            threshold = datetime.utcnow() - timedelta(minutes=DEVICE_OFFLINE_THRESHOLD_MINUTES)
+            conn = get_mysql_conn()
+            cursor = conn.cursor(dictionary=True)
+            try:
+                cursor.execute(
+                    """
+                    SELECT t.id, t.ma_thiet_bi, t.ten_thiet_bi, t.phong_id, t.last_seen
+                    FROM thiet_bi t
+                    WHERE t.is_active = 1
+                      AND t.last_seen IS NOT NULL
+                      AND t.last_seen < %s
+                    """,
+                    (threshold,),
+                )
+                offline_devices = cursor.fetchall()
+                logging.info(f"[DEVICE_OFFLINE] Found {len(offline_devices)} offline devices")
+                for dev in offline_devices:
+                    ma_thiet_bi = dev["ma_thiet_bi"]
+                    # Kiểm tra đã có alarm chưa giải quyết cho device này chưa
+                    cursor.execute(
+                        """
+                        SELECT id FROM canh_bao
+                        WHERE device_id = %s AND loai = 'device_offline'
+                          AND trang_thai IN ('new', 'acknowledged')
+                        LIMIT 1
+                        """,
+                        (ma_thiet_bi,),
+                    )
+                    if cursor.fetchone():
+                        continue  # Đã có alarm, không tạo trùng
+                    tin_nhan = (
+                        f"Thiết bị {dev.get('ten_thiet_bi', ma_thiet_bi)} ({ma_thiet_bi}) "
+                        f"offline hơn {DEVICE_OFFLINE_THRESHOLD_MINUTES} phút. "
+                        f"Lần cuối: {dev.get('last_seen')}"
+                    )
+                    alarm_id = create_alarm(
+                        loai="device_offline",
+                        tin_nhan=tin_nhan,
+                        device_id=ma_thiet_bi,
+                        muc_do="high",
+                        data_context={"last_seen": str(dev.get("last_seen"))},
+                    )
+                    if alarm_id:
+                        send_notifications_for_alarm(
+                            alarm_id, tin_nhan, phong_id=dev.get("phong_id")
+                        )
+                        logging.info(f"[DEVICE_OFFLINE] Alarm created for {ma_thiet_bi}")
+            finally:
+                cursor.close()
+                conn.close()
+        except Exception as e:
+            logging.error(f"[DEVICE_OFFLINE] Check failed: {e}", exc_info=True)
+
+
+def scheduled_rules_check_loop():
+    """
+    Job mỗi phút: kiểm tra scheduled_rules và chạy các rule có cron khớp.
+    Gửi lệnh qua bảng commands (sẽ được command_publisher_loop gửi MQTT).
+    """
+    SCHEDULED_CHECK_INTERVAL = 60  # seconds
+    while not should_stop:
+        try:
+            time.sleep(SCHEDULED_CHECK_INTERVAL)
+            now = datetime.now()
+            conn = get_mysql_conn()
+            cursor = conn.cursor(dictionary=True)
+            try:
+                cursor.execute(
+                    """
+                    SELECT id, ten_rule, cron_expression, device_id, action_command, action_params, last_run_at
+                    FROM scheduled_rules
+                    WHERE trang_thai = 'enabled'
+                    """
+                )
+                rows = cursor.fetchall()
+                for row in rows:
+                    try:
+                        cron_expr = row["cron_expression"]
+                        if not cron_expr or not cron_expr.strip():
+                            continue
+                        try:
+                            # Kiểm tra xem thời điểm hiện tại có khớp với cron expression không
+                            cron = croniter(cron_expr, now)
+                            # Lấy lần chạy tiếp theo từ 1 phút trước
+                            prev_time = now - timedelta(minutes=1)
+                            cron_prev = croniter(cron_expr, prev_time)
+                            next_run = cron_prev.get_next(datetime)
+                            
+                            # Kiểm tra xem next_run có nằm trong phút hiện tại không
+                            current_minute = now.replace(second=0, microsecond=0)
+                            next_minute = current_minute + timedelta(minutes=1)
+                            
+                            if not (current_minute <= next_run < next_minute):
+                                continue
+                            
+                            # Kiểm tra đã chạy trong phút này chưa
+                            last_run = row.get("last_run_at")
+                            if last_run:
+                                last_run_minute = last_run.replace(second=0, microsecond=0)
+                                if last_run_minute >= current_minute:
+                                    continue
+                        except Exception as e:
+                            logging.warning(f"[SCHEDULED] Invalid cron '{cron_expr}': {e}")
+                            continue
+
+                        payload = row.get("action_params")
+                        if isinstance(payload, str):
+                            try:
+                                payload = json.loads(payload) if payload else None
+                            except Exception:
+                                payload = None
+
+                        # #region agent log
+                        debug_log(
+                            hypothesis_id="H_scheduled_fire",
+                            location="rule_engine:scheduled_rules_check_loop",
+                            message="scheduled_rule_match_fire",
+                            data={
+                                "rule_id": row.get("id"),
+                                "ten_rule": row.get("ten_rule"),
+                                "cron_expression": cron_expr,
+                                "device_id": row.get("device_id"),
+                                "action_command": row.get("action_command"),
+                                "current_minute": current_minute.isoformat(),
+                                "next_run": next_run.isoformat(),
+                                "last_run_at": str(row.get("last_run_at")),
+                                "action_params_type": type(payload).__name__ if payload is not None else "null",
+                            },
+                        )
+                        # #endregion
+
+                        # Gọi API endpoint thay vì insert vào commands
+                        # API sẽ tự động routing: HTTP (nếu có edge_control_url) hoặc MQTT
+                        device_id = row["device_id"]
+                        action_command = row["action_command"]
+                        
+                        # Lấy token để gọi API (dùng service account hoặc admin token)
+                        api_base_url = os.getenv("IOT_PLATFORM_URL", "http://fastapi-backend:8000")
+                        
+                        # Tạo service token hoặc dùng token có sẵn
+                        # Để đơn giản, tạo request trực tiếp với internal call
+                        try:
+                            if action_command == "relay" and payload:
+                                # Gọi API control-relay
+                                api_url = f"{api_base_url}/devices/{device_id}/control-relay"
+                                headers = {"Content-Type": "application/json"}
+                                
+                                # Lấy JWT token từ env hoặc tạo internal token
+                                # Để bypass auth cho internal calls, có thể dùng special header
+                                internal_api_key = os.getenv("INTERNAL_API_KEY", "")
+                                if internal_api_key:
+                                    headers["X-Internal-Key"] = internal_api_key
+                                    logging.info(f"[SCHEDULED] Using internal API key for authentication")
+                                else:
+                                    logging.warning(f"[SCHEDULED] INTERNAL_API_KEY not set! Request will fail with 401")
+                                
+                                logging.info(f"[SCHEDULED] Calling API: {api_url} with headers: {list(headers.keys())}")
+                                
+                                response = requests.post(
+                                    api_url,
+                                    json=payload,
+                                    headers=headers,
+                                    timeout=15
+                                )
+                                
+                                if response.status_code == 200:
+                                    result = response.json()
+                                    via = result.get("via", "unknown")
+                                    logging.info(
+                                        f"[SCHEDULED] Rule {row['id']} executed via {via.upper()} -> {device_id} relay {payload.get('relay')} {payload.get('state')}"
+                                    )
+                                else:
+                                    # API failed, fallback to commands table
+                                    logging.warning(
+                                        f"[SCHEDULED] API call failed ({response.status_code}): {response.text[:200]}"
+                                    )
+                                    logging.warning(
+                                        f"[SCHEDULED] API call failed ({response.status_code}), falling back to commands table"
+                                    )
+                                    cursor.execute(
+                                        """
+                                        INSERT INTO commands (device_id, command, payload, status, rule_id, rule_action_id, created_at)
+                                        VALUES (%s, %s, %s, 'pending', NULL, NULL, NOW())
+                                        """,
+                                        (device_id, action_command, json.dumps(payload) if payload else None),
+                                    )
+                                    logging.info(
+                                        f"[SCHEDULED] Rule {row['id']} queued to commands (fallback) -> {device_id} {action_command}"
+                                    )
+                            else:
+                                # Fallback: insert vào commands cho các action khác
+                                cursor.execute(
+                                    """
+                                    INSERT INTO commands (device_id, command, payload, status, rule_id, rule_action_id, created_at)
+                                    VALUES (%s, %s, %s, 'pending', NULL, NULL, NOW())
+                                    """,
+                                    (device_id, action_command, json.dumps(payload) if payload else None),
+                                )
+                                logging.info(
+                                    f"[SCHEDULED] Rule {row['id']} queued to commands -> {device_id} {action_command}"
+                                )
+                        except requests.RequestException as req_err:
+                            logging.error(f"[SCHEDULED] API request failed: {req_err}, falling back to commands")
+                            # Fallback: insert vào commands
+                            cursor.execute(
+                                """
+                                INSERT INTO commands (device_id, command, payload, status, rule_id, rule_action_id, created_at)
+                                VALUES (%s, %s, %s, 'pending', NULL, NULL, NOW())
+                                """,
+                                (device_id, action_command, json.dumps(payload) if payload else None),
+                            )
+                        
+                        cursor.execute(
+                            "UPDATE scheduled_rules SET last_run_at = NOW() WHERE id = %s",
+                            (row["id"],),
+                        )
+                        conn.commit()
+                    except Exception as e:
+                        logging.error(f"[SCHEDULED] Rule {row.get('id')} failed: {e}")
+                        # #region agent log
+                        debug_log(
+                            hypothesis_id="H_scheduled_fire",
+                            location="rule_engine:scheduled_rules_check_loop",
+                            message="scheduled_rule_fire_error",
+                            data={
+                                "rule_id": row.get("id"),
+                                "error": str(e)[:400],
+                            },
+                        )
+                        # #endregion
+                        conn.rollback()
+            finally:
+                cursor.close()
+                conn.close()
+        except Exception as e:
+            logging.error(f"[SCHEDULED] Check loop failed: {e}")
+
+
 def watchdog_loop():
     """Monitor Kafka consumer and exit process if stalled for too long."""
     global last_event_time
@@ -361,12 +669,22 @@ def main():
     t_consumer = threading.Thread(target=kafka_consumer_loop, daemon=True)
     t_publisher = threading.Thread(target=command_publisher_loop, daemon=True)
     t_watchdog = threading.Thread(target=watchdog_loop, daemon=True)
-    
+    t_offline = threading.Thread(target=device_offline_check_loop, daemon=True)
+    t_scheduled = threading.Thread(target=scheduled_rules_check_loop, daemon=True)
+
+    logging.info("[MAIN] Starting threads...")
     t_consumer.start()
     t_publisher.start()
     t_watchdog.start()
+    logging.info("[MAIN] Starting device_offline_check_loop thread...")
+    t_offline.start()
+    logging.info("[MAIN] device_offline_check_loop thread started")
+    t_scheduled.start()
 
-    logging.info("🚀 Rule Engine started (Kafka → MySQL commands → MQTT) with watchdog")
+    logging.info(
+        "🚀 Rule Engine started (Kafka → MySQL commands → MQTT) "
+        "with watchdog + device_offline alarm + scheduled_rules"
+    )
     try:
         while True:
             time.sleep(1)

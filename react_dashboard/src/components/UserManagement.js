@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { fetchUsers, createUser, updateUser, deleteUser, fetchUserPermissions, updateUserPermissions } from '../services';
-import { PAGES } from '../config/pages';
+import { fetchUsers, createUser, updateUser, deleteUser, impersonateUser } from '../services';
 
 export default function UserManagement({ token, onBack }) {
     const [users, setUsers] = useState([]);
@@ -13,7 +12,7 @@ export default function UserManagement({ token, onBack }) {
         password: '',
         vai_tro: 'student',
     });
-    const [selectedPermissions, setSelectedPermissions] = useState([]);
+
 
     const loadUsers = useCallback(async () => {
         setLoading(true);
@@ -33,7 +32,6 @@ export default function UserManagement({ token, onBack }) {
 
     const resetForm = () => {
         setFormData({ ten: '', email: '', password: '', vai_tro: 'student' });
-        setSelectedPermissions([]);
         setEditUserId(null);
     };
 
@@ -50,20 +48,6 @@ export default function UserManagement({ token, onBack }) {
             vai_tro: user.vai_tro,
         });
         setEditUserId(user.id);
-
-        // Load user permissions if not admin
-        if (user.vai_tro !== 'admin') {
-            try {
-                const res = await fetchUserPermissions(user.id, token);
-                setSelectedPermissions(res.data.pages || []);
-            } catch (err) {
-                console.error('Load permissions failed', err);
-                setSelectedPermissions([]);
-            }
-        } else {
-            setSelectedPermissions([]);
-        }
-
         setFormVisible(true);
     };
 
@@ -78,13 +62,23 @@ export default function UserManagement({ token, onBack }) {
         }
     };
 
-    const handlePermissionToggle = (pageId) => {
-        setSelectedPermissions(prev =>
-            prev.includes(pageId)
-                ? prev.filter(p => p !== pageId)
-                : [...prev, pageId]
-        );
+    const handleImpersonate = async (user) => {
+        if (!window.confirm(`Đăng nhập vào tài khoản "${user.ten}"?\n\nBạn sẽ cần đăng xuất và đăng nhập lại để quay về tài khoản của mình.`)) return;
+        try {
+            const res = await impersonateUser(user.id, token);
+            // Save new token and user info
+            localStorage.setItem('token', res.data.access_token);
+            localStorage.setItem('userRole', res.data.vai_tro);
+            localStorage.setItem('allowedPages', JSON.stringify(res.data.allowed_pages || []));
+            // Reload page to apply new session
+            window.location.reload();
+        } catch (err) {
+            console.error('Impersonate failed', err);
+            alert('Đăng nhập thất bại: ' + (err.response?.data?.detail || err.message));
+        }
     };
+
+
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -108,23 +102,13 @@ export default function UserManagement({ token, onBack }) {
                     updateData.password = formData.password;
                 }
                 await updateUser(editUserId, updateData, token);
-
-                // Update permissions if not admin
-                if (formData.vai_tro !== 'admin') {
-                    await updateUserPermissions(editUserId, selectedPermissions, token);
-                }
             } else {
-                const res = await createUser({
+                await createUser({
                     ten: formData.ten,
                     email: formData.email,
                     password: formData.password,
                     vai_tro: formData.vai_tro,
                 }, token);
-
-                // Set permissions for new user if not admin
-                if (formData.vai_tro !== 'admin' && res.data.id) {
-                    await updateUserPermissions(res.data.id, selectedPermissions, token);
-                }
             }
             resetForm();
             setFormVisible(false);
@@ -178,6 +162,7 @@ export default function UserManagement({ token, onBack }) {
                                     <td>
                                         <button className="btn-edit" onClick={() => handleEdit(user)}>Sửa</button>
                                         <button className="btn-delete" onClick={() => handleDelete(user)}>Xóa</button>
+                                        <button className="btn-login" onClick={() => handleImpersonate(user)} style={{ marginLeft: '5px', background: '#10b981', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}>Đăng nhập</button>
                                     </td>
                                 </tr>
                             ))}
@@ -241,23 +226,7 @@ export default function UserManagement({ token, onBack }) {
                                 </select>
                             </label>
 
-                            {formData.vai_tro !== 'admin' && (
-                                <div className="permissions-section">
-                                    <label>Quyền truy cập trang:</label>
-                                    <div className="permissions-grid">
-                                        {PAGES.map(page => (
-                                            <label key={page.id} className="permission-checkbox">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedPermissions.includes(page.id)}
-                                                    onChange={() => handlePermissionToggle(page.id)}
-                                                />
-                                                <span>{page.label}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
+
 
                             <div className="form-actions">
                                 <button type="submit">{editUserId ? 'Cập nhật' : 'Tạo người dùng'}</button>
