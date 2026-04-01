@@ -8,7 +8,7 @@ import '../models/room_data.dart';
 
 class ApiService {
   // Thay YOUR_SERVER_IP bằng IP thực tế của server
-  static const String baseUrl = 'http://192.168.1.8:8001';
+  static const String baseUrl = 'http://192.168.190.51:8001';
   
   final storage = const FlutterSecureStorage();
   String? _token;
@@ -267,6 +267,263 @@ class ApiService {
     } else {
       final error = jsonDecode(response.body);
       throw Exception(error['detail'] ?? 'Điều khiển thất bại');
+    }
+  }
+
+  // Get devices list for dropdown
+  Future<List<Map<String, dynamic>>> getDevicesForDropdown({int? phongId}) async {
+    if (_token == null) await loadToken();
+
+    var uri = Uri.parse('$baseUrl/devices');
+    if (phongId != null) {
+      uri = uri.replace(queryParameters: {'phong_id': phongId.toString()});
+    }
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return List<Map<String, dynamic>>.from(data['devices'] ?? []);
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được danh sách thiết bị');
+    }
+  }
+
+  // Get relay names for a device
+  Future<List<Map<String, dynamic>>> getDeviceRelays(String deviceId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/devices/$deviceId/relays'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return List<Map<String, dynamic>>.from(data['relays'] ?? []);
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được danh sách relay');
+    }
+  }
+
+  // ========== RULES APIs ==========
+
+  // Get all conditional rules
+  Future<List<dynamic>> getRules({int? phongId, String? trangThai}) async {
+    if (_token == null) await loadToken();
+
+    var uri = Uri.parse('$baseUrl/rules');
+    final params = <String, String>{};
+    if (phongId != null) params['phong_id'] = phongId.toString();
+    if (trangThai != null) params['trang_thai'] = trangThai;
+    if (params.isNotEmpty) {
+      uri = uri.replace(queryParameters: params);
+    }
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['rules'] ?? [];
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được danh sách rules');
+    }
+  }
+
+  // Create conditional rule
+  Future<Map<String, dynamic>> createRule(Map<String, dynamic> ruleData) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/rules'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_token',
+      },
+      body: jsonEncode(ruleData),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['detail'] ?? 'Tạo rule thất bại');
+    }
+  }
+
+  // Update conditional rule
+  Future<Map<String, dynamic>> updateRule(
+      int ruleId, Map<String, dynamic> ruleData) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.put(
+      Uri.parse('$baseUrl/rules/$ruleId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_token',
+      },
+      body: jsonEncode(ruleData),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['detail'] ?? 'Cập nhật rule thất bại');
+    }
+  }
+
+  // Delete conditional rule
+  Future<void> deleteRule(int ruleId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.delete(
+      Uri.parse('$baseUrl/rules/$ruleId'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['detail'] ?? 'Xóa rule thất bại');
+    }
+  }
+
+  // ========== SCHEDULED RULES APIs ==========
+
+  // Get all scheduled rules
+  Future<List<dynamic>> getScheduledRules(
+      {int? phongId, String? trangThai}) async {
+    if (_token == null) await loadToken();
+
+    var uri = Uri.parse('$baseUrl/scheduled-rules');
+    final params = <String, String>{};
+    if (phongId != null) params['phong_id'] = phongId.toString();
+    if (trangThai != null) params['trang_thai'] = trangThai;
+    if (params.isNotEmpty) {
+      uri = uri.replace(queryParameters: params);
+    }
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['scheduled_rules'] ?? [];
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được danh sách scheduled rules');
+    }
+  }
+
+  // Create scheduled rule
+  Future<Map<String, dynamic>> createScheduledRule(
+      Map<String, dynamic> ruleData) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/scheduled-rules'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_token',
+      },
+      body: jsonEncode(ruleData),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['detail'] ?? 'Tạo scheduled rule thất bại');
+    }
+  }
+
+  // Update scheduled rule
+  Future<Map<String, dynamic>> updateScheduledRule(
+      int ruleId, Map<String, dynamic> ruleData) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.put(
+      Uri.parse('$baseUrl/scheduled-rules/$ruleId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_token',
+      },
+      body: jsonEncode(ruleData),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['detail'] ?? 'Cập nhật scheduled rule thất bại');
+    }
+  }
+
+  // Delete scheduled rule
+  Future<void> deleteScheduledRule(int ruleId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.delete(
+      Uri.parse('$baseUrl/scheduled-rules/$ruleId'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['detail'] ?? 'Xóa scheduled rule thất bại');
     }
   }
 }

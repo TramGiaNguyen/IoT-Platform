@@ -7,6 +7,7 @@ import '../models/room_data.dart';
 import '../models/device.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/relay_control_widget.dart';
+import 'rules_screen.dart';
 
 class RoomDetailScreen extends StatefulWidget {
   final Room room;
@@ -176,6 +177,18 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         backgroundColor: Colors.blue.shade900,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.rule),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => RulesScreen(roomId: widget.room.id),
+                ),
+              );
+            },
+            tooltip: 'Rules',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadRoomData,

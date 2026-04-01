@@ -6,6 +6,7 @@ import '../models/room.dart';
 import '../widgets/room_card.dart';
 import 'room_detail_screen.dart';
 import 'login_screen.dart';
+import 'rules_screen.dart';
 
 class RoomListScreen extends StatefulWidget {
   const RoomListScreen({Key? key}) : super(key: key);
@@ -133,6 +134,18 @@ class _RoomListScreenState extends State<RoomListScreen> {
         backgroundColor: Colors.blue.shade900,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.rule),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const RulesScreen(),
+                ),
+              );
+            },
+            tooltip: 'Tất cả Rules',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadRooms,
