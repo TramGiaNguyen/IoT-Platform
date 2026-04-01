@@ -653,10 +653,494 @@ async def fetch_platform_events():
             await asyncio.sleep(5)  # Retry after 5 seconds
 
 
+# ========== DEVICES APIs FOR RULES ==========
+
+@app.get("/devices")
+async def get_devices_list(
+    phong_id: Optional[int] = None,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """
+    Lấy danh sách thiết bị để chọn trong rule form
+    """
+    platform_token = token_data["platform_token"]
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            params = {}
+            if phong_id is not None:
+                params["phong_id"] = phong_id
+            
+            response = await client.get(
+                f"{IOT_PLATFORM_URL}/devices",
+                params=params,
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Không lấy được danh sách thiết bị"
+                )
+            
+            data = response.json()
+            # Simplify response for dropdown
+            devices = []
+            for device in data.get('devices', []):
+                devices.append({
+                    'device_id': device.get('ma_thiet_bi'),
+                    'name': device.get('ten_thiet_bi'),
+                    'phong_id': device.get('phong_id'),
+                })
+            
+            return {"devices": devices}
+            
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.get("/devices/{device_id}/relays")
+async def get_device_relays(
+    device_id: str,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """
+    Lấy danh sách relay và tên của thiết bị
+    """
+    platform_token = token_data["platform_token"]
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{IOT_PLATFORM_URL}/devices/{device_id}/control-lines",
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Không lấy được danh sách relay"
+                )
+            
+            data = response.json()
+            relays = []
+            for line in data.get('control_lines', []):
+                if line.get('hien_thi_ttcds') in [True, 1, '1']:
+                    relays.append({
+                        'relay': line.get('relay_number'),
+                        'name': line.get('ten_duong') or f"Relay {line.get('relay_number')}",
+                    })
+            
+            return {"relays": relays}
+            
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+# ========== RULES APIs ==========
+
+@app.get("/rules")
+async def get_rules(
+    phong_id: Optional[int] = None,
+    trang_thai: Optional[str] = None,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """
+    Lấy danh sách conditional rules
+    
+    Query params:
+    - phong_id: Lọc theo phòng
+    - trang_thai: Lọc theo trạng thái (enabled/disabled)
+    """
+    platform_token = token_data["platform_token"]
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            params = {}
+            if phong_id is not None:
+                params["phong_id"] = phong_id
+            if trang_thai is not None:
+                params["trang_thai"] = trang_thai
+            
+            response = await client.get(
+                f"{IOT_PLATFORM_URL}/rules",
+                params=params,
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Không lấy được danh sách rules"
+                )
+            
+            return response.json()
+            
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.post("/rules")
+async def create_rule(
+    rule_data: dict,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """
+    Tạo conditional rule mới
+    
+    Body format:
+    {
+        "ten_rule": "Bật quạt khi nóng",
+        "phong_id": 1,
+        "condition_device_id": "gateway-xxx",
+        "conditions": [
+            {"field": "temperature", "operator": ">", "value": 30}
+        ],
+        "actions": [
+            {
+                "device_id": "gateway-xxx",
+                "action_command": "relay",
+                "action_params": {"relay": 1, "state": "ON"},
+                "delay_seconds": 0,
+                "thu_tu": 1
+            }
+        ],
+        "muc_do_uu_tien": 1,
+        "trang_thai": "enabled"
+    }
+    """
+    platform_token = token_data["platform_token"]
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{IOT_PLATFORM_URL}/rules",
+                json=rule_data,
+                headers={
+                    "Authorization": f"Bearer {platform_token}",
+                    "Content-Type": "application/json"
+                }
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Tạo rule thất bại: {response.text}"
+                )
+            
+            return response.json()
+            
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.put("/rules/{rule_id}")
+async def update_rule(
+    rule_id: int,
+    rule_data: dict,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Cập nhật conditional rule"""
+    platform_token = token_data["platform_token"]
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(
+                f"{IOT_PLATFORM_URL}/rules/{rule_id}",
+                json=rule_data,
+                headers={
+                    "Authorization": f"Bearer {platform_token}",
+                    "Content-Type": "application/json"
+                }
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Cập nhật rule thất bại: {response.text}"
+                )
+            
+            return response.json()
+            
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.delete("/rules/{rule_id}")
+async def delete_rule(
+    rule_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Xóa conditional rule"""
+    platform_token = token_data["platform_token"]
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.delete(
+                f"{IOT_PLATFORM_URL}/rules/{rule_id}",
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Xóa rule thất bại: {response.text}"
+                )
+            
+            return response.json()
+            
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+# ========== SCHEDULED RULES APIs ==========
+
+@app.get("/scheduled-rules")
+async def get_scheduled_rules(
+    phong_id: Optional[int] = None,
+    trang_thai: Optional[str] = None,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """
+    Lấy danh sách scheduled rules
+    
+    Query params:
+    - phong_id: Lọc theo phòng
+    - trang_thai: Lọc theo trạng thái (enabled/disabled)
+    """
+    platform_token = token_data["platform_token"]
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            params = {}
+            if phong_id is not None:
+                params["phong_id"] = phong_id
+            if trang_thai is not None:
+                params["trang_thai"] = trang_thai
+            
+            response = await client.get(
+                f"{IOT_PLATFORM_URL}/scheduled-rules",
+                params=params,
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Không lấy được danh sách scheduled rules"
+                )
+            
+            return response.json()
+            
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.post("/scheduled-rules")
+async def create_scheduled_rule(
+    rule_data: dict,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """
+    Tạo scheduled rule mới
+    
+    Body format:
+    {
+        "ten_rule": "Bật đèn lúc 6h sáng",
+        "phong_id": 1,
+        "cron_expression": "0 6 * * *",
+        "device_id": "gateway-xxx",
+        "action_command": "relay",
+        "action_params": {"relay": 1, "state": "ON"},
+        "trang_thai": "enabled"
+    }
+    
+    Cron format: "minute hour day month weekday"
+    - "0 6 * * *" = Hàng ngày lúc 6:00
+    - "0 18 * * 1-5" = Thứ 2-6 lúc 18:00
+    - "30 8 * * 0" = Chủ nhật lúc 8:30
+    """
+    platform_token = token_data["platform_token"]
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{IOT_PLATFORM_URL}/scheduled-rules",
+                json=rule_data,
+                headers={
+                    "Authorization": f"Bearer {platform_token}",
+                    "Content-Type": "application/json"
+                }
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Tạo scheduled rule thất bại: {response.text}"
+                )
+            
+            return response.json()
+            
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.put("/scheduled-rules/{rule_id}")
+async def update_scheduled_rule(
+    rule_id: int,
+    rule_data: dict,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Cập nhật scheduled rule"""
+    platform_token = token_data["platform_token"]
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(
+                f"{IOT_PLATFORM_URL}/scheduled-rules/{rule_id}",
+                json=rule_data,
+                headers={
+                    "Authorization": f"Bearer {platform_token}",
+                    "Content-Type": "application/json"
+                }
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Cập nhật scheduled rule thất bại: {response.text}"
+                )
+            
+            return response.json()
+            
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.delete("/scheduled-rules/{rule_id}")
+async def delete_scheduled_rule(
+    rule_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Xóa scheduled rule"""
+    platform_token = token_data["platform_token"]
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.delete(
+                f"{IOT_PLATFORM_URL}/scheduled-rules/{rule_id}",
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Xóa scheduled rule thất bại: {response.text}"
+                )
+            
+            return response.json()
+            
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
 @app.on_event("startup")
 async def startup_websocket():
-    """Start background task to fetch platform events"""
-    # Note: websockets library needs to be installed
-    # For now, we'll use polling from platform API instead
-    pass
+    """Start background task to subscribe MQTT and broadcast events"""
+    import asyncio
+    try:
+        print("[STARTUP] Creating MQTT to WebSocket bridge task...")
+        asyncio.create_task(mqtt_to_websocket_bridge())
+        print("[STARTUP] MQTT bridge task created")
+    except Exception as e:
+        print(f"[STARTUP] Error creating MQTT bridge: {e}")
+
+
+async def mqtt_to_websocket_bridge():
+    """Subscribe to MQTT and broadcast relay state changes to WebSocket clients"""
+    import paho.mqtt.client as mqtt_client
+    import os
+    
+    mqtt_broker = os.getenv("MQTT_BROKER", "mqtt")
+    mqtt_port = int(os.getenv("MQTT_PORT", "1883"))
+    mqtt_username = os.getenv("MQTT_USERNAME", "bdu_admin")
+    mqtt_password = os.getenv("MQTT_PASSWORD", "admin_secret")
+    
+    def on_connect(client, userdata, flags, rc):
+        if rc == 0:
+            print("[MQTT→WS] Connected to MQTT broker")
+            # Subscribe to device data and control topics
+            result1, mid1 = client.subscribe("iot/devices/+/data")
+            result2, mid2 = client.subscribe("iot/devices/+/control")
+            print(f"[MQTT→WS] Subscribed to iot/devices/+/data (result={result1})")
+            print(f"[MQTT→WS] Subscribed to iot/devices/+/control (result={result2})")
+        else:
+            print(f"[MQTT→WS] Failed to connect, return code {rc}")
+    
+    def on_message(client, userdata, msg):
+        try:
+            print(f"[MQTT→WS] Received message on topic: {msg.topic}")
+            payload = json.loads(msg.payload.decode())
+            print(f"[MQTT→WS] Payload: {payload}")
+            device_id = msg.topic.split('/')[2]
+            
+            # Add device_id if not present
+            if 'device_id' not in payload:
+                payload['device_id'] = device_id
+            
+            # Broadcast to WebSocket clients (sync version)
+            add_event_to_buffer(payload)
+            print(f"[MQTT→WS] Broadcasting to {len(active_ws_connections)} WebSocket clients")
+            
+            # Send to all connected clients
+            disconnected = []
+            for ws in active_ws_connections:
+                try:
+                    if ws.application_state == WebSocketState.CONNECTED:
+                        # Use asyncio.run_coroutine_threadsafe for thread-safe async call
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        asyncio.run_coroutine_threadsafe(ws.send_json(payload), loop)
+                    else:
+                        disconnected.append(ws)
+                except Exception as e:
+                    print(f"[MQTT→WS] Error sending to client: {e}")
+                    disconnected.append(ws)
+            
+            # Clean up disconnected clients
+            for ws in disconnected:
+                if ws in active_ws_connections:
+                    active_ws_connections.remove(ws)
+                ws_last_event_id.pop(ws, None)
+            
+        except Exception as e:
+            print(f"[MQTT→WS] Error processing message: {e}")
+    
+    # Create MQTT client
+    client = mqtt_client.Client()
+    client.username_pw_set(mqtt_username, mqtt_password)
+    client.on_connect = on_connect
+    client.on_message = on_message
+    
+    try:
+        client.connect(mqtt_broker, mqtt_port, 60)
+        client.loop_start()
+        print("[MQTT→WS] MQTT to WebSocket bridge started")
+        
+        # Keep running
+        while True:
+            await asyncio.sleep(1)
+    except Exception as e:
+        print(f"[MQTT→WS] Error: {e}")
+        await asyncio.sleep(5)  # Retry after 5 seconds
 
