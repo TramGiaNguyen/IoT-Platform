@@ -1,7 +1,7 @@
 # fastapi_backend/requirements.txt
 fastapi
 uvicorn[standard]
-python-jose
+python-jose[cryptography]
 passlib
 pymongo
 mysql-connector-python
@@ -10,3 +10,4 @@ kafka-python
 websockets
 paho-mqtt
 requests
+cryptography

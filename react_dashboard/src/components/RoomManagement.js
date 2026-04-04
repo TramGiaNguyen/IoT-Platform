@@ -339,7 +339,13 @@ export default function RoomManagement({ token, onBack }) {
           <div key={room.id} className="room-card">
             <div className="room-card-header">
               <div className="room-info">
-                <h3>{room.ten_phong}</h3>
+                <h3
+                  style={{ cursor: 'pointer', color: '#22d3ee' }}
+                  title="Nhap vao de xem chi tiet phong"
+                  onClick={() => window.location.hash = `#/rooms/${room.id}`}
+                >
+                  {room.ten_phong}
+                </h3>
                 <div className="room-meta">
                   {room.ma_phong && <span>Mã: {room.ma_phong}</span>}
                   {room.vi_tri && <span> • {room.vi_tri}</span>}

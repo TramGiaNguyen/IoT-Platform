@@ -13,6 +13,7 @@ import ClassManagement from './components/ClassManagement';
 import DashboardManagement from './components/DashboardManagement';
 import DashboardViewer from './components/DashboardViewer/DashboardViewer';
 import TTCDSDashboard from './components/TTCDSDashboard';
+import RoomDetail from './components/RoomDetail';
 import { canAccessPage } from './config/pages';
 import './styles/style.css';
 
@@ -118,6 +119,11 @@ function App() {
       if (hash.startsWith('#/rules')) {
         setCurrentView('rules');
         setSelectedDeviceId(null);
+      } else if (hash.startsWith('#/rooms/') && hash !== '#/rooms') {
+        // Chi tiết phòng: #/rooms/123
+        const roomId = hash.replace('#/rooms/', '');
+        setSelectedDeviceId(roomId);
+        setCurrentView('room-detail');
       } else       if (hash.startsWith('#/rooms')) {
         setCurrentView('rooms');
         setSelectedDeviceId(null);
@@ -257,6 +263,9 @@ function App() {
     activeTab = 'rules';
   } else if (currentView === 'rooms') {
     content = <RoomManagement token={token} onBack={handleBackToDashboard} />;
+    activeTab = 'rooms';
+  } else if (currentView === 'room-detail' && selectedDeviceId) {
+    content = <RoomDetail roomId={selectedDeviceId} token={token} />;
     activeTab = 'rooms';
   } else if (currentView === 'alerts') {
     content = <AlarmsManagement token={token} onBack={handleBackToDashboard} />;

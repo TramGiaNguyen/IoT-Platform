@@ -8,7 +8,7 @@ import '../models/room_data.dart';
 
 class ApiService {
   // Thay YOUR_SERVER_IP bằng IP thực tế của server
-  static const String baseUrl = 'http://192.168.190.51:8001';
+  static const String baseUrl = 'http://192.168.190.52:8001';
   
   final storage = const FlutterSecureStorage();
   String? _token;

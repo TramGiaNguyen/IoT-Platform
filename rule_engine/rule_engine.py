@@ -6,6 +6,7 @@ import time
 import threading
 import logging
 from datetime import datetime, timedelta
+from typing import Dict, Optional, Tuple
 
 from kafka import KafkaConsumer
 import mysql.connector
@@ -72,6 +73,84 @@ def debug_log(hypothesis_id: str, location: str, message: str, data: dict):
 # -------------------------------------------------
 def get_mysql_conn():
     return mysql.connector.connect(**MYSQL_CONFIG)
+
+
+# -------------------------------------------------
+# Occupancy cache (phòng → số người, TTL ~1s tránh query MySQL mỗi Kafka message)
+# -------------------------------------------------
+_occ_cache: Dict[int, Tuple[float, int]] = {}  # phong_id → (timestamp, so_nguoi)
+_OCC_TTL = 1.0  # giây
+
+
+def _get_occupancy(phong_id: int) -> int:
+    """Trả về so_nguoi (room_total) cho phong_id, đọc DB nếu cache hết hạn."""
+    global _occ_cache
+    now = time.time()
+    if phong_id in _occ_cache:
+        ts, val = _occ_cache[phong_id]
+        if now - ts < _OCC_TTL:
+            return val
+    conn = None
+    cursor = None
+    try:
+        conn = get_mysql_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT so_nguoi
+            FROM phong_occupancy
+            WHERE phong_id = %s AND count_type = 'room_total'
+            LIMIT 1
+            """,
+            (phong_id,),
+        )
+        row = cursor.fetchone()
+        val = int(row[0]) if row else 0
+    except Exception:
+        val = 0
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+    _occ_cache[phong_id] = (now, val)
+    return val
+
+
+def _get_room_id_for_device(device_id: str) -> Optional[int]:
+    """Tra phong_id của thiết bị qua thiet_bi (phòng gần nhất)."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_mysql_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT phong_id FROM thiet_bi WHERE ma_thiet_bi = %s LIMIT 1",
+            (device_id,),
+        )
+        row = cursor.fetchone()
+        return int(row[0]) if row else None
+    except Exception:
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def _enrich_event(event: dict) -> dict:
+    """Gắn so_nguoi_trong_phong vào event từ phong_occupancy (room_total)."""
+    ev = dict(event)
+    dev_id = ev.get("device_id")
+    if not dev_id:
+        return ev
+    phong_id = _get_room_id_for_device(dev_id)
+    if phong_id is not None:
+        ev["so_nguoi_trong_phong"] = _get_occupancy(phong_id)
+    else:
+        ev["so_nguoi_trong_phong"] = 0
+    return ev
 
 
 def parse_value(v):
@@ -166,6 +245,236 @@ def load_rules():
     finally:
         cursor.close()
         conn.close()
+
+
+# -------------------------------------------------
+# Occupancy rule polling (số người trong phòng → trigger rule)
+# -------------------------------------------------
+_OCC_RULE_REFRESH_SECONDS = 30
+
+def load_occupancy_rules():
+    """
+    Load các rule enabled mà conditions chứa 'so_nguoi_trong_phong'.
+    Nhóm theo rule_id, giống load_rules() nhưng chỉ occupancy rules.
+    """
+    conn = get_mysql_conn()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT r.id as rule_id, r.ten_rule, r.phong_id, r.condition_device_id,
+                   r.conditions, r.muc_do_uu_tien,
+                   ra.id as action_id, ra.device_id as action_device_id,
+                   ra.action_command, ra.action_params, ra.delay_seconds, ra.thu_tu
+            FROM rules r
+            LEFT JOIN rule_actions ra ON r.id = ra.rule_id
+            WHERE r.trang_thai = 'enabled'
+              AND r.conditions LIKE '%so_nguoi_trong_phong%'
+            ORDER BY r.muc_do_uu_tien ASC, r.id ASC, ra.thu_tu ASC
+            """
+        )
+        rows = cursor.fetchall()
+        rules = {}
+        for row in rows:
+            rid = row["rule_id"]
+            if rid not in rules:
+                conds = []
+                if row.get("conditions"):
+                    try:
+                        conds = json.loads(row["conditions"])
+                    except Exception:
+                        conds = []
+                rules[rid] = {
+                    "id": rid,
+                    "ten_rule": row["ten_rule"],
+                    "phong_id": row.get("phong_id"),
+                    "condition_device_id": row["condition_device_id"],
+                    "conditions": conds,
+                    "muc_do_uu_tien": row["muc_do_uu_tien"],
+                    "actions": [],
+                }
+            if row["action_id"]:
+                rules[rid]["actions"].append(
+                    {
+                        "id": row["action_id"],
+                        "device_id": row["action_device_id"],
+                        "action_command": row["action_command"],
+                        "action_params": row["action_params"],
+                        "delay_seconds": row["delay_seconds"] or 0,
+                        "thu_tu": row["thu_tu"] or 1,
+                    }
+                )
+        return list(rules.values())
+    finally:
+        cursor.close()
+        conn.close()
+
+
+class OccupancyRuleCache:
+    def __init__(self):
+        self.rules = []
+        self.last_loaded = 0
+
+    def get_rules(self):
+        now = time.time()
+        if now - self.last_loaded > _OCC_RULE_REFRESH_SECONDS:
+            self.rules = load_occupancy_rules()
+            self.last_loaded = now
+            logging.info(f"[OCC_RULE] Loaded {len(self.rules)} occupancy rules")
+        return self.rules
+
+
+_occ_rule_cache = OccupancyRuleCache()
+
+# Cooldown: rule_id -> timestamp của lần kích hoạt cuối
+_occ_last_triggered: Dict[int, float] = {}
+_OCC_COOLDOWN_SECONDS = 60  # Không kích hoạt lại cùng rule trong 60s
+
+
+def occupancy_polling_loop():
+    """
+    Mỗi OCC_POLL_INTERVAL giây: đọc occupancy từ phong_occupancy (room_total),
+    đánh giá occupancy rules, trigger actions nếu conditions pass.
+    Không phụ thuộc Kafka event — chạy độc lập với evaluate_event().
+
+    Cooldown: mỗi rule chỉ kích hoạt một lần trong OCC_COOLDOWN_SECONDS,
+    tránh spam khi occupancy giữ nguyên giá trị.
+    """
+    OCC_POLL_INTERVAL = 5  # seconds
+    while not should_stop:
+        try:
+            time.sleep(OCC_POLL_INTERVAL)
+            rules = _occ_rule_cache.get_rules()
+            if not rules:
+                continue
+
+            # Thu thập tất cả phong_id cần theo dõi
+            phong_ids = {r["phong_id"] for r in rules if r["phong_id"]}
+            if not phong_ids:
+                continue
+
+            # Bulk đọc occupancy: phong_id -> so_nguoi
+            occ_map = {}
+            occ_conn = get_mysql_conn()
+            occ_cursor = occ_conn.cursor(dictionary=True)
+            try:
+                placeholders = ",".join(["%s"] * len(phong_ids))
+                occ_cursor.execute(
+                    f"""
+                    SELECT phong_id, so_nguoi
+                    FROM phong_occupancy
+                    WHERE phong_id IN ({placeholders}) AND count_type = 'room_total'
+                    """,
+                    tuple(phong_ids),
+                )
+                for row in occ_cursor.fetchall():
+                    occ_map[row["phong_id"]] = int(row["so_nguoi"] or 0)
+            finally:
+                occ_cursor.close()
+                occ_conn.close()
+
+            now = time.time()
+
+            # Đánh giá mỗi rule với occupancy tương ứng
+            for rule in rules:
+                phong_id = rule["phong_id"]
+                so_nguoi = occ_map.get(phong_id, 0)
+                conditions = rule.get("conditions", [])
+                if not conditions:
+                    continue
+
+                passed = True
+                for cond in conditions:
+                    field = cond.get("field")
+                    value = {"so_nguoi_trong_phong": so_nguoi}.get(field)
+                    if value is None:
+                        passed = False
+                        break
+                    if not compare(value, cond.get("operator"), cond.get("value")):
+                        passed = False
+                        break
+
+                rule_id = rule["id"]
+
+                # Cooldown check: bỏ qua nếu rule vừa được kích hoạt gần đây
+                if passed:
+                    last_ts = _occ_last_triggered.get(rule_id, 0)
+                    if now - last_ts < _OCC_COOLDOWN_SECONDS:
+                        continue
+
+                if passed:
+                    _occ_last_triggered[rule_id] = now
+                    cond_summary = ", ".join(
+                        f"{c.get('field')}{c.get('operator')}{c.get('value')}"
+                        for c in conditions[:3]
+                    )
+                    tin_nhan = (
+                        f"Rule '{rule.get('ten_rule', rule['id'])}' (occupancy) kích hoạt. "
+                        f"Phòng {phong_id} có {so_nguoi} người. Điều kiện: {cond_summary}"
+                    )
+                    alarm_id = create_alarm(
+                        loai="rule_triggered",
+                        tin_nhan=tin_nhan,
+                        device_id=rule.get("condition_device_id"),
+                        rule_id=rule["id"],
+                        muc_do="medium",
+                        data_context={"event": {"so_nguoi_trong_phong": so_nguoi}, "rule_name": rule.get("ten_rule")},
+                    )
+                    if alarm_id:
+                        send_notifications_for_alarm(
+                            alarm_id, tin_nhan, phong_id=phong_id
+                        )
+                    for action in rule.get("actions", []):
+                        payload = action.get("action_params")
+                        if isinstance(payload, str):
+                            try:
+                                payload = json.loads(payload) if payload else None
+                            except Exception:
+                                payload = None
+
+                        action_command = action.get("action_command")
+                        device_id = action.get("device_id")
+
+                        # Gọi API /control-relay giống scheduled_rules_check_loop:
+                        # API tự động route HTTP edge hoặc MQTT, đúng cách như từ mobile app
+                        if action_command == "relay" and payload:
+                            api_base_url = os.getenv("IOT_PLATFORM_URL", "http://fastapi-backend:8000")
+                            api_url = f"{api_base_url}/devices/{device_id}/control-relay"
+                            headers = {"Content-Type": "application/json"}
+                            internal_api_key = os.getenv("INTERNAL_API_KEY", "")
+                            if internal_api_key:
+                                headers["X-Internal-Key"] = internal_api_key
+                            try:
+                                response = requests.post(
+                                    api_url,
+                                    json=payload,
+                                    headers=headers,
+                                    timeout=15,
+                                )
+                                if response.status_code == 200:
+                                    result = response.json()
+                                    via = result.get("via", "unknown")
+                                    logging.info(
+                                        f"[OCC_RULE HIT] rule={rule_id} phong={phong_id} "
+                                        f"so_nguoi={so_nguoi} action={action['id']} "
+                                        f"-> {device_id} relay via {via.upper()}"
+                                    )
+                                else:
+                                    logging.warning(
+                                        f"[OCC_RULE] API call failed ({response.status_code}): {response.text[:200]}"
+                                    )
+                            except requests.RequestException as req_err:
+                                logging.error(f"[OCC_RULE] API request failed: {req_err}")
+                        else:
+                            # Fallback cho các action_command khác
+                            insert_command(rule["id"], action, payload)
+                            logging.info(
+                                f"[OCC_RULE HIT] rule={rule_id} phong={phong_id} "
+                                f"so_nguoi={so_nguoi} action={action['id']} "
+                                f"-> queued to commands (fallback)"
+                            )
+        except Exception as e:
+            logging.error(f"[OCC_RULE] Polling error: {e}", exc_info=True)
 
 
 # -------------------------------------------------
@@ -299,6 +608,7 @@ rule_cache = RuleCache()
 
 
 def evaluate_event(event):
+    event = _enrich_event(event)
     device_id = event.get("device_id")
     if not device_id:
         return
@@ -306,11 +616,14 @@ def evaluate_event(event):
     for rule in rule_cache.get_rules():
         if rule["condition_device_id"] != device_id:
             continue
-        conditions = rule.get("conditions", [])
-        if not conditions:
+        # Bỏ qua occupancy rules — chúng được xử lý bởi occupancy_polling_loop
+        conds = rule.get("conditions", [])
+        if any(c.get("field") == "so_nguoi_trong_phong" for c in conds):
+            continue
+        if not conds:
             continue
         passed = True
-        for cond in conditions:
+        for cond in conds:
             field = cond.get("field")
             if field not in event:
                 passed = False
@@ -322,7 +635,7 @@ def evaluate_event(event):
             # Tạo alarm rule_triggered và gửi thông báo
             cond_summary = ", ".join(
                 f"{c.get('field')}{c.get('operator')}{c.get('value')}"
-                for c in conditions[:3]
+                for c in conds[:3]
             )
             tin_nhan = (
                 f"Rule '{rule.get('ten_rule', rule['id'])}' kích hoạt trên thiết bị {device_id}. "
@@ -690,6 +1003,7 @@ def main():
     t_watchdog = threading.Thread(target=watchdog_loop, daemon=True)
     t_offline = threading.Thread(target=device_offline_check_loop, daemon=True)
     t_scheduled = threading.Thread(target=scheduled_rules_check_loop, daemon=True)
+    t_occupancy = threading.Thread(target=occupancy_polling_loop, daemon=True)
 
     logging.info("[MAIN] Starting threads...")
     t_consumer.start()
@@ -699,10 +1013,12 @@ def main():
     t_offline.start()
     logging.info("[MAIN] device_offline_check_loop thread started")
     t_scheduled.start()
+    t_occupancy.start()
+    logging.info("[MAIN] occupancy_polling_loop thread started")
 
     logging.info(
         "🚀 Rule Engine started (Kafka → MySQL commands → MQTT) "
-        "with watchdog + device_offline alarm + scheduled_rules"
+        "with watchdog + device_offline alarm + scheduled_rules + occupancy_polling"
     )
     try:
         while True:
