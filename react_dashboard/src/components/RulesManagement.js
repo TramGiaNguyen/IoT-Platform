@@ -271,7 +271,11 @@ export default function RulesManagement({ token, onBack }) {
       if (Object.keys(cacheObj).length) {
         setConditionCache((prev) => ({ ...prev, ...cacheObj }));
         if (formData.condition_device_id && cacheObj[formData.condition_device_id]) {
-          setConditionFields(cacheObj[formData.condition_device_id]);
+          const cached = cacheObj[formData.condition_device_id];
+          const merged = cached.includes("so_nguoi_trong_phong")
+            ? cached
+            : ["so_nguoi_trong_phong", ...cached];
+          setConditionFields(merged);
           setConditionLoading(false);
         }
       }
@@ -297,7 +301,11 @@ export default function RulesManagement({ token, onBack }) {
     try {
       const res = await fetchDeviceLatest(deviceId, token);
       const data = res.data?.data || {};
-      const fields = Object.keys(data);
+      const device_fields = Object.keys(data);
+      // Luôn thêm so_nguoi_trong_phong để dùng làm điều kiện cho rule occupancy
+      const fields = device_fields.includes("so_nguoi_trong_phong")
+        ? device_fields
+        : ["so_nguoi_trong_phong", ...device_fields];
       setConditionFields(fields);
       setConditionCache((prev) => ({ ...prev, [deviceId]: fields }));
     } catch (e) {
@@ -504,15 +512,9 @@ export default function RulesManagement({ token, onBack }) {
     }
   };
 
-  const handleEditRule = async (rule) => {
-    await loadDevicesByRoom(rule.phong_id);
-    await loadDeviceFields(rule.condition_device_id);
-    if (rule.actions && rule.actions.length > 0) {
-      rule.actions.forEach(a => {
-        if (a.device_id) loadDeviceControlLines(a.device_id);
-      });
-    }
-
+  const handleEditRule = (rule) => {
+    // Mở form ngay — không await API trước (scheduled rule đã làm vậy).
+    // loadDevicesByRoom chạy qua useEffect khi formVisible + phong_id.
     let conditions = [{ ...emptyCondition }];
     if (rule.conditions && Array.isArray(rule.conditions) && rule.conditions.length > 0) {
       conditions = rule.conditions.map(c => ({
@@ -551,6 +553,15 @@ export default function RulesManagement({ token, onBack }) {
       setRuleGraph({ nodes: [], edges: [] });
     }
     setFormVisible(true);
+
+    if (rule.condition_device_id) {
+      loadDeviceFields(rule.condition_device_id);
+    }
+    if (rule.actions && rule.actions.length > 0) {
+      rule.actions.forEach((a) => {
+        if (a.device_id) loadDeviceControlLines(a.device_id);
+      });
+    }
   };
 
   const handleCreateRoomFull = async (e) => {

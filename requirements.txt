@@ -8,3 +8,5 @@ python-dotenv
 websockets
 requests
 paho-mqtt
+cryptography
+python-jose[cryptography]

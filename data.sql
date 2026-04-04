@@ -179,6 +179,8 @@ CREATE TABLE `rules` (
   `ngay_tao` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_nguoi_so_huu_rules` (`nguoi_so_huu_id`),
+  KEY `idx_rules_status` (`trang_thai`),
+  KEY `idx_rules_owner_status` (`nguoi_so_huu_id`, `trang_thai`),
   CONSTRAINT `rules_nguoi_so_huu_fk` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -219,6 +221,7 @@ CREATE TABLE `rule_actions` (
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `rule_id` (`rule_id`),
+  KEY `idx_rule_actions_rule_status` (`rule_id`, `delay_seconds`),
   CONSTRAINT `rule_actions_ibfk_1` FOREIGN KEY (`rule_id`) REFERENCES `rules` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -438,4 +441,42 @@ CREATE TABLE IF NOT EXISTS `control_lines` (
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (`thiet_bi_id`) REFERENCES `thiet_bi`(`id`) ON DELETE CASCADE,
     UNIQUE KEY `unique_relay` (`thiet_bi_id`, `relay_number`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- Bảng phong_camera (camera per room)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `phong_camera` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `phong_id` INT NOT NULL,
+  `ten` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Label for display',
+  `ip_address` VARCHAR(45) DEFAULT NULL COMMENT 'Camera IP or hostname',
+  `port` INT DEFAULT NULL COMMENT 'RTSP port',
+  `rtsp_path` VARCHAR(512) DEFAULT NULL COMMENT 'RTSP path after port',
+  `username` VARCHAR(255) DEFAULT NULL COMMENT 'Camera username (stored encrypted)',
+  `password_enc` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Camera password (Fernet encrypted)',
+  `stream_url` VARCHAR(1024) DEFAULT NULL COMMENT 'Full RTSP/HTTP stream URL',
+  `thu_tu` INT DEFAULT 0 COMMENT 'Sort order',
+  `is_active` TINYINT(1) DEFAULT 1,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_camera_phong` FOREIGN KEY (`phong_id`) REFERENCES `phong` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- Bảng phong_occupancy (people count per room/camera)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `phong_occupancy` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `phong_id` INT NOT NULL,
+  `phong_camera_id` INT DEFAULT NULL COMMENT 'Camera that provided the count (NULL = aggregated)',
+  `so_nguoi` INT NOT NULL DEFAULT 0 COMMENT 'Number of people detected',
+  `count_type` ENUM('camera', 'room_total') NOT NULL DEFAULT 'camera' COMMENT 'camera-level or room-level aggregated',
+  `cap_nhat_luc` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `nguon` VARCHAR(50) DEFAULT 'ai_analyst' COMMENT 'Source: ai_analyst, manual, ...',
+  UNIQUE KEY `uk_occupancy_key` (`phong_id`, `phong_camera_id`, `count_type`),
+  KEY `idx_occupancy_phong` (`phong_id`),
+  KEY `idx_occupancy_time` (`cap_nhat_luc`),
+  CONSTRAINT `fk_occ_phong` FOREIGN KEY (`phong_id`) REFERENCES `phong` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_occ_camera` FOREIGN KEY (`phong_camera_id`) REFERENCES `phong_camera` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
