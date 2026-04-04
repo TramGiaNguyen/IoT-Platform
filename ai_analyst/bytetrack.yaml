@@ -1,0 +1,12 @@
+# Ultralytics 8.x ByteTrack — schema chuẩn (KHÔNG dùng track_thresh/det_thresh cũ).
+# Trước đây file sai format → tracker vẫn dùng ngưỡng ~0.5 và loại hết detection khi CONF_THRESHOLD thấp.
+# Docs: https://docs.ultralytics.com/modes/track/
+
+tracker_type: bytetrack
+# CONF_THRESHOLD=0.28 → tracker phải thấp hơn để không loại box trước khi đếm
+track_high_thresh: 0.20
+track_low_thresh: 0.08
+new_track_thresh: 0.20
+track_buffer: 30
+match_thresh: 0.8
+fuse_score: true

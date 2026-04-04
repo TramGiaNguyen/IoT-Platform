@@ -16,6 +16,7 @@ import paho.mqtt.client as mqtt
 from auth import authenticate_user, create_access_token, get_current_user, get_current_user_or_internal, get_current_user_optional
 from database import get_mongo, get_mysql
 from kafka_consumer import get_latest_events
+from camera_service import encrypt_password, decrypt_password, build_stream_url
 from device_config import (
     get_topics, get_http_config, build_command_payload, list_commands as list_device_commands
 )
@@ -264,6 +265,40 @@ class RoomUpdate(BaseModel):
     vi_tri: Optional[str] = None
     nguoi_quan_ly_id: Optional[int] = None
     ma_phong: Optional[str] = None
+
+
+# ============================================================
+# Camera management models
+# ============================================================
+class CameraCreate(BaseModel):
+    ten: Optional[str] = None
+    ip_address: Optional[str] = None
+    port: Optional[int] = 554
+    rtsp_path: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    stream_url: Optional[str] = None
+    thu_tu: Optional[int] = 0
+
+
+class CameraUpdate(BaseModel):
+    ten: Optional[str] = None
+    ip_address: Optional[str] = None
+    port: Optional[int] = None
+    rtsp_path: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    stream_url: Optional[str] = None
+    thu_tu: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class OccupancyUpdate(BaseModel):
+    phong_id: int
+    phong_camera_id: Optional[int] = None
+    so_nguoi: int
+    count_type: Optional[str] = "camera"
+    nguon: Optional[str] = "ai_analyst"
 
 
 class UserCreate(BaseModel):
@@ -2082,11 +2117,19 @@ def ingest_device_data(
 @router.delete("/devices/{device_id}")
 def delete_device(
     device_id: str,
+    hard_delete: bool = False,
     current_user: str = Depends(get_current_user)
 ):
     """
-    Xóa thiết bị hoàn toàn khỏi hệ thống (hard delete).
-    Xóa cả dữ liệu liên quan: khoa_du_lieu, du_lieu_thiet_bi.
+    Xóa thiết bị khỏi hệ thống.
+    
+    - Mặc định: Soft delete (đánh dấu is_active = 0) - nhanh và an toàn
+    - hard_delete=true: Xóa hoàn toàn (chậm, có thể timeout nếu nhiều dữ liệu)
+    
+    Soft delete được khuyến nghị vì:
+    - Nhanh (không cần xóa hàng triệu records)
+    - Có thể khôi phục nếu xóa nhầm
+    - Giữ lại dữ liệu lịch sử
     """
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
@@ -2103,18 +2146,36 @@ def delete_device(
         
         thiet_bi_id = device["id"]
         
-        # Xóa dữ liệu liên quan trước (foreign key constraints)
-        cursor.execute("DELETE FROM du_lieu_thiet_bi WHERE thiet_bi_id = %s", (thiet_bi_id,))
-        cursor.execute("DELETE FROM khoa_du_lieu WHERE thiet_bi_id = %s", (thiet_bi_id,))
-        
-        # Xóa thiết bị
-        cursor.execute("DELETE FROM thiet_bi WHERE id = %s", (thiet_bi_id,))
-        conn.commit()
-        
-        return {
-            "message": f"Đã xóa hoàn toàn thiết bị {device['ten_thiet_bi'] or device['ma_thiet_bi']}",
-            "device_id": device_id
-        }
+        if hard_delete:
+            # Hard delete: Xóa hoàn toàn (có thể chậm)
+            # Xóa dữ liệu liên quan trước (foreign key constraints)
+            cursor.execute("DELETE FROM du_lieu_thiet_bi WHERE thiet_bi_id = %s", (thiet_bi_id,))
+            cursor.execute("DELETE FROM khoa_du_lieu WHERE thiet_bi_id = %s", (thiet_bi_id,))
+            cursor.execute("DELETE FROM control_lines WHERE thiet_bi_id = %s", (thiet_bi_id,))
+            
+            # Xóa thiết bị
+            cursor.execute("DELETE FROM thiet_bi WHERE id = %s", (thiet_bi_id,))
+            conn.commit()
+            
+            return {
+                "message": f"Đã xóa hoàn toàn thiết bị {device['ten_thiet_bi'] or device['ma_thiet_bi']}",
+                "device_id": device_id,
+                "delete_type": "hard"
+            }
+        else:
+            # Soft delete: Chỉ đánh dấu is_active = 0 (nhanh)
+            cursor.execute(
+                "UPDATE thiet_bi SET is_active = 0, trang_thai = 'offline' WHERE id = %s",
+                (thiet_bi_id,)
+            )
+            conn.commit()
+            
+            return {
+                "message": f"Đã xóa thiết bị {device['ten_thiet_bi'] or device['ma_thiet_bi']} (soft delete)",
+                "device_id": device_id,
+                "delete_type": "soft",
+                "note": "Thiết bị vẫn giữ dữ liệu lịch sử. Dùng hard_delete=true để xóa hoàn toàn."
+            }
     except HTTPException:
         raise
     except Exception as e:
@@ -2236,6 +2297,90 @@ def list_rooms(
             })
         
         return {"rooms": formatted_rooms}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/rooms/{room_id}")
+def get_room(room_id: int, current_user: str = Depends(get_current_user)):
+    """
+    Chi tiết một phòng (cùng quyền xem như danh sách phòng).
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, vai_tro, lop_hoc_id FROM nguoi_dung WHERE email = %s",
+            (current_user,),
+        )
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user_id = user["id"]
+        user_role = user["vai_tro"]
+
+        base_select = """
+            SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta,
+                   p.nguoi_quan_ly_id, p.nguoi_so_huu_id, p.ngay_tao,
+                   u.ten as nguoi_so_huu_ten, u.vai_tro as nguoi_so_huu_role,
+                   COUNT(DISTINCT t.id) as device_count,
+                   SUM(CASE WHEN t.trang_thai = 'online' THEN 1 ELSE 0 END) as online_count
+            FROM phong p
+            LEFT JOIN nguoi_dung u ON p.nguoi_so_huu_id = u.id
+            LEFT JOIN thiet_bi t ON p.id = t.phong_id AND t.is_active = 1
+        """
+
+        if user_role == "admin":
+            cursor.execute(
+                base_select + " WHERE p.id = %s GROUP BY p.id",
+                (room_id,),
+            )
+        elif user_role == "teacher":
+            cursor.execute(
+                base_select
+                + """ WHERE p.id = %s
+                    AND (
+                        p.nguoi_so_huu_id = %s
+                        OR p.nguoi_so_huu_id IN (
+                            SELECT nd.id
+                            FROM nguoi_dung nd
+                            INNER JOIN lop_hoc lh ON nd.lop_hoc_id = lh.id
+                            WHERE lh.giao_vien_id = %s
+                        )
+                    )
+                    GROUP BY p.id""",
+                (room_id, user_id, user_id),
+            )
+        else:
+            cursor.execute(
+                base_select
+                + " WHERE p.id = %s AND p.nguoi_so_huu_id = %s GROUP BY p.id",
+                (room_id, user_id),
+            )
+
+        room = cursor.fetchone()
+        if not room:
+            raise HTTPException(status_code=404, detail="Room not found")
+
+        return {
+            "id": room["id"],
+            "name": room["ten_phong"],
+            "ten_phong": room["ten_phong"],
+            "ma_phong": room["ma_phong"],
+            "vi_tri": room["vi_tri"],
+            "mo_ta": room["mo_ta"],
+            "nguoi_quan_ly_id": room["nguoi_quan_ly_id"],
+            "nguoi_so_huu_id": room["nguoi_so_huu_id"],
+            "ngay_tao": room["ngay_tao"],
+            "nguoi_so_huu_ten": room["nguoi_so_huu_ten"],
+            "nguoi_so_huu_role": room["nguoi_so_huu_role"],
+            "device_count": int(room["device_count"] or 0),
+            "online_count": int(room["online_count"] or 0),
+            "can_edit": user_role == "admin" or room["nguoi_so_huu_id"] == user_id,
+            "can_delete": user_role == "admin" or room["nguoi_so_huu_id"] == user_id,
+        }
     finally:
         cursor.close()
         conn.close()
@@ -2822,6 +2967,417 @@ def _get_metric_max(key: str) -> Optional[float]:
     if any(x in key_lower for x in ["humi", "soil", "moisture"]):
         return 100.0
     return None
+
+
+# ============================================================
+# Camera management endpoints
+# ============================================================
+@router.get("/rooms/{room_id}/cameras")
+def list_cameras(
+    room_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Lấy danh sách camera của một phòng.
+    Password không bao giờ được trả về cho client.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, phong_id, ten, ip_address, port, rtsp_path, username, "
+            "password_enc, stream_url, thu_tu, is_active, created_at, updated_at "
+            "FROM phong_camera WHERE phong_id = %s ORDER BY thu_tu ASC",
+            (room_id,),
+        )
+        rows = cursor.fetchall()
+        cameras = []
+        for r in rows:
+            cameras.append({
+                "id": r["id"],
+                "phong_id": r["phong_id"],
+                "ten": r["ten"],
+                "ip_address": r["ip_address"],
+                "port": r["port"],
+                "rtsp_path": r["rtsp_path"],
+                "username": r["username"],
+                "has_password": bool(r["password_enc"]),
+                "stream_url": r["stream_url"],
+                "thu_tu": r["thu_tu"],
+                "is_active": r["is_active"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+            })
+        return {"cameras": cameras}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/rooms/{room_id}/cameras")
+def create_camera(
+    room_id: int,
+    body: CameraCreate,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Tạo camera mới cho phòng.
+    - Check permission (owner hoặc admin)
+    - Mật khẩu được mã hoá Fernet trước khi lưu
+    """
+    check_room_permission(room_id, current_user, "edit")
+
+    password_enc = encrypt_password(body.password) if body.password else None
+
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            INSERT INTO phong_camera
+              (phong_id, ten, ip_address, port, rtsp_path, username, password_enc, stream_url, thu_tu)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                room_id,
+                body.ten,
+                body.ip_address,
+                body.port or 554,
+                body.rtsp_path,
+                body.username,
+                password_enc,
+                body.stream_url,
+                body.thu_tu or 0,
+            ),
+        )
+        conn.commit()
+        camera_id = cursor.lastrowid
+
+        cursor.execute(
+            "SELECT id, phong_id, ten, ip_address, port, rtsp_path, username, "
+            "password_enc, stream_url, thu_tu, is_active, created_at "
+            "FROM phong_camera WHERE id = %s",
+            (camera_id,),
+        )
+        r = cursor.fetchone()
+        return {
+            "message": "created",
+            "camera": {
+                "id": r["id"],
+                "phong_id": r["phong_id"],
+                "ten": r["ten"],
+                "ip_address": r["ip_address"],
+                "port": r["port"],
+                "rtsp_path": r["rtsp_path"],
+                "username": r["username"],
+                "has_password": bool(r["password_enc"]),
+                "stream_url": r["stream_url"],
+                "thu_tu": r["thu_tu"],
+                "is_active": r["is_active"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            },
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.put("/rooms/{room_id}/cameras/{camera_id}")
+def update_camera(
+    room_id: int,
+    camera_id: int,
+    body: CameraUpdate,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Cập nhật camera.
+    """
+    check_room_permission(room_id, current_user, "edit")
+
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Verify camera belongs to this room
+        cursor.execute(
+            "SELECT id FROM phong_camera WHERE id = %s AND phong_id = %s",
+            (camera_id, room_id),
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Camera not found in this room")
+
+        fields, values = [], []
+        if body.ten is not None:
+            fields.append("ten=%s"); values.append(body.ten)
+        if body.ip_address is not None:
+            fields.append("ip_address=%s"); values.append(body.ip_address)
+        if body.port is not None:
+            fields.append("port=%s"); values.append(body.port)
+        if body.rtsp_path is not None:
+            fields.append("rtsp_path=%s"); values.append(body.rtsp_path)
+        if body.username is not None:
+            fields.append("username=%s"); values.append(body.username)
+        if body.password is not None:
+            fields.append("password_enc=%s"); values.append(encrypt_password(body.password))
+        if body.stream_url is not None:
+            fields.append("stream_url=%s"); values.append(body.stream_url)
+        if body.thu_tu is not None:
+            fields.append("thu_tu=%s"); values.append(body.thu_tu)
+        if body.is_active is not None:
+            fields.append("is_active=%s"); values.append(1 if body.is_active else 0)
+
+        if not fields:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        values.extend([camera_id, room_id])
+        cursor.execute(
+            f"UPDATE phong_camera SET {', '.join(fields)} WHERE id=%s AND phong_id=%s",
+            tuple(values),
+        )
+        conn.commit()
+        return {"message": "updated"}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.delete("/rooms/{room_id}/cameras/{camera_id}")
+def delete_camera(
+    room_id: int,
+    camera_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Xóa camera.
+    """
+    check_room_permission(room_id, current_user, "edit")
+
+    conn = get_mysql()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM phong_camera WHERE id = %s AND phong_id = %s",
+            (camera_id, room_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Camera not found")
+        conn.commit()
+        return {"message": "deleted"}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/rooms/{room_id}/cameras/{camera_id}/stream-url")
+def get_camera_stream_url(
+    room_id: int,
+    camera_id: int,
+    current_user: str = Depends(get_current_user_or_internal)
+):
+    """
+    Trả về full RTSP URL đã xây dựng từ camera config (đã giải mã password).
+    Chỉ dùng nội bộ (cho ai_analyst) — không public ra client.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT * FROM phong_camera WHERE id = %s AND phong_id = %s AND is_active = 1",
+            (camera_id, room_id),
+        )
+        cam = cursor.fetchone()
+        if not cam:
+            raise HTTPException(status_code=404, detail="Camera not found or inactive")
+
+        stream_url = build_stream_url(
+            stream_url=cam.get("stream_url"),
+            ip_address=cam.get("ip_address"),
+            port=cam.get("port"),
+            rtsp_path=cam.get("rtsp_path"),
+            username=cam.get("username"),
+            password_enc=cam.get("password_enc"),
+        )
+        return {
+            "camera_id": camera_id,
+            "stream_url": stream_url,
+            "ip_address": cam.get("ip_address"),
+            "port": cam.get("port"),
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# Occupancy endpoints (written by ai_analyst, read by any authenticated user)
+# ============================================================
+@router.post("/internal/ai/occupancy")
+def upsert_occupancy(
+    body: OccupancyUpdate,
+    current_user: str = Depends(get_current_user_or_internal)
+):
+    """
+    Upsert people count — gọi bởi ai_analyst service.
+
+    Header required: X-API-Key (hoặc JWT auth).
+    Khi count_type='camera': đồng thời upsert room_total (tổng hợp tất cả camera cùng phòng).
+    """
+    conn = get_mysql()
+    cursor = conn.cursor()
+    try:
+        # Upsert camera-level count
+        cursor.execute(
+            """
+            INSERT INTO phong_occupancy
+              (phong_id, phong_camera_id, so_nguoi, count_type, cap_nhat_luc, nguon)
+            VALUES (%s, %s, %s, %s, NOW(), %s)
+            ON DUPLICATE KEY UPDATE
+              so_nguoi = VALUES(so_nguoi),
+              cap_nhat_luc = VALUES(cap_nhat_luc)
+            """,
+            (
+                body.phong_id,
+                body.phong_camera_id,
+                body.so_nguoi,
+                body.count_type or "camera",
+                body.nguon or "ai_analyst",
+            ),
+        )
+
+        # If camera-level, recalculate room_total (sum of all camera counts)
+        if body.count_type == "camera" and body.phong_camera_id is not None:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(so_nguoi), 0) as total
+                FROM phong_occupancy
+                WHERE phong_id = %s AND count_type = 'camera' AND phong_camera_id IS NOT NULL
+                """,
+                (body.phong_id,),
+            )
+            row = cursor.fetchone()
+            total = int(row[0]) if row else 0
+
+            cursor.execute(
+                """
+                INSERT INTO phong_occupancy
+                  (phong_id, phong_camera_id, so_nguoi, count_type, cap_nhat_luc, nguon)
+                VALUES (%s, NULL, %s, 'room_total', NOW(), %s)
+                ON DUPLICATE KEY UPDATE
+                  so_nguoi = VALUES(so_nguoi),
+                  cap_nhat_luc = VALUES(cap_nhat_luc)
+                """,
+                (body.phong_id, total, body.nguon or "ai_analyst"),
+            )
+
+        conn.commit()
+        return {"message": "ok", "phong_id": body.phong_id, "so_nguoi": body.so_nguoi}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/rooms/{room_id}/occupancy")
+def get_room_occupancy(
+    room_id: int,
+    current_user: str = Depends(get_current_user_optional)
+):
+    """
+    Lấy số người hiện tại trong phòng (room_total).
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT phong_id, so_nguoi, cap_nhat_luc, nguon
+            FROM phong_occupancy
+            WHERE phong_id = %s AND count_type = 'room_total'
+            LIMIT 1
+            """,
+            (room_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return {"phong_id": room_id, "so_nguoi": 0, "cap_nhat_luc": None, "nguon": None}
+
+        return {
+            "phong_id": row["phong_id"],
+            "so_nguoi": int(row["so_nguoi"]),
+            "cap_nhat_luc": row["cap_nhat_luc"].isoformat() if row["cap_nhat_luc"] else None,
+            "nguon": row["nguon"],
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/rooms/{room_id}/cameras/{camera_id}/occupancy")
+def get_camera_occupancy(
+    room_id: int,
+    camera_id: int,
+    current_user: str = Depends(get_current_user_optional)
+):
+    """
+    Lấy số người từng camera.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT phong_id, phong_camera_id, so_nguoi, cap_nhat_luc, nguon
+            FROM phong_occupancy
+            WHERE phong_id = %s AND phong_camera_id = %s AND count_type = 'camera'
+            LIMIT 1
+            """,
+            (room_id, camera_id),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return {"phong_id": room_id, "camera_id": camera_id, "so_nguoi": 0, "cap_nhat_luc": None}
+
+        return {
+            "phong_id": row["phong_id"],
+            "camera_id": row["phong_camera_id"],
+            "so_nguoi": int(row["so_nguoi"]),
+            "cap_nhat_luc": row["cap_nhat_luc"].isoformat() if row["cap_nhat_luc"] else None,
+            "nguon": row["nguon"],
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/internal/ai/camera-watch-list")
+def get_camera_watch_list(
+    current_user: str = Depends(get_current_user_or_internal)
+):
+    """
+    Danh sách camera active cần chạy AI nền 24/7.
+    Gọi bởi ai_analyst để duy trì session không phụ thuộc dashboard.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT pc.id AS camera_id, pc.phong_id
+            FROM phong_camera pc
+            WHERE pc.is_active = 1
+            """
+        )
+        rows = cursor.fetchall()
+        return {
+            "cameras": [
+                {"camera_id": int(r["camera_id"]), "phong_id": int(r["phong_id"])}
+                for r in rows
+            ]
+        }
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @router.get("/devices/latest-all")
@@ -3684,7 +4240,8 @@ def create_rule(
     if not conditions or len(conditions) == 0:
         raise HTTPException(status_code=400, detail="At least one condition is required")
     for cond in conditions:
-        if cond.get("operator", cond.operator if hasattr(cond, "operator") else "") not in ALLOWED_OPERATORS:
+        op = cond["operator"] if isinstance(cond, dict) else cond.operator
+        if op not in ALLOWED_OPERATORS:
             raise HTTPException(status_code=400, detail="Invalid operator in conditions")
 
     first_cond = conditions[0]
