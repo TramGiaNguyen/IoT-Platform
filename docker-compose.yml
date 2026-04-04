@@ -166,7 +166,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/health')\" || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -302,6 +302,44 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
     restart: unless-stopped
+
+  ai-analyst:
+    build:
+      context: ./ai_analyst
+    container_name: ai_analyst
+    ports:
+      - "8101:8101"
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+      - IOT_PLATFORM_URL=http://fastapi-backend:8000
+      - INTERNAL_API_KEY=internal-rule-engine-key-change-in-production
+      - YOLO_MODEL_SIZE=yolo11s.pt
+      - OCCUPANCY_REPORT_INTERVAL=1.0
+      - STREAM_FPS_DIVISOR=2
+      # Camera góc cao / người nhỏ: imgsz lớn giúp có bbox; conf "một chút" để bắt chính xác
+      - CONF_THRESHOLD=0.28
+      - YOLO_IMGSZ=1280
+      - YOLO_HALF=0
+      # AI nền 24/7: bật để session tự chạy cho mọi camera active
+      - ROOM_AI_BACKGROUND=1
+      # CUDA GPU passthrough (requires nvidia-runtime on host)
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      fastapi-backend:
+        condition: service_healthy
+    restart: unless-stopped
+    # GPU not available in Docker Desktop on Windows? Build the image without
+    # the GPU requirement and run on CPU for development:
+    # comment out deploy.resources.reservations.devices above and uncomment:
+    # shm_size: 256mb  # helps with OpenCV performance on CPU
 
 volumes:
   mysql-data:

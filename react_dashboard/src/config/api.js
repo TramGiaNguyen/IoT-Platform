@@ -17,3 +17,7 @@ export const WS_URL = process.env.REACT_APP_WS_URL || (
     ? base.replace(/^https/i, 'wss') + '/ws/events'
     : base.replace(/^http/i, 'ws') + '/ws/events'
 );
+
+// AI Analyst service base URL (YOLO11s GPU service for camera analytics)
+// ai_analyst runs on port 8101; same hostname resolution as API_BASE
+export const AI_ANALYST_BASE = process.env.REACT_APP_AI_ANALYST_BASE || `http://${_host}:8101`;

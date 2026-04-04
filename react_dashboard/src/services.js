@@ -365,6 +365,37 @@ export const fetchRoomDeviceData = (roomId, token) =>
   });
 
 // =========================================================
+// Camera management APIs
+// =========================================================
+export const fetchRoomCameras = (roomId, token) =>
+  axios.get(`${API_BASE}/rooms/${roomId}/cameras`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const createRoomCamera = (roomId, data, token) =>
+  axios.post(`${API_BASE}/rooms/${roomId}/cameras`, data, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const updateRoomCamera = (roomId, cameraId, data, token) =>
+  axios.put(`${API_BASE}/rooms/${roomId}/cameras/${cameraId}`, data, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const deleteRoomCamera = (roomId, cameraId, token) =>
+  axios.delete(`${API_BASE}/rooms/${roomId}/cameras/${cameraId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+// =========================================================
+// Room occupancy APIs
+// =========================================================
+export const fetchRoomOccupancy = (roomId, token) =>
+  axios.get(`${API_BASE}/rooms/${roomId}/occupancy`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+// =========================================================
 // Class (lop_hoc) APIs
 // =========================================================
 export const fetchClasses = (token) =>
