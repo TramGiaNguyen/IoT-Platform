@@ -13,8 +13,51 @@ import requests
 import paho.mqtt.publish as publish
 import paho.mqtt.client as mqtt
 
-from auth import authenticate_user, create_access_token, get_current_user, get_current_user_or_internal, get_current_user_optional
-from database import get_mongo, get_mysql
+from auth import authenticate_user, create_access_token, create_refresh_token, verify_refresh_token, get_current_user, get_current_user_or_internal, get_current_user_optional
+from database import get_mongo, get_mysql, get_redis
+
+
+# ────────────────────────────────────────────────────────────────
+# Helpers: cache invalidation
+# ────────────────────────────────────────────────────────────────
+def _invalidate_latest_all_cache(device_id: str) -> None:
+    """
+    Xóa cache liên quan đến thiết bị vừa thay đổi.
+    - Cache device-specific: device_latest:{device_id}
+    - Cache dashboard: latest_all:* (theo user + workspace)
+
+    Dùng pattern scan vì cache key chứa user email (không biết trước).
+    O(n) trên số key Redis — chấp nhận được cho hệ thống vừa và nhỏ.
+    """
+    r = get_redis()
+    if not r:
+        return
+    try:
+        # 1. Xóa cache device-specific
+        r.delete(f"device_latest:{device_id}")
+        # 2. Xóa tất cả latest_all cache (theo user + workspace)
+        for key in r.scan_iter("latest_all:*"):
+            r.delete(key)
+    except Exception:
+        pass
+
+
+def _invalidate_api_cache(prefix: str = "api:*") -> None:
+    """
+    Xóa cache có prefix api:* (devices, rooms, rules).
+    Dùng pattern scan vì cache key chứa user email (không biết trước).
+    O(n) trên số key Redis — chấp nhận được cho hệ thống vừa và nhỏ.
+    """
+    r = get_redis()
+    if not r:
+        return
+    try:
+        for key in r.scan_iter(prefix):
+            r.delete(key)
+    except Exception:
+        pass
+
+
 from kafka_consumer import get_latest_events
 from camera_service import encrypt_password, decrypt_password, build_stream_url
 from device_config import (
@@ -28,6 +71,35 @@ from models import (
 
 router = APIRouter()
 AC_CONTROL_URL = os.getenv("AC_CONTROL_URL", "http://192.168.190.101").rstrip("/")
+AI_ANALYST_URL = os.getenv("AI_ANALYST_URL", "http://ai-analyst:8101").rstrip("/")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "internal-rule-engine-key-change-in-production")
+
+# #region agent log
+def _debug_latest_log(message: str, hypothesis_id: str, device_id: str = "", extra: dict = None):
+    """NDJSON debug — session db10a6; không log secret."""
+    try:
+        _root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        _path = os.path.join(_root, "debug-db10a6.log")
+        with open(_path, "a", encoding="utf-8") as _f:
+            _f.write(
+                json.dumps(
+                    {
+                        "sessionId": "db10a6",
+                        "hypothesisId": hypothesis_id,
+                        "location": "routes.py:get_device_latest",
+                        "message": message,
+                        "data": {"device_id": device_id, **(extra or {})},
+                        "timestamp": int(time.time() * 1000),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+
+
+# #endregion
 
 
 class AcControlRequest(BaseModel):
@@ -342,10 +414,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(status_code=401, detail="Incorrect email or password")
-    # Token lưu email (từ DB) vào field 'sub'
     token = create_access_token({"sub": user["email"]})
+    refresh_token = create_refresh_token(user)
     return {
         "access_token": token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "vai_tro": user["vai_tro"],
         "allowed_pages": user["allowed_pages"]
@@ -372,12 +445,53 @@ def login_json(login_data: LoginRequest):
     if not user:
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     token = create_access_token({"sub": user["email"]})
+    refresh_token = create_refresh_token(user)
     return {
         "access_token": token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "vai_tro": user["vai_tro"],
         "allowed_pages": user["allowed_pages"]
     }
+
+
+@router.post("/refresh", response_model=Token)
+def refresh_token(
+    x_refresh_token: Optional[str] = Header(None, alias="X-Refresh-Token"),
+    x_user: Optional[str] = Header(None, alias="X-User"),
+    x_password: Optional[str] = Header(None, alias="X-Password"),
+):
+    """
+    Refresh access token mà không cần user nhập lại mật khẩu.
+
+    Ưu tiên X-Refresh-Token (token dài hạn).
+    Fallback: X-User + X-Password để verify và issue token mới.
+    """
+    if x_refresh_token:
+        user_info = verify_refresh_token(x_refresh_token)
+        if user_info:
+            access_token = create_access_token({"sub": user_info["email"]})
+            new_refresh_token = create_refresh_token(user_info)
+            return {
+                "access_token": access_token,
+                "refresh_token": new_refresh_token,
+                "token_type": "bearer",
+            }
+
+    if x_user and x_password:
+        user = authenticate_user(x_user, x_password)
+        if user:
+            access_token = create_access_token({"sub": user["email"]})
+            refresh_token = create_refresh_token(user)
+            return {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+                "vai_tro": user["vai_tro"],
+                "allowed_pages": user["allowed_pages"],
+            }
+
+    raise HTTPException(status_code=401, detail="Invalid refresh credentials")
 
 
 @router.post("/users/{user_id}/impersonate", response_model=Token)
@@ -441,11 +555,11 @@ def impersonate_user(
             except Exception:
                 allowed_pages = []
         
-        # Tạo token cho target user
         token = create_access_token({"sub": target_user["email"]})
-        
+        refresh_token = create_refresh_token(target_user)
         return {
             "access_token": token,
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "vai_tro": target_user["vai_tro"],
             "allowed_pages": allowed_pages
@@ -578,7 +692,18 @@ def list_devices(
 ):
     """
     Lấy danh sách thiết bị đã đăng ký từ bảng thiet_bi (MySQL).
+    Cache: theo user + workspace, TTL 10s.
     """
+    cache_key = f"api:devices:{current_user}:{workspace_id}"
+    r = get_redis()
+    if r:
+        try:
+            cached = r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass  # Redis lỗi → fallback xuống query DB
+
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -594,7 +719,15 @@ def list_devices(
         """
         cursor.execute(query, tuple(ws_params))
         devices = cursor.fetchall()
-        return {"devices": devices}
+        result = {"devices": devices}
+
+        if r:
+            try:
+                r.setex(cache_key, 10, json.dumps(result))
+            except Exception:
+                pass
+
+        return result
     finally:
         cursor.close()
         conn.close()
@@ -872,6 +1005,7 @@ def provision_device(
             ))
         
         conn.commit()
+        _invalidate_api_cache("api:devices:*")
         
         # Tạo response với config
         mqtt_config = None
@@ -1264,6 +1398,8 @@ def save_control_lines(
                 } for l in request.lines
             ]
         }
+        _invalidate_api_cache("api:devices:*")
+        return data
     except HTTPException:
         raise
     except Exception as e:
@@ -1625,6 +1761,7 @@ def update_device_key(
             (body.don_vi, body.mo_ta, key_id)
         )
         conn.commit()
+        _invalidate_api_cache("api:devices:*")
         return {"message": "Đã cập nhật field thành công"}
     except HTTPException:
         raise
@@ -1841,6 +1978,9 @@ def send_control_command(
             except Exception:
                 pass
 
+            # Invalidate latest-all cache vì dữ liệu device vừa thay đổi
+            _invalidate_latest_all_cache(device_id)
+
             return {
                 "status": "ok",
                 "device_id": device_id,
@@ -1924,6 +2064,9 @@ def send_control_command(
             conn.commit()
         except Exception:
             pass  # Không fail nếu DB write lỗi
+
+        # Invalidate latest-all cache vì dữ liệu device vừa thay đổi
+        _invalidate_latest_all_cache(device_id)
 
         return {
             "status": "ok",
@@ -2156,7 +2299,7 @@ def delete_device(
             # Xóa thiết bị
             cursor.execute("DELETE FROM thiet_bi WHERE id = %s", (thiet_bi_id,))
             conn.commit()
-            
+            _invalidate_api_cache("api:devices:*")
             return {
                 "message": f"Đã xóa hoàn toàn thiết bị {device['ten_thiet_bi'] or device['ma_thiet_bi']}",
                 "device_id": device_id,
@@ -2169,7 +2312,7 @@ def delete_device(
                 (thiet_bi_id,)
             )
             conn.commit()
-            
+            _invalidate_api_cache("api:devices:*")
             return {
                 "message": f"Đã xóa thiết bị {device['ten_thiet_bi'] or device['ma_thiet_bi']} (soft delete)",
                 "device_id": device_id,
@@ -2202,7 +2345,18 @@ def list_rooms(
     Có thể truyền token qua:
     - Header: Authorization: Bearer <token>
     - Query param: ?token=<token>
+    Cache: theo user, TTL 15s. Không cache workspace vì query cần role-based filter từ DB.
     """
+    cache_key = f"api:rooms:{current_user}"
+    r = get_redis()
+    if r:
+        try:
+            cached = r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass  # Redis lỗi → fallback
+
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -2271,16 +2425,33 @@ def list_rooms(
             cursor.execute(query, (user_id,))
         
         rooms = cursor.fetchall()
+
+        # Số người realtime (từ ai_analyst, không dùng bảng phong_occupancy)
+        occ_by_phong: dict = {}
+        if rooms:
+            try:
+                resp = requests.get(f"{AI_ANALYST_URL}/internal/ai/occupancy-list", timeout=5)
+                if resp.status_code == 200:
+                    occ_data = resp.json()
+                    for item in occ_data.get("occupancy", []):
+                        rid = item.get("room_id")
+                        if rid is not None:
+                            occ_by_phong[rid] = occ_by_phong.get(rid, 0) + item.get("so_nguoi", 0)
+            except Exception:
+                pass  # fallback: occ_by_phong = {}
         
         # Format for mobile app
         formatted_rooms = []
         for room in rooms:
+            so_nguoi = occ_by_phong.get(room["id"], 0)
             formatted_rooms.append({
                 "id": room["id"],
                 "name": room["ten_phong"],
                 "description": room["mo_ta"],
                 "device_count": int(room["device_count"] or 0),
                 "online_count": int(room["online_count"] or 0),
+                "so_nguoi": so_nguoi,
+                "occupancy": so_nguoi,
                 "last_update": room["ngay_tao"].isoformat() if room["ngay_tao"] else None,
                 # Keep original fields for web dashboard
                 "ten_phong": room["ten_phong"],
@@ -2296,7 +2467,15 @@ def list_rooms(
                 "can_delete": user_role == "admin" or room["nguoi_so_huu_id"] == user_id,
             })
         
-        return {"rooms": formatted_rooms}
+        result = {"rooms": formatted_rooms}
+
+        if r:
+            try:
+                r.setex(cache_key, 15, json.dumps(result))
+            except Exception:
+                pass
+
+        return result
     finally:
         cursor.close()
         conn.close()
@@ -2410,6 +2589,7 @@ def create_room(
             (body.ten_phong, body.mo_ta, body.vi_tri, body.nguoi_quan_ly_id, body.ma_phong, owner_id),
         )
         conn.commit()
+        _invalidate_api_cache("api:rooms:*")
         room_id = cursor.lastrowid
         
         # Return created room with owner info
@@ -2474,6 +2654,7 @@ def update_room(
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Room not found")
         conn.commit()
+        _invalidate_api_cache("api:rooms:*")
         return {"message": "updated"}
     except HTTPException:
         raise
@@ -2504,6 +2685,7 @@ def delete_room(
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Room not found")
         conn.commit()
+        _invalidate_api_cache("api:rooms:*")
         return {"message": "deleted"}
     except HTTPException:
         raise
@@ -2546,6 +2728,7 @@ def list_devices_by_room(room_id: int, current_user: str = Depends(get_current_u
                 FROM du_lieu_thiet_bi
                 WHERE thiet_bi_id IN ({placeholders})
                 GROUP BY thiet_bi_id, khoa
+                LIMIT 500
             ) latest
             ON d.thiet_bi_id = latest.thiet_bi_id
                AND d.khoa = latest.khoa
@@ -2589,6 +2772,20 @@ def get_room_device_data(
         room = cursor.fetchone()
         if not room:
             raise HTTPException(status_code=404, detail="Room not found")
+
+        # Get real-time occupancy from ai_analyst (không dùng bảng phong_occupancy nữa)
+        room_so_nguoi = 0
+        room_occ_updated = None
+        try:
+            resp_occ = requests.get(
+                f"{AI_ANALYST_URL}/internal/ai/occupancy/{room_id}",
+                timeout=3,
+            )
+            if resp_occ.status_code == 200:
+                occ_data = resp_occ.json()
+                room_so_nguoi = occ_data.get("so_nguoi", 0)
+        except Exception:
+            pass  # fallback: room_so_nguoi = 0
         
         # Decide "online/offline" for the API response based on whether we have recent data.
         online_threshold_minutes = int(os.getenv("DEVICE_OFFLINE_THRESHOLD_MINUTES", "10"))
@@ -2609,6 +2806,8 @@ def get_room_device_data(
             return {
                 "room_id": room_id,
                 "room_name": room["ten_phong"],
+                "so_nguoi": room_so_nguoi,
+                "occupancy_cap_nhat_luc": room_occ_updated,
                 "devices": []
             }
 
@@ -2653,6 +2852,7 @@ def get_room_device_data(
                 FROM du_lieu_thiet_bi
                 WHERE thiet_bi_id IN ({placeholders})
                 GROUP BY thiet_bi_id, khoa
+                LIMIT 1000
             ) m ON d.thiet_bi_id = m.thiet_bi_id AND d.khoa = m.khoa AND d.thoi_gian = m.max_time
             LEFT JOIN khoa_du_lieu kdl ON d.thiet_bi_id = kdl.thiet_bi_id AND d.khoa = kdl.khoa
             WHERE d.thiet_bi_id IN ({placeholders})
@@ -2906,6 +3106,8 @@ def get_room_device_data(
         return {
             "room_id": room_id,
             "room_name": room["ten_phong"],
+            "so_nguoi": room_so_nguoi,
+            "occupancy_cap_nhat_luc": room_occ_updated,
             "devices": result
         }
     finally:
@@ -3284,33 +3486,24 @@ def get_room_occupancy(
     current_user: str = Depends(get_current_user_optional)
 ):
     """
-    Lấy số người hiện tại trong phòng (room_total).
+    Lấy số người hiện tại trong phòng (từ ai_analyst realtime, không dùng bảng phong_occupancy).
     """
-    conn = get_mysql()
-    cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute(
-            """
-            SELECT phong_id, so_nguoi, cap_nhat_luc, nguon
-            FROM phong_occupancy
-            WHERE phong_id = %s AND count_type = 'room_total'
-            LIMIT 1
-            """,
-            (room_id,),
+        resp = requests.get(
+            f"{AI_ANALYST_URL}/internal/ai/occupancy/{room_id}",
+            timeout=5,
         )
-        row = cursor.fetchone()
-        if not row:
-            return {"phong_id": room_id, "so_nguoi": 0, "cap_nhat_luc": None, "nguon": None}
-
-        return {
-            "phong_id": row["phong_id"],
-            "so_nguoi": int(row["so_nguoi"]),
-            "cap_nhat_luc": row["cap_nhat_luc"].isoformat() if row["cap_nhat_luc"] else None,
-            "nguon": row["nguon"],
-        }
-    finally:
-        cursor.close()
-        conn.close()
+        if resp.status_code == 200:
+            occ_data = resp.json()
+            return {
+                "phong_id": occ_data.get("room_id", room_id),
+                "so_nguoi": occ_data.get("so_nguoi", 0),
+                "cap_nhat_luc": datetime.utcnow().isoformat(),
+                "nguon": "ai_analyst",
+            }
+    except Exception:
+        pass
+    return {"phong_id": room_id, "so_nguoi": 0, "cap_nhat_luc": None, "nguon": None}
 
 
 @router.get("/rooms/{room_id}/cameras/{camera_id}/occupancy")
@@ -3320,34 +3513,24 @@ def get_camera_occupancy(
     current_user: str = Depends(get_current_user_optional)
 ):
     """
-    Lấy số người từng camera.
+    Lấy số người từng camera (từ ai_analyst realtime).
     """
-    conn = get_mysql()
-    cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute(
-            """
-            SELECT phong_id, phong_camera_id, so_nguoi, cap_nhat_luc, nguon
-            FROM phong_occupancy
-            WHERE phong_id = %s AND phong_camera_id = %s AND count_type = 'camera'
-            LIMIT 1
-            """,
-            (room_id, camera_id),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return {"phong_id": room_id, "camera_id": camera_id, "so_nguoi": 0, "cap_nhat_luc": None}
-
-        return {
-            "phong_id": row["phong_id"],
-            "camera_id": row["phong_camera_id"],
-            "so_nguoi": int(row["so_nguoi"]),
-            "cap_nhat_luc": row["cap_nhat_luc"].isoformat() if row["cap_nhat_luc"] else None,
-            "nguon": row["nguon"],
-        }
-    finally:
-        cursor.close()
-        conn.close()
+        resp = requests.get(f"{AI_ANALYST_URL}/internal/ai/occupancy/{room_id}", timeout=5)
+        if resp.status_code == 200:
+            occ_data = resp.json()
+            for cam in occ_data.get("cameras", []):
+                if cam.get("camera_id") == camera_id:
+                    return {
+                        "phong_id": room_id,
+                        "camera_id": camera_id,
+                        "so_nguoi": cam.get("so_nguoi", 0),
+                        "cap_nhat_luc": datetime.utcnow().isoformat(),
+                        "nguon": "ai_analyst",
+                    }
+    except Exception:
+        pass
+    return {"phong_id": room_id, "camera_id": camera_id, "so_nguoi": 0, "cap_nhat_luc": None}
 
 
 @router.get("/internal/ai/camera-watch-list")
@@ -3388,12 +3571,25 @@ def get_devices_latest_all(
     """
     Lấy dữ liệu mới nhất của tất cả thiết bị (1 query) để giảm số request.
     Trả về danh sách thiết bị + latest data per key.
+
+    Cache: theo user + workspace, TTL 3s, graceful degradation nếu Redis không khả dụng.
     """
+    # Cache key: tách biệt theo user + workspace
+    cache_key = f"latest_all:{current_user}:{workspace_id}"
+    r = get_redis()
+    if r:
+        try:
+            cached = r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass  # Redis lỗi → fallback xuống query DB
+
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
     try:
         ws_cond, ws_params = get_workspace_conditions(cursor, current_user, workspace_id, alias="t")
-        
+
         # Danh sách thiết bị
         query = f"""
             SELECT t.id, t.ma_thiet_bi, t.ten_thiet_bi, t.loai_thiet_bi,
@@ -3406,25 +3602,45 @@ def get_devices_latest_all(
         cursor.execute(query, tuple(ws_params))
         devices = cursor.fetchall()
         if not devices:
-            return {"devices": []}
+            result = {"devices": []}
+            if r:
+                try:
+                    r.setex(cache_key, 3, json.dumps(result))
+                except Exception:
+                    pass
+            return result
 
-        device_map = {d["id"]: d for d in devices}
+        device_ids = [d["id"] for d in devices]
+        if not device_ids:
+            result = {"devices": []}
+            if r:
+                try:
+                    r.setex(cache_key, 3, json.dumps(result))
+                except Exception:
+                    pass
+            return result
+
+        placeholders = ",".join(["%s"] * len(device_ids))
 
         # Lấy bản ghi mới nhất cho từng (thiet_bi_id, khoa)
+        # Sửa LIMIT 500: thay bằng giới hạn theo tổng device × max 20 keys/device = 20 * len(device_ids)
+        max_keys = max(len(device_ids) * 20, 500)  # đảm bảo không cắt dữ liệu thực tế
         cursor.execute(
-            """
+            f"""
             SELECT d.thiet_bi_id, d.khoa, d.gia_tri, d.thoi_gian,
                    kdl.don_vi, kdl.mo_ta
             FROM du_lieu_thiet_bi d
-            JOIN (
+            INNER JOIN (
                 SELECT thiet_bi_id, khoa, MAX(thoi_gian) AS max_time
                 FROM du_lieu_thiet_bi
+                WHERE thiet_bi_id IN ({placeholders})
                 GROUP BY thiet_bi_id, khoa
             ) m ON d.thiet_bi_id = m.thiet_bi_id AND d.khoa = m.khoa AND d.thoi_gian = m.max_time
             LEFT JOIN khoa_du_lieu kdl ON d.thiet_bi_id = kdl.thiet_bi_id AND d.khoa = kdl.khoa
-            WHERE d.thiet_bi_id IN (%s)
-            """
-            % (",".join(str(d["id"]) for d in devices))
+            WHERE d.thiet_bi_id IN ({placeholders})
+            LIMIT %s
+            """,
+            tuple(device_ids + device_ids + [max_keys])
         )
         rows = cursor.fetchall()
 
@@ -3445,9 +3661,9 @@ def get_devices_latest_all(
             }
 
         # Kết quả cuối
-        result = []
+        result_devices = []
         for d in devices:
-            result.append(
+            result_devices.append(
                 {
                     "device_id": d["ma_thiet_bi"],
                     "ten_thiet_bi": d["ten_thiet_bi"],
@@ -3461,7 +3677,16 @@ def get_devices_latest_all(
                 }
             )
 
-        return {"devices": result}
+        result = {"devices": result_devices}
+
+        # Lưu cache sau khi query thành công
+        if r:
+            try:
+                r.setex(cache_key, 3, json.dumps(result))
+            except Exception:
+                pass
+
+        return result
     finally:
         cursor.close()
         conn.close()
@@ -3557,17 +3782,6 @@ def get_device_events(
 
     mongo = get_mongo()
     collection = mongo["events"]
-
-    # Đảm bảo có index để query nhanh hơn - tạo ngay lập tức nếu chưa có
-    try:
-        # Kiểm tra index có tồn tại chưa
-        indexes = collection.index_information()
-        index_name = "device_id_1_timestamp_-1"
-        if index_name not in indexes:
-            # Tạo index ngay lập tức (không background) để đảm bảo có sẵn
-            collection.create_index([("device_id", 1), ("timestamp", -1)])
-    except Exception:
-        pass  # Index có thể đã tồn tại hoặc đang được tạo
 
     # Tính skip/limit
     skip = (page - 1) * page_size
@@ -3782,30 +3996,43 @@ def get_global_hourly_stats(
     Lấy thống kê nhiệt độ/độ ẩm trung bình toàn hệ thống theo giờ.
     Tổng hợp từ tất cả sensor devices.
     Returns continuous timeline with null values for missing hours.
+
+    Cache: theo user + hours, TTL 5s.
     """
+    # Cache key: user + hours (không có workspace vì stats global)
+    cache_key = f"stats_hourly:{current_user}:{hours}"
+    r = get_redis()
+    if r:
+        try:
+            cached = r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
     from datetime import datetime, timedelta, timezone
-    
+
     if hours < 1 or hours > 72:
         hours = 24
-    
+
     # Vietnam timezone
     VN_TZ = timezone(timedelta(hours=7))
     now = datetime.now(VN_TZ)
     current_hour = now.replace(minute=0, second=0, microsecond=0)
-    
+
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
-    
+
     try:
         # Generate expected hours for the timeline
         expected_hours = []
         for i in range(hours - 1, -1, -1):
             hour_dt = current_hour - timedelta(hours=i)
             expected_hours.append((hour_dt.date(), hour_dt.hour))
-        
+
         # Fetch available data from database
         cursor.execute("""
-            SELECT 
+            SELECT
                 g.ngay, g.gio,
                 AVG(g.nhiet_do_tb) as nhiet_do_tb,
                 AVG(g.do_am_tb) as do_am_tb,
@@ -3815,9 +4042,9 @@ def get_global_hourly_stats(
             WHERE t.loai_thiet_bi = 'sensor' AND t.is_active = 1
             GROUP BY g.ngay, g.gio
         """)
-        
+
         rows = cursor.fetchall()
-        
+
         # Create lookup dict for existing data
         data_map = {}
         for row in rows:
@@ -3827,7 +4054,7 @@ def get_global_hourly_stats(
                 "do_am_tb": round(float(row["do_am_tb"]), 2) if row["do_am_tb"] else None,
                 "so_mau": row["so_mau"]
             }
-        
+
         # Build stats with continuous timeline
         stats = []
         for ngay, gio in expected_hours:
@@ -3840,8 +4067,16 @@ def get_global_hourly_stats(
                 "do_am_tb": data.get("do_am_tb"),
                 "so_mau": data.get("so_mau", 0)
             })
-        
-        return {"hours": len(stats), "stats": stats}
+
+        result = {"hours": len(stats), "stats": stats}
+
+        if r:
+            try:
+                r.setex(cache_key, 5, json.dumps(result))
+            except Exception:
+                pass
+
+        return result
     finally:
         cursor.close()
         conn.close()
@@ -3854,16 +4089,28 @@ def get_global_daily_stats(
 ):
     """
     Lấy thống kê nhiệt độ/độ ẩm trung bình toàn hệ thống theo ngày.
+
+    Cache: theo user + days, TTL 5s.
     """
+    cache_key = f"stats_daily:{current_user}:{days}"
+    r = get_redis()
+    if r:
+        try:
+            cached = r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
     if days < 1 or days > 30:
         days = 7
-    
+
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
-    
+
     try:
         cursor.execute("""
-            SELECT 
+            SELECT
                 n.ngay,
                 AVG(n.nhiet_do_tb) as nhiet_do_tb,
                 AVG(n.do_am_tb) as do_am_tb,
@@ -3875,9 +4122,9 @@ def get_global_daily_stats(
             ORDER BY n.ngay DESC
             LIMIT %s
         """, (days,))
-        
+
         rows = cursor.fetchall()
-        
+
         stats = []
         for row in rows:
             stats.append({
@@ -3887,10 +4134,18 @@ def get_global_daily_stats(
                 "do_am_tb": round(float(row["do_am_tb"]), 2) if row["do_am_tb"] else None,
                 "so_mau": row["so_mau"]
             })
-        
+
         stats.reverse()
-        
-        return {"days": len(stats), "stats": stats}
+
+        result = {"days": len(stats), "stats": stats}
+
+        if r:
+            try:
+                r.setex(cache_key, 5, json.dumps(result))
+            except Exception:
+                pass
+
+        return result
     finally:
         cursor.close()
         conn.close()
@@ -3928,6 +4183,8 @@ def update_device_state_mysql(device_id: str, updates: dict):
             (now, thiet_bi_id),
         )
         conn.commit()
+        # Invalidate latest-all cache vì dữ liệu device vừa thay đổi
+        _invalidate_latest_all_cache(device_id)
     except Exception as e:
         print(f"[CONTROL] MySQL update error: {e}")
         conn.rollback()
@@ -3997,8 +4254,29 @@ def get_device_latest(
     """
     Lấy dữ liệu mới nhất của thiết bị từ MySQL du_lieu_thiet_bi.
     Dùng cho hiển thị real-time card.
+
+    Cache: theo device_id, TTL 3s. Graceful degradation nếu Redis không khả dụng.
     """
+    # #region agent log
+    _t0 = time.time()
+    _debug_latest_log("handler_entered", "C", device_id, {"user_len": len(current_user or "")})
+    # #endregion
+
+    # Cache read (key chỉ theo device_id vì mỗi user thấy cùng data)
+    cache_key = f"device_latest:{device_id}"
+    r = get_redis()
+    if r:
+        try:
+            cached = r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
     conn = get_mysql()
+    # #region agent log
+    _debug_latest_log("after_get_mysql", "B", device_id, {"elapsed_ms": int((time.time() - _t0) * 1000)})
+    # #endregion
     cursor = conn.cursor(dictionary=True)
     try:
         # Lấy thiet_bi_id từ ma_thiet_bi (cột edge chỉ SELECT nếu DB đã migration)
@@ -4033,6 +4311,14 @@ def get_device_latest(
                 WHERE t.ma_thiet_bi = %s AND t.is_active = 1
             """, (device_id,))
         device = cursor.fetchone()
+        # #region agent log
+        _debug_latest_log(
+            "after_device_select",
+            "A",
+            device_id,
+            {"elapsed_ms": int((time.time() - _t0) * 1000), "found": device is not None},
+        )
+        # #endregion
         
         if not device:
             raise HTTPException(status_code=404, detail="Device not found")
@@ -4043,6 +4329,7 @@ def get_device_latest(
         
         # Tối ưu cho MySQL 5.7: Dùng JOIN với subquery để lấy MAX thoi_gian cho mỗi khoa
         # Cách này nhanh hơn correlated subquery vì subquery chỉ chạy 1 lần
+        # Thêm LIMIT trong subquery để giới hạn số khoa cần xử lý (tối đa 1000 khoa)
         cursor.execute("""
             SELECT 
                 dltb.khoa,
@@ -4056,12 +4343,21 @@ def get_device_latest(
                 FROM du_lieu_thiet_bi
                 WHERE thiet_bi_id = %s
                 GROUP BY khoa
+                LIMIT 1000
             ) latest ON dltb.khoa = latest.khoa AND dltb.thoi_gian = latest.max_thoi_gian
             LEFT JOIN khoa_du_lieu kdl ON dltb.thiet_bi_id = kdl.thiet_bi_id AND dltb.khoa = kdl.khoa
             WHERE dltb.thiet_bi_id = %s
         """, (thiet_bi_id, thiet_bi_id))
         
         latest_data = cursor.fetchall()
+        # #region agent log
+        _debug_latest_log(
+            "after_latest_data_query",
+            "A",
+            device_id,
+            {"elapsed_ms": int((time.time() - _t0) * 1000), "row_count": len(latest_data)},
+        )
+        # #endregion
         
         # Format dữ liệu
         result = {
@@ -4093,10 +4389,29 @@ def get_device_latest(
                 'timestamp': int(row['thoi_gian'].timestamp()) if row['thoi_gian'] else None
             }
         
+        # #region agent log
+        _debug_latest_log("handler_return_ok", "A", device_id, {"elapsed_ms": int((time.time() - _t0) * 1000)})
+        # #endregion
+
+        # Cache sau khi query thành công
+        if r:
+            try:
+                r.setex(cache_key, 3, json.dumps(result))
+            except Exception:
+                pass
+
         return result
     except HTTPException:
         raise
     except Exception as e:
+        # #region agent log
+        _debug_latest_log(
+            "handler_exception",
+            "D",
+            device_id,
+            {"elapsed_ms": int((time.time() - _t0) * 1000), "err": str(e)[:300]},
+        )
+        # #endregion
         print(f"[ERROR] get_device_latest error: {e}")
         import traceback
         traceback.print_exc()
@@ -4189,9 +4504,22 @@ def build_rules_from_rows(rows):
 @router.get("/rules")
 def list_rules(
     workspace_id: Optional[int] = Query(None),
-    trang_thai: Optional[str] = None, 
+    trang_thai: Optional[str] = None,
     current_user: str = Depends(get_current_user)
 ):
+    """
+    Cache: theo user + workspace + trang_thai filter, TTL 20s.
+    """
+    cache_key = f"api:rules:{current_user}:{workspace_id}:{trang_thai}"
+    r = get_redis()
+    if r:
+        try:
+            cached = r.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass  # Redis lỗi → fallback
+
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -4212,7 +4540,15 @@ def list_rules(
         query += " ORDER BY r.muc_do_uu_tien ASC, r.id ASC, ra.thu_tu ASC"
         cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
-        return {"rules": build_rules_from_rows(rows)}
+        result = {"rules": build_rules_from_rows(rows)}
+
+        if r:
+            try:
+                r.setex(cache_key, 20, json.dumps(result))
+            except Exception:
+                pass
+
+        return result
     finally:
         cursor.close()
         conn.close()
@@ -4295,6 +4631,7 @@ def create_rule(
             )
 
         conn.commit()
+        _invalidate_api_cache("api:rules:*")
         return {"message": "created", "rule_id": rule_id}
     except HTTPException:
         raise
@@ -4391,6 +4728,7 @@ def update_rule(rule_id: int, body: RuleUpdate, current_user: str = Depends(get_
                 )
         
         conn.commit()
+        _invalidate_api_cache("api:rules:*")
         return {"message": "updated"}
     except HTTPException:
         raise
@@ -4411,6 +4749,7 @@ def delete_rule(rule_id: int, current_user: str = Depends(get_current_user)):
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Rule not found")
         conn.commit()
+        _invalidate_api_cache("api:rules:*")
         return {"message": "deleted"}
     except HTTPException:
         raise
@@ -5946,6 +6285,7 @@ def get_widget_data(
 @router.get("/alerts")
 def list_alerts(
     limit: int = 50,
+    offset: int = 0,
     device_id: Optional[str] = None,
     trang_thai: Optional[str] = None,
     current_user: str = Depends(get_current_user)
@@ -5953,65 +6293,83 @@ def list_alerts(
     """
     Lấy danh sách cảnh báo gần nhất từ bảng canh_bao.
     - limit: số lượng bản ghi tối đa (mặc định 50, tối đa 200)
+    - offset: bỏ qua N bản ghi (phân trang)
     - device_id: lọc theo thiết bị (tùy chọn)
     - trang_thai: lọc new, acknowledged, resolved (tùy chọn)
     """
     limit = max(1, min(limit, 200))
+    offset = max(0, offset)
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
     try:
-        if device_id and trang_thai:
-            cursor.execute("""
-                SELECT cb.id, cb.device_id, cb.rule_id, cb.loai, cb.tin_nhan, cb.muc_do,
-                       cb.trang_thai, cb.thoi_gian_tao, cb.thoi_gian_giai_quyet, cb.data_context,
-                       tb.ten_thiet_bi
-                FROM canh_bao cb
-                LEFT JOIN thiet_bi tb ON cb.device_id = tb.ma_thiet_bi
-                WHERE cb.device_id = %s AND cb.trang_thai = %s
-                ORDER BY cb.thoi_gian_tao DESC
-                LIMIT %s
-            """, (device_id, trang_thai, limit))
-        elif device_id:
-            cursor.execute("""
-                SELECT cb.id, cb.device_id, cb.rule_id, cb.loai, cb.tin_nhan, cb.muc_do,
-                       cb.trang_thai, cb.thoi_gian_tao, cb.thoi_gian_giai_quyet, cb.data_context,
-                       tb.ten_thiet_bi
-                FROM canh_bao cb
-                LEFT JOIN thiet_bi tb ON cb.device_id = tb.ma_thiet_bi
-                WHERE cb.device_id = %s
-                ORDER BY cb.thoi_gian_tao DESC
-                LIMIT %s
-            """, (device_id, limit))
-        elif trang_thai:
-            cursor.execute("""
-                SELECT cb.id, cb.device_id, cb.rule_id, cb.loai, cb.tin_nhan, cb.muc_do,
-                       cb.trang_thai, cb.thoi_gian_tao, cb.thoi_gian_giai_quyet, cb.data_context,
-                       tb.ten_thiet_bi
-                FROM canh_bao cb
-                LEFT JOIN thiet_bi tb ON cb.device_id = tb.ma_thiet_bi
-                WHERE cb.trang_thai = %s
-                ORDER BY cb.thoi_gian_tao DESC
-                LIMIT %s
-            """, (trang_thai, limit))
-        else:
-            cursor.execute("""
-                SELECT cb.id, cb.device_id, cb.rule_id, cb.loai, cb.tin_nhan, cb.muc_do,
-                       cb.trang_thai, cb.thoi_gian_tao, cb.thoi_gian_giai_quyet, cb.data_context,
-                       tb.ten_thiet_bi
-                FROM canh_bao cb
-                LEFT JOIN thiet_bi tb ON cb.device_id = tb.ma_thiet_bi
-                ORDER BY cb.thoi_gian_tao DESC
-                LIMIT %s
-            """, (limit,))
+        where_parts = []
+        params: list = []
+        if device_id:
+            where_parts.append("cb.device_id = %s")
+            params.append(device_id)
+        if trang_thai:
+            where_parts.append("cb.trang_thai = %s")
+            params.append(trang_thai)
+        where_sql = " AND ".join(where_parts) if where_parts else "1=1"
+
+        cursor.execute(
+            f"SELECT COUNT(*) AS c FROM canh_bao cb WHERE {where_sql}",
+            tuple(params),
+        )
+        total_row = cursor.fetchone()
+        total = int(total_row["c"]) if total_row else 0
+
+        # Số cảnh báo trạng thái "new" (cùng bộ lọc thiết bị, không lọc theo trang_thai)
+        new_where = ["cb.trang_thai = 'new'"]
+        new_params: list = []
+        if device_id:
+            new_where.append("cb.device_id = %s")
+            new_params.append(device_id)
+        new_where_sql = " AND ".join(new_where)
+        cursor.execute(
+            f"SELECT COUNT(*) AS c FROM canh_bao cb WHERE {new_where_sql}",
+            tuple(new_params),
+        )
+        new_row = cursor.fetchone()
+        new_count = int(new_row["c"]) if new_row else 0
+
+        cursor.execute(
+            f"""
+            SELECT cb.id, cb.device_id, cb.rule_id, cb.loai, cb.tin_nhan, cb.muc_do,
+                   cb.trang_thai, cb.thoi_gian_tao, cb.thoi_gian_giai_quyet, cb.data_context,
+                   tb.ten_thiet_bi
+            FROM canh_bao cb
+            LEFT JOIN thiet_bi tb ON cb.device_id = tb.ma_thiet_bi
+            WHERE {where_sql}
+            ORDER BY cb.thoi_gian_tao DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params) + (limit, offset),
+        )
         rows = cursor.fetchall()
         for row in rows:
             if row.get("thoi_gian_tao"):
                 row["thoi_gian_tao"] = row["thoi_gian_tao"].isoformat()
             if row.get("thoi_gian_giai_quyet"):
                 row["thoi_gian_giai_quyet"] = row["thoi_gian_giai_quyet"].isoformat()
-        return {"alerts": rows, "count": len(rows)}
+        return {
+            "alerts": rows,
+            "count": len(rows),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "new_count": new_count,
+        }
     except Exception as e:
-        return {"alerts": [], "count": 0, "note": f"Table not found or error: {str(e)}"}
+        return {
+            "alerts": [],
+            "count": 0,
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+            "new_count": 0,
+            "note": f"Table not found or error: {str(e)}",
+        }
     finally:
         cursor.close()
         conn.close()

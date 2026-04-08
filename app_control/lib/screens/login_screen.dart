@@ -46,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.toString().replaceAll('Exception: ', '')),
-            backgroundColor: Colors.red,
+            backgroundColor: const Color(0xFFBA1A1A),
           ),
         );
       }
@@ -61,153 +61,244 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.blue.shade900,
-              Colors.blue.shade600,
-            ],
-          ),
+        decoration: const BoxDecoration(
+          color: Color(0xFFF7FAFC),
         ),
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
+              padding: const EdgeInsets.all(32),
               child: Form(
                 key: _formKey,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Logo
+                    // Logo container - glassmorphism
                     Container(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
+                        color: const Color(0xFF90EFEF).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: const [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
+                            color: Color(0x0F1C1E10),
+                            blurRadius: 32,
+                            offset: Offset(0, 8),
                           ),
                         ],
                       ),
                       child: const Icon(
                         Icons.power_settings_new,
-                        size: 60,
-                        color: Colors.blue,
+                        size: 56,
+                        color: Color(0xFF006a6a),
                       ),
                     ),
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 28),
                     
-                    // Title
+                    // Title - Manrope font
                     const Text(
                       'BDU IoT',
                       style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        fontFamily: 'Manrope',
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.02,
+                        color: Color(0xFF003345),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
+                    // Subtitle - uppercase, tracking
                     const Text(
-                      'Trung tâm Chuyển đổi Số',
+                      'TRUNG TAM CHUYEN DOI SO',
                       style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.white70,
+                        fontFamily: 'Inter',
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.15,
+                        color: Color(0xFF40484C),
                       ),
                     ),
-                    const SizedBox(height: 50),
+                    const SizedBox(height: 48),
                     
-                    // Username field
-                    TextFormField(
-                      controller: _usernameController,
-                      decoration: InputDecoration(
-                        labelText: 'Tên đăng nhập',
-                        prefixIcon: const Icon(Icons.person),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
+                    // Glassmorphism card
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.7),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: const Color(0xFFC0C7CD).withOpacity(0.15),
+                          width: 1,
                         ),
-                      ),
-                      keyboardType: TextInputType.text,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Vui lòng nhập tên đăng nhập';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    
-                    // Password field
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: InputDecoration(
-                        labelText: 'Mật khẩu',
-                        prefixIcon: const Icon(Icons.lock),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscurePassword
-                                ? Icons.visibility_off
-                                : Icons.visibility,
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x0F1C1E10),
+                            blurRadius: 32,
+                            offset: Offset(0, 8),
                           ),
-                          onPressed: () {
-                            setState(() {
-                              _obscurePassword = !_obscurePassword;
-                            });
-                          },
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
+                        ],
                       ),
-                      obscureText: _obscurePassword,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Vui lòng nhập mật khẩu';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 30),
-                    
-                    // Login button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _login,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.blue.shade900,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 5,
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text(
-                                'Đăng nhập',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+                      child: Column(
+                        children: [
+                          // Username field
+                          TextFormField(
+                            controller: _usernameController,
+                            decoration: InputDecoration(
+                              labelText: 'TEN DANG NHAP',
+                              prefixIcon: const Icon(
+                                Icons.person,
+                                color: Color(0xFF006a6a),
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFFF1F4F6),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: const Color(0xFFC0C7CD).withOpacity(0.15),
                                 ),
                               ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: const Color(0xFFC0C7CD).withOpacity(0.15),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: const Color(0xFF006a6a).withOpacity(0.3),
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                            keyboardType: TextInputType.text,
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontWeight: FontWeight.w500,
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Vui long nhap ten dang nhap';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 20),
+                          
+                          // Password field
+                          TextFormField(
+                            controller: _passwordController,
+                            decoration: InputDecoration(
+                              labelText: 'MAT KHAU',
+                              prefixIcon: const Icon(
+                                Icons.lock,
+                                color: Color(0xFF006a6a),
+                              ),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  color: const Color(0xFF006a6a),
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _obscurePassword = !_obscurePassword;
+                                  });
+                                },
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFFF1F4F6),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: const Color(0xFFC0C7CD).withOpacity(0.15),
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: const Color(0xFFC0C7CD).withOpacity(0.15),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: const Color(0xFF006a6a).withOpacity(0.3),
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                            obscureText: _obscurePassword,
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontWeight: FontWeight.w500,
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Vui long nhap mat khau';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 28),
+                          
+                          // Login button - gradient pill
+                          SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  colors: [
+                                    Color(0xFF003345),
+                                    Color(0xFF004B63),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(9999),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x40003345),
+                                    blurRadius: 32,
+                                    offset: Offset(0, 12),
+                                  ),
+                                ],
+                              ),
+                              child: ElevatedButton(
+                                onPressed: _isLoading ? null : _login,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.transparent,
+                                  foregroundColor: Colors.white,
+                                  shadowColor: Colors.transparent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(9999),
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                ),
+                                child: _isLoading
+                                    ? const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      )
+                                    : const Text(
+                                        'DANG NHAP',
+                                        style: TextStyle(
+                                          fontFamily: 'Manrope',
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.02,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

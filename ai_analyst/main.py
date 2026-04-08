@@ -464,22 +464,11 @@ def _fetch_stream_url(room_id: int, camera_id: int) -> str:
 
 
 def _report_occupancy(room_id: int, camera_id: int, so_nguoi: int):
-    """Send people count to FastAPI backend."""
-    try:
-        httpx.post(
-            f"{IOT_PLATFORM_URL}/internal/ai/occupancy",
-            json={
-                "phong_id": room_id,
-                "phong_camera_id": camera_id,
-                "so_nguoi": so_nguoi,
-                "count_type": "camera",
-                "nguon": "ai_analyst",
-            },
-            headers={"X-Internal-Key": INTERNAL_API_KEY},
-            timeout=5,
-        )
-    except Exception as e:
-        logger.warning(f"Failed to report occupancy: {e}")
+    """Ghi vào bảng phong_occupancy ĐÃ TẮT — giờ dữ liệu occupancy chỉ tồn tại trong memory
+    của ai_analyst và được trả qua endpoint /internal/ai/occupancy-list và /internal/ai/occupancy/{room_id}.
+    Các service (fastapi_backend, rule_engine) gọi trực tiếp các endpoint này thay vì đọc bảng.
+    """
+    pass  # No-op: không ghi vào MySQL nữa
 
 
 def _occupancy_reporter_loop(session: CaptureSession):
@@ -489,6 +478,50 @@ def _occupancy_reporter_loop(session: CaptureSession):
         if session.status == "running":
             so_nguoi = session.so_nguoi
             _report_occupancy(session.room_id, session.camera_id, so_nguoi)
+
+
+# ============================================================
+# Occupancy API (trả realtime từ memory — không cần bảng phong_occupancy)
+# ============================================================
+@app.get("/internal/ai/occupancy-list")
+def get_all_occupancy():
+    """
+    Trả occupancy realtime của tất cả active sessions.
+    Dùng bởi fastapi_backend và rule_engine thay vì truy vấn bảng phong_occupancy.
+    """
+    result = []
+    for sid, sess in _active_sessions.items():
+        if sess.status == "running":
+            result.append({
+                "session_id": sid,
+                "room_id": sess.room_id,
+                "camera_id": sess.camera_id,
+                "so_nguoi": sess.so_nguoi,
+                "status": sess.status,
+            })
+    return {"occupancy": result}
+
+
+@app.get("/internal/ai/occupancy/{room_id}")
+def get_room_occupancy(room_id: int):
+    """
+    Trả occupancy realtime của một phòng (tổng tất cả camera trong phòng).
+    """
+    total = 0
+    cameras = []
+    for sid, sess in _active_sessions.items():
+        if sess.room_id == room_id and sess.status == "running":
+            total += sess.so_nguoi
+            cameras.append({
+                "session_id": sid,
+                "camera_id": sess.camera_id,
+                "so_nguoi": sess.so_nguoi,
+            })
+    return {
+        "room_id": room_id,
+        "so_nguoi": total,
+        "cameras": cameras,
+    }
 
 
 # ============================================================

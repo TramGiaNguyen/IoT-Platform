@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
 from pydantic import BaseModel
 from typing import Optional
+from urllib.parse import quote
 import httpx
 import os
 from datetime import datetime, timedelta
@@ -374,23 +375,31 @@ async def get_rooms(
     - Query param: ?token=<token>
     """
     platform_token = token_data["platform_token"]
-    
-    async with httpx.AsyncClient() as client:
+
+    async with httpx.AsyncClient(timeout=15) as client:
         try:
             # Gọi API platform để lấy rooms
             response = await client.get(
                 f"{IOT_PLATFORM_URL}/rooms",
                 headers={"Authorization": f"Bearer {platform_token}"}
             )
-            
+
             if response.status_code != 200:
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail="Không lấy được danh sách phòng"
+                    detail=f"Không lấy được danh sách phòng (HTTP {response.status_code})"
                 )
-            
-            return response.json()
-            
+
+            data = response.json()
+            # Debug: in ra so_nguoi của phòng đầu tiên (nếu có)
+            rooms_list = data.get("rooms", [])
+            if rooms_list:
+                first = rooms_list[0]
+                print(f"[DEBUG /rooms] room_id={first.get('id')} "
+                      f"so_nguoi={first.get('so_nguoi')} occupancy={first.get('occupancy')} "
+                      f"keys={list(first.keys())}")
+            return data
+
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -410,23 +419,29 @@ async def get_room_data(
     - Query param: ?token=<token>
     """
     platform_token = token_data["platform_token"]
-    
-    async with httpx.AsyncClient() as client:
+
+    async with httpx.AsyncClient(timeout=20) as client:
         try:
             # Gọi API platform để lấy room data
             response = await client.get(
                 f"{IOT_PLATFORM_URL}/rooms/{room_id}/data",
                 headers={"Authorization": f"Bearer {platform_token}"}
             )
-            
+
             if response.status_code != 200:
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail="Không lấy được dữ liệu phòng"
+                    detail=f"Không lấy được dữ liệu phòng (HTTP {response.status_code})"
                 )
-            
-            return response.json()
-            
+
+            data = response.json()
+            # Debug: in ra so_nguoi trả về từ platform
+            print(f"[DEBUG /rooms/{room_id}/data] "
+                  f"so_nguoi={data.get('so_nguoi')} "
+                  f"occupancy_cap_nhat_luc={data.get('occupancy_cap_nhat_luc')} "
+                  f"device_count={len(data.get('devices', []))}")
+            return data
+
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -700,6 +715,108 @@ async def get_devices_list(
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
 
+def _encode_device_path_segment(device_id: str) -> str:
+    """Encode ma_thiet_bi cho segment path khi gọi platform (an toàn với ký tự đặc biệt)."""
+    return quote(device_id, safe="")
+
+
+async def _proxy_platform_json_get(
+    url: str,
+    platform_token: str,
+    fail_detail: str,
+):
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {platform_token}"},
+            )
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=fail_detail,
+                )
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.get("/rooms/{room_id}/devices")
+async def get_room_devices(
+    room_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional),
+):
+    """Proxy: Flutter rule form dùng GET /rooms/{id}/devices (giống web dashboard)."""
+    platform_token = token_data["platform_token"]
+    return await _proxy_platform_json_get(
+        f"{IOT_PLATFORM_URL}/rooms/{room_id}/devices",
+        platform_token,
+        "Không lấy được thiết bị theo phòng",
+    )
+
+
+@app.get("/rooms/{room_id}/occupancy")
+async def get_room_occupancy_proxy(
+    room_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional),
+):
+    """Proxy: số người trong phòng cho điều kiện rule."""
+    platform_token = token_data["platform_token"]
+    return await _proxy_platform_json_get(
+        f"{IOT_PLATFORM_URL}/rooms/{room_id}/occupancy",
+        platform_token,
+        "Không lấy được occupancy phòng",
+    )
+
+
+@app.get("/devices/{device_id}/latest")
+async def get_device_latest_proxy(
+    device_id: str,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional),
+):
+    platform_token = token_data["platform_token"]
+    enc = _encode_device_path_segment(device_id)
+    return await _proxy_platform_json_get(
+        f"{IOT_PLATFORM_URL}/devices/{enc}/latest",
+        platform_token,
+        "Không lấy được dữ liệu latest của thiết bị",
+    )
+
+
+@app.get("/devices/{device_id}/control-lines")
+async def get_device_control_lines_proxy(
+    device_id: str,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional),
+):
+    """Trả về JSON platform (control_lines) — Flutter parse giống web fetchControlLines."""
+    platform_token = token_data["platform_token"]
+    enc = _encode_device_path_segment(device_id)
+    return await _proxy_platform_json_get(
+        f"{IOT_PLATFORM_URL}/devices/{enc}/control-lines",
+        platform_token,
+        "Không lấy được control lines",
+    )
+
+
+@app.get("/devices/{device_id}/data-keys")
+async def get_device_data_keys_proxy(
+    device_id: str,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional),
+):
+    platform_token = token_data["platform_token"]
+    enc = _encode_device_path_segment(device_id)
+    return await _proxy_platform_json_get(
+        f"{IOT_PLATFORM_URL}/devices/{enc}/data-keys",
+        platform_token,
+        "Không lấy được data keys",
+    )
+
+
 @app.get("/devices/{device_id}/relays")
 async def get_device_relays(
     device_id: str,
@@ -710,11 +827,12 @@ async def get_device_relays(
     Lấy danh sách relay và tên của thiết bị
     """
     platform_token = token_data["platform_token"]
-    
+    enc = _encode_device_path_segment(device_id)
+
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
-                f"{IOT_PLATFORM_URL}/devices/{device_id}/control-lines",
+                f"{IOT_PLATFORM_URL}/devices/{enc}/control-lines",
                 headers={"Authorization": f"Bearer {platform_token}"}
             )
             

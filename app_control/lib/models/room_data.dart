@@ -5,12 +5,15 @@ class RoomData {
   final String roomName;
   final List<Device> devices;
   final DateTime timestamp;
+  /// room_total từ `phong_occupancy` (cùng GET /rooms/{id}/data).
+  final int soNguoiTrongPhong;
 
   RoomData({
     required this.roomId,
     required this.roomName,
     required this.devices,
     DateTime? timestamp,
+    this.soNguoiTrongPhong = 0,
   }) : timestamp = timestamp ?? DateTime.now();
 
   factory RoomData.fromJson(Map<String, dynamic> json) {
@@ -21,10 +24,19 @@ class RoomData {
       }
     }
 
+    int readSoNguoi() {
+      final v = json['so_nguoi'] ?? json['so_nguoi_trong_phong'];
+      if (v == null) return 0;
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v.toString()) ?? 0;
+    }
+
     return RoomData(
       roomId: json['room_id'] as int? ?? json['room']?['id'] as int,
       roomName: json['room_name'] as String? ?? json['room']?['name'] as String,
       devices: devicesList,
+      soNguoiTrongPhong: readSoNguoi(),
     );
   }
 

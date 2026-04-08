@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import {
   fetchRules,
   fetchRooms,
@@ -6,7 +6,6 @@ import {
   createRule,
   updateRule,
   deleteRule,
-  createRoom,
   fetchDeviceLatest,
   fetchScheduledRules,
   fetchControlLines,
@@ -14,6 +13,7 @@ import {
   updateScheduledRule,
   deleteScheduledRule,
 } from '../services';
+import { useGlobalCache } from '../context/GlobalCache';
 import RuleChainEditor from './RuleChainEditor';
 
 const operatorOptions = ['>', '<', '>=', '<=', '!=', '=', '=='];
@@ -128,8 +128,12 @@ function buildCronFromPicker({ mode, hour, minute, dayOfWeek, intervalMinutes, i
 
 export default function RulesManagement({ token, onBack }) {
   const [loading, setLoading] = useState(false);
-  const [rooms, setRooms] = useState([]);
-  const [rules, setRules] = useState([]);
+  // Global cache — rooms/rules đọc NGAY, không cần chờ fetch
+  const { cache, updateCache } = useGlobalCache();
+  const _initialRooms = cache.rooms?.length > 0 ? cache.rooms : [];
+  const _initialRules = cache.rules?.length > 0 ? cache.rules : [];
+  const [rooms, setRooms] = useState(_initialRooms);
+  const [rules, setRules] = useState(_initialRules);
   const [selectedRoom, setSelectedRoom] = useState('');
   const [roomDevices, setRoomDevices] = useState([]);
   const [roomModalVisible, setRoomModalVisible] = useState(false);
@@ -146,7 +150,11 @@ export default function RulesManagement({ token, onBack }) {
   const [deviceControlLinesCache, setDeviceControlLinesCache] = useState({});
 
   const loadDeviceControlLines = async (deviceId) => {
-    if (!deviceId || deviceControlLinesCache[deviceId]) return;
+    if (!deviceId) return;
+    // Chỉ bỏ qua khi đã cache có ít nhất 1 relay — mảng rỗng [] trong JS là truthy,
+    // nên kiểu cũ `if (cache[deviceId]) return` khiến lần đầu lỗi/0 relay thì không bao giờ gọi lại API.
+    const cached = deviceControlLinesCache[deviceId];
+    if (Array.isArray(cached) && cached.length > 0) return;
     try {
       const res = await fetchControlLines(deviceId, token);
       const lines = res.data?.control_lines || [];
@@ -228,27 +236,33 @@ export default function RulesManagement({ token, onBack }) {
     actions: [emptyAction],
   });
 
-  const loadRooms = async () => {
+  const loadRooms = useCallback(async () => {
+    if (!token) return;
     try {
       const res = await fetchRooms(token);
-      setRooms(res.data.rooms || []);
+      const roomList = res.data?.rooms || res.data || [];
+      setRooms(roomList);
+      updateCache({ rooms: roomList });
     } catch (e) {
       console.error('Load rooms failed', e);
     }
-  };
+  }, [token, updateCache]);
 
-  const loadRules = async () => {
+  const loadRules = useCallback(async () => {
+    if (!token) return;
     setLoading(true);
     try {
       const res = await fetchRules(token);
-      setRules(res.data.rules || []);
+      const ruleList = res.data?.rules || [];
+      setRules(ruleList);
+      updateCache({ rules: ruleList });
     } catch (e) {
       console.error('Load rules failed', e);
       setRules([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, updateCache]);
 
   const loadDevicesByRoom = async (roomId) => {
     if (!roomId) {
@@ -316,7 +330,8 @@ export default function RulesManagement({ token, onBack }) {
     }
   };
 
-  const loadScheduledRules = async () => {
+  const loadScheduledRules = useCallback(async () => {
+    if (!token) return;
     setScheduledLoading(true);
     try {
       const res = await fetchScheduledRules(token);
@@ -327,18 +342,25 @@ export default function RulesManagement({ token, onBack }) {
     } finally {
       setScheduledLoading(false);
     }
-  };
+  }, [token]);
 
+  // Gộp rooms + rules khi có token (tránh mount với token rỗng rồi không load lại)
   useEffect(() => {
-    loadRooms();
-    loadRules();
-  }, []);
+    if (!token) return;
+    Promise.all([loadRooms(), loadRules()]).catch(() => {});
+  }, [token, loadRooms, loadRules]);
 
+  // Tránh loadScheduledRules lại khi user switch tab nhiều lần (dùng ref)
+  const _scheduledLoaded = useRef(false);
   useEffect(() => {
-    if (activeTab === 'scheduled') {
+    if (activeTab === 'scheduled' && !_scheduledLoaded.current) {
+      _scheduledLoaded.current = true;
       loadScheduledRules();
     }
-  }, [activeTab]);
+    if (activeTab !== 'scheduled') {
+      _scheduledLoaded.current = false;
+    }
+  }, [activeTab, loadScheduledRules]);
 
   useEffect(() => {
     if (formVisible && formData.phong_id) {

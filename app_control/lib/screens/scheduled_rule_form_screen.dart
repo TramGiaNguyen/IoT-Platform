@@ -1,5 +1,3 @@
-// app_control/lib/screens/scheduled_rule_form_screen.dart
-
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/scheduled_rule.dart';
@@ -22,7 +20,6 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
 
   late TextEditingController _nameController;
 
-  // Devices and relays data
   List<Map<String, dynamic>> _devices = [];
   List<Map<String, dynamic>> _relays = [];
   bool _isLoadingDevices = true;
@@ -30,7 +27,7 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
 
   String? _deviceId;
   TimeOfDay _selectedTime = const TimeOfDay(hour: 8, minute: 0);
-  Set<int> _selectedDays = {1, 2, 3, 4, 5}; // Mon-Fri
+  Set<int> _selectedDays = {1, 2, 3, 4, 5};
   bool _isDaily = true;
 
   int? _actionRelay;
@@ -45,11 +42,8 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
     _nameController = TextEditingController();
 
     if (widget.rule != null) {
-      // Edit mode
       _nameController.text = widget.rule!.tenRule;
       _deviceId = widget.rule!.deviceId;
-
-      // Parse cron expression
       _parseCronExpression(widget.rule!.cronExpression);
 
       if (widget.rule!.actionParams != null) {
@@ -114,7 +108,6 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
         _isLoadingDevices = false;
       });
       
-      // Load relays for pre-selected device
       if (_deviceId != null) {
         _loadRelays(_deviceId!);
       }
@@ -123,8 +116,8 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Lỗi tải thiết bị: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: Text('Loi tai thiet bi: ${e.toString()}'),
+            backgroundColor: const Color(0xFFBA1A1A),
           ),
         );
       }
@@ -139,7 +132,6 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
       setState(() {
         _relays = relays;
         _isLoadingRelays = false;
-        // Reset relay selection if current selection not in list
         if (_actionRelay != null && 
             !relays.any((r) => r['relay'] == _actionRelay)) {
           _actionRelay = null;
@@ -175,8 +167,8 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
     if (_deviceId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Vui lòng chọn thiết bị'),
-          backgroundColor: Colors.red,
+          content: Text('Vui long chon thiet bi'),
+          backgroundColor: Color(0xFFBA1A1A),
         ),
       );
       return;
@@ -185,8 +177,8 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
     if (_actionRelay == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Vui lòng chọn relay'),
-          backgroundColor: Colors.red,
+          content: Text('Vui long chon relay'),
+          backgroundColor: Color(0xFFBA1A1A),
         ),
       );
       return;
@@ -195,8 +187,8 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
     if (!_isDaily && _selectedDays.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Vui lòng chọn ít nhất một ngày trong tuần'),
-          backgroundColor: Colors.red,
+          content: Text('Vui long chon it nhat mot ngay trong tuan'),
+          backgroundColor: Color(0xFFBA1A1A),
         ),
       );
       return;
@@ -228,8 +220,8 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                widget.rule != null ? 'Đã cập nhật lịch trình' : 'Đã tạo lịch trình'),
-            backgroundColor: Colors.green,
+                widget.rule != null ? 'Da cap nhat lich trinh' : 'Da tao lich trinh'),
+            backgroundColor: const Color(0xFF006a6a),
           ),
         );
         Navigator.pop(context, true);
@@ -238,8 +230,8 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Lỗi: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: Text('Loi: ${e.toString()}'),
+            backgroundColor: const Color(0xFFBA1A1A),
           ),
         );
       }
@@ -253,256 +245,578 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.rule != null ? 'Sửa Lịch Trình' : 'Tạo Lịch Trình'),
-      ),
-      body: _isLoadingDevices
-          ? const Center(child: CircularProgressIndicator())
-          : Form(
-              key: _formKey,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
+      body: Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFFF7FAFC),
+        ),
+        child: Column(
+          children: [
+            // App Bar
+            Container(
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + 8,
+                left: 4,
+                right: 8,
+                bottom: 8,
+              ),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF7FAFC),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x0F1C1E06),
+                    blurRadius: 24,
+                    offset: Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
                 children: [
-                  // Rule name
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Tên lịch trình',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.label),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Vui lòng nhập tên lịch trình';
-                      }
-                      return null;
-                    },
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Color(0xFF003345)),
+                    onPressed: () => Navigator.pop(context),
                   ),
-
-                  const SizedBox(height: 24),
-                  const Text(
-                    'THỜI GIAN',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Time picker
-                  ListTile(
-                    title: const Text('Giờ thực hiện'),
-                    subtitle: Text(
-                      '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                    trailing: const Icon(Icons.access_time),
-                    onTap: _selectTime,
-                    tileColor: Colors.blue.shade50,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Daily or specific days
-                  SwitchListTile(
-                    title: const Text('Hàng ngày'),
-                    subtitle: Text(_isDaily ? 'Chạy mỗi ngày' : 'Chọn ngày cụ thể'),
-                    value: _isDaily,
-                    onChanged: (value) {
-                      setState(() {
-                        _isDaily = value;
-                        if (value) {
-                          _selectedDays = {1, 2, 3, 4, 5, 6, 7};
-                        }
-                      });
-                    },
-                    activeColor: Colors.green,
-                  ),
-
-                  if (!_isDaily) ...[
-                    const SizedBox(height: 12),
-                    const Text('Chọn ngày trong tuần:'),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        _buildDayChip('T2', 1),
-                        _buildDayChip('T3', 2),
-                        _buildDayChip('T4', 3),
-                        _buildDayChip('T5', 4),
-                        _buildDayChip('T6', 5),
-                        _buildDayChip('T7', 6),
-                        _buildDayChip('CN', 7),
-                      ],
-                    ),
-                  ],
-
-                  const SizedBox(height: 24),
-                  const Text(
-                    'HÀNH ĐỘNG',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Device dropdown
-                  DropdownButtonFormField<String>(
-                    value: _deviceId,
-                    decoration: const InputDecoration(
-                      labelText: 'Thiết bị',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.devices),
-                    ),
-                    items: _devices.map((device) {
-                      return DropdownMenuItem<String>(
-                        value: device['device_id'],
-                        child: Text(device['name'] ?? device['device_id']),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _deviceId = value;
-                        _actionRelay = null; // Reset relay selection
-                        if (value != null) {
-                          _loadRelays(value);
-                        }
-                      });
-                    },
-                    validator: (value) {
-                      if (value == null) {
-                        return 'Vui lòng chọn thiết bị';
-                      }
-                      return null;
-                    },
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Relay and state
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _isLoadingRelays
-                            ? const Center(child: CircularProgressIndicator())
-                            : DropdownButtonFormField<int>(
-                                value: _actionRelay,
-                                decoration: const InputDecoration(
-                                  labelText: 'Relay',
-                                  border: OutlineInputBorder(),
-                                ),
-                                items: _relays.map((relay) {
-                                  return DropdownMenuItem<int>(
-                                    value: relay['relay'],
-                                    child: Text(relay['name']),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() => _actionRelay = value);
-                                },
-                                validator: (value) {
-                                  if (value == null) {
-                                    return 'Chọn relay';
-                                  }
-                                  return null;
-                                },
-                              ),
+                  Expanded(
+                    child: Text(
+                      widget.rule != null ? 'Sua Lich Trinh' : 'Tao Lich Trinh',
+                      style: const TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.02,
+                        color: Color(0xFF003345),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          value: _actionState,
-                          decoration: const InputDecoration(
-                            labelText: 'Trạng thái',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: const [
-                            DropdownMenuItem(value: 'ON', child: Text('BẬT (ON)')),
-                            DropdownMenuItem(value: 'OFF', child: Text('TẮT (OFF)')),
-                          ],
-                          onChanged: (value) {
-                            setState(() => _actionState = value!);
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Enable/Disable
-                  SwitchListTile(
-                    title: const Text('Kích hoạt lịch trình'),
-                    subtitle:
-                        Text(_isEnabled ? 'Lịch trình đang bật' : 'Lịch trình đang tắt'),
-                    value: _isEnabled,
-                    onChanged: (value) {
-                      setState(() => _isEnabled = value);
-                    },
-                    activeColor: Colors.green,
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Preview
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Xem trước:',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(_buildPreviewText()),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Cron: ${_buildCronExpression()}',
-                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Save button
-                  ElevatedButton(
-                    onPressed: _isSaving ? null : _saveRule,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.all(16),
-                    ),
-                    child: _isSaving
-                        ? const CircularProgressIndicator()
-                        : Text(widget.rule != null ? 'Cập nhật' : 'Tạo Lịch Trình'),
                   ),
                 ],
               ),
             ),
+
+            // Content
+            Expanded(
+              child: _isLoadingDevices
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF006a6a),
+                      ),
+                    )
+                  : Form(
+                      key: _formKey,
+                      child: ListView(
+                        padding: const EdgeInsets.all(20),
+                        children: [
+                          // Rule name
+                          _buildSectionLabel('TEN LICH TRINH'),
+                          const SizedBox(height: 10),
+                          TextFormField(
+                            controller: _nameController,
+                            decoration: _inputDecoration(
+                              hintText: 'VD: Tuoi cay buoi sang',
+                              prefixIcon: Icons.label_outline,
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Vui long nhap ten lich trinh';
+                              }
+                              return null;
+                            },
+                          ),
+
+                          const SizedBox(height: 28),
+
+                          // Time
+                          _buildSectionLabel('THOI GIAN'),
+                          const SizedBox(height: 10),
+
+                          // Time picker card - glass panel
+                          GestureDetector(
+                            onTap: _selectTime,
+                            child: Container(
+                              padding: const EdgeInsets.all(24),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Color(0xFF003345),
+                                    Color(0xFF004B63),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(24),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x40003345),
+                                    blurRadius: 32,
+                                    offset: Offset(0, 12),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: const Icon(
+                                      Icons.access_time,
+                                      color: Colors.white,
+                                      size: 28,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'GIO THUC HIEN',
+                                          style: TextStyle(
+                                            fontFamily: 'Inter',
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            letterSpacing: 0.15,
+                                            color: Color(0xFF90EFEF),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
+                                          style: const TextStyle(
+                                            fontFamily: 'Manrope',
+                                            fontSize: 36,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.edit_calendar,
+                                    color: Colors.white.withOpacity(0.7),
+                                    size: 28,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          // Daily or specific days
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: const Color(0xFFC0C7CD).withOpacity(0.15),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.event_repeat,
+                                  color: _isDaily ? const Color(0xFF006a6a) : const Color(0xFF40484C),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _isDaily ? 'Hang ngay' : 'Chon ngay cu the',
+                                        style: const TextStyle(
+                                          fontFamily: 'Manrope',
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF003345),
+                                        ),
+                                      ),
+                                      Text(
+                                        _isDaily ? 'Chay moi ngay' : 'Chon ngay trong tuan',
+                                        style: const TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontSize: 12,
+                                          color: Color(0xFF40484C),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Switch(
+                                  value: _isDaily,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _isDaily = value;
+                                      if (value) {
+                                        _selectedDays = {1, 2, 3, 4, 5, 6, 7};
+                                      }
+                                    });
+                                  },
+                                  activeColor: const Color(0xFF006a6a),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          if (!_isDaily) ...[
+                            const SizedBox(height: 14),
+                            // Day chips
+                            _buildSectionLabel('CHON NGAY'),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _buildDayChip('T2', 1),
+                                _buildDayChip('T3', 2),
+                                _buildDayChip('T4', 3),
+                                _buildDayChip('T5', 4),
+                                _buildDayChip('T6', 5),
+                                _buildDayChip('T7', 6),
+                                _buildDayChip('CN', 7),
+                              ],
+                            ),
+                          ],
+
+                          const SizedBox(height: 28),
+
+                          // Actions
+                          _buildSectionLabel('HANH DONG'),
+                          const SizedBox(height: 10),
+
+                          // Device dropdown
+                          DropdownButtonFormField<String>(
+                            value: _deviceId,
+                            decoration: _inputDecoration(
+                              hintText: 'Chon thiet bi',
+                              prefixIcon: Icons.devices,
+                            ),
+                            items: _devices.map((device) {
+                              return DropdownMenuItem<String>(
+                                value: device['device_id'] as String,
+                                child: Text(
+                                  device['name'] ?? device['device_id'],
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _deviceId = value;
+                                _actionRelay = null;
+                                if (value != null) {
+                                  _loadRelays(value);
+                                }
+                              });
+                            },
+                            validator: (value) {
+                              if (value == null) {
+                                return 'Vui long chon thiet bi';
+                              }
+                              return null;
+                            },
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          // Relay and state
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _isLoadingRelays
+                                    ? const Center(child: CircularProgressIndicator(color: Color(0xFF006a6a)))
+                                    : DropdownButtonFormField<int>(
+                                        value: _actionRelay,
+                                        decoration: _inputDecoration(
+                                          hintText: 'Relay',
+                                          prefixIcon: Icons.power,
+                                        ),
+                                        items: _relays.map((relay) {
+                                          return DropdownMenuItem<int>(
+                                            value: relay['relay'] as int,
+                                            child: Text(relay['name'] as String),
+                                          );
+                                        }).toList(),
+                                        onChanged: (value) {
+                                          setState(() => _actionRelay = value);
+                                        },
+                                        validator: (value) {
+                                          if (value == null) {
+                                            return 'Chon relay';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: _actionState,
+                                  decoration: _inputDecoration(
+                                    hintText: 'Trang thai',
+                                    prefixIcon: Icons.toggle_on,
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(value: 'ON', child: Text('BAT')),
+                                    DropdownMenuItem(value: 'OFF', child: Text('TAT')),
+                                  ],
+                                  onChanged: (value) {
+                                    setState(() => _actionState = value!);
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          // Enable/Disable
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: const Color(0xFFC0C7CD).withOpacity(0.15),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _isEnabled ? Icons.check_circle : Icons.pause_circle,
+                                  color: const Color(0xFF006a6a),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _isEnabled ? 'Kich hoat lich trinh' : 'Lich trinh dang tat',
+                                    style: const TextStyle(
+                                      fontFamily: 'Manrope',
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF003345),
+                                    ),
+                                  ),
+                                ),
+                                Switch(
+                                  value: _isEnabled,
+                                  onChanged: (value) {
+                                    setState(() => _isEnabled = value);
+                                  },
+                                  activeColor: const Color(0xFF006a6a),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          // Preview card
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Color(0xFF003345),
+                                  Color(0xFF004B63),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.visibility,
+                                      color: Colors.white.withOpacity(0.7),
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'XEM TRUOC',
+                                      style: TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.15,
+                                        color: Color(0xFF90EFEF),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _buildPreviewText(),
+                                  style: const TextStyle(
+                                    fontFamily: 'Manrope',
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Cron: ${_buildCronExpression()}',
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 10,
+                                    color: Colors.white.withOpacity(0.5),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 28),
+
+                          // Save button
+                          SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  colors: [
+                                    Color(0xFF003345),
+                                    Color(0xFF004B63),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(9999),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x40003345),
+                                    blurRadius: 32,
+                                    offset: Offset(0, 12),
+                                  ),
+                                ],
+                              ),
+                              child: ElevatedButton(
+                                onPressed: _isSaving ? null : _saveRule,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.transparent,
+                                  foregroundColor: Colors.white,
+                                  shadowColor: Colors.transparent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(9999),
+                                  ),
+                                ),
+                                child: _isSaving
+                                    ? const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      )
+                                    : Text(
+                                        widget.rule != null ? 'CAP NHAT' : 'TAO LICH TRINH',
+                                        style: const TextStyle(
+                                          fontFamily: 'Manrope',
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.02,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 40),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontFamily: 'Inter',
+        fontSize: 10,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.15,
+        color: Color(0xFF40484C),
+      ),
     );
   }
 
   Widget _buildDayChip(String label, int day) {
     final isSelected = _selectedDays.contains(day);
-    return FilterChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
+    return GestureDetector(
+      onTap: () {
         setState(() {
-          if (selected) {
-            _selectedDays.add(day);
-          } else {
+          if (isSelected) {
             _selectedDays.remove(day);
+          } else {
+            _selectedDays.add(day);
           }
         });
       },
-      selectedColor: Colors.blue,
-      labelStyle: TextStyle(
-        color: isSelected ? Colors.white : Colors.black,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF006a6a) : const Color(0xFFF1F4F6),
+          borderRadius: BorderRadius.circular(9999),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: 'Manrope',
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : const Color(0xFF40484C),
+          ),
+        ),
       ),
+    );
+  }
+
+  InputDecoration _inputDecoration({
+    String? hintText,
+    IconData? prefixIcon,
+  }) {
+    return InputDecoration(
+      hintText: hintText,
+      prefixIcon: prefixIcon != null
+          ? Icon(prefixIcon, color: const Color(0xFF006a6a))
+          : null,
+      filled: true,
+      fillColor: const Color(0xFFF1F4F6),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(
+          color: const Color(0xFFC0C7CD).withOpacity(0.15),
+        ),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(
+          color: const Color(0xFFC0C7CD).withOpacity(0.15),
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(
+          color: const Color(0xFF006a6a).withOpacity(0.3),
+          width: 2,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );
   }
 
@@ -510,22 +824,21 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
     final time =
         '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}';
 
-    // Get relay name
     String relayName = 'relay $_actionRelay';
     if (_actionRelay != null) {
       final relay = _relays.firstWhere(
         (r) => r['relay'] == _actionRelay,
         orElse: () => {'name': 'Relay $_actionRelay'},
       );
-      relayName = relay['name'];
+      relayName = relay['name'] as String;
     }
 
     if (_isDaily) {
-      return 'Hàng ngày lúc $time: $_actionState $relayName';
+      return 'Hang ngay luc $time: $_actionState $relayName';
     } else {
       final dayNames = ['', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
       final days = _selectedDays.map((d) => dayNames[d]).join(', ');
-      return 'Mỗi $days lúc $time: $_actionState $relayName';
+      return 'Moi $days luc $time: $_actionState $relayName';
     }
   }
 }

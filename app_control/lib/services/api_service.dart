@@ -237,6 +237,32 @@ class ApiService {
     }
   }
 
+  // Get room occupancy (so nguoi trong phong)
+  Future<int> getRoomOccupancy(int roomId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/rooms/$roomId/occupancy'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      // Platform trả `so_nguoi` (xem GET /rooms/{id}/occupancy trong FastAPI).
+      final raw = data['so_nguoi'] ?? data['occupancy'];
+      if (raw is int) return raw;
+      if (raw is num) return raw.toInt();
+      return int.tryParse('$raw') ?? 0;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      return 0;
+    }
+  }
+
   // Control relay in a room
   Future<void> controlRoomRelay({
     required int roomId,
@@ -270,17 +296,103 @@ class ApiService {
     }
   }
 
-  // Get devices list for dropdown
+  /// Giống web RulesManagement: `GET /rooms/{id}/devices` + `latest_fields`.
+  Future<List<Map<String, dynamic>>> getDevicesByRoom(int roomId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/rooms/$roomId/devices'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final devicesList = data['devices'] as List<dynamic>? ?? [];
+      return devicesList.whereType<Map>().map((d) {
+        final ma = d['ma_thiet_bi']?.toString() ?? '';
+        final lf = d['latest_fields'];
+        return {
+          'device_id': ma,
+          'name': d['ten_thiet_bi']?.toString() ?? ma,
+          'latest_fields': lf is List ? lf : <dynamic>[],
+          'controls': <dynamic>[],
+        };
+      }).toList();
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được thiết bị theo phòng');
+    }
+  }
+
+  /// Dữ liệu mới nhất theo khoá (giống web `fetchDeviceLatest`).
+  Future<Map<String, dynamic>> getDeviceLatest(String deviceId) async {
+    if (_token == null) await loadToken();
+    if (deviceId.isEmpty) {
+      throw Exception('Thiếu device_id');
+    }
+    final enc = Uri.encodeComponent(deviceId);
+    final response = await http.get(
+      Uri.parse('$baseUrl/devices/$enc/latest'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được dữ liệu latest của thiết bị');
+    }
+  }
+
+  /// Lấy devices kèm controls từ room/data (màn chi tiết phòng).
+  Future<List<Map<String, dynamic>>> getDevicesForRoomWithControls(int roomId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/rooms/$roomId/data'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final devicesList = data['devices'] as List<dynamic>? ?? [];
+      return devicesList
+          .whereType<Map>()
+          .map((d) => {
+                'device_id': d['device_id'] ?? d['ma_thiet_bi'] ?? '',
+                'name': d['name'] ?? d['ten_thiet_bi'] ?? '',
+                'controls': d['controls'] as List<dynamic>? ?? [],
+              })
+          .toList();
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được thiết bị');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getDevicesForDropdown({int? phongId}) async {
     if (_token == null) await loadToken();
 
-    var uri = Uri.parse('$baseUrl/devices');
+    // Giống dashboard: danh sách thiết bị + latest_fields theo phòng.
     if (phongId != null) {
-      uri = uri.replace(queryParameters: {'phong_id': phongId.toString()});
+      return getDevicesByRoom(phongId);
     }
 
+    // Fallback: gọi /devices (không có controls).
     final response = await http.get(
-      uri,
+      Uri.parse('$baseUrl/devices'),
       headers: {
         'Authorization': 'Bearer $_token',
       },
@@ -288,7 +400,14 @@ class ApiService {
 
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-      return List<Map<String, dynamic>>.from(data['devices'] ?? []);
+      return (data['devices'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map((d) => {
+                'device_id': d['ma_thiet_bi'] ?? d['device_id'] ?? '',
+                'name': d['ten_thiet_bi'] ?? d['name'] ?? d['ma_thiet_bi'] ?? '',
+                'controls': <dynamic>[],
+              })
+          .toList();
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
@@ -297,25 +416,72 @@ class ApiService {
     }
   }
 
-  // Get relay names for a device
-  Future<List<Map<String, dynamic>>> getDeviceRelays(String deviceId) async {
+  /// Relay từ control_lines — giống web `fetchControlLines` (đủ relay, không lọc TTCDS).
+  Future<List<Map<String, dynamic>>> getDeviceControlLinesRelays(
+      String deviceId) async {
     if (_token == null) await loadToken();
+    if (deviceId.isEmpty) return [];
 
+    final enc = Uri.encodeComponent(deviceId);
     final response = await http.get(
-      Uri.parse('$baseUrl/devices/$deviceId/relays'),
+      Uri.parse('$baseUrl/devices/$enc/control-lines'),
       headers: {
         'Authorization': 'Bearer $_token',
       },
     );
 
     if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return List<Map<String, dynamic>>.from(data['relays'] ?? []);
+      final data = jsonDecode(response.body);
+      final lines = data['control_lines'] as List<dynamic>? ?? [];
+      final out = <Map<String, dynamic>>[];
+      for (final raw in lines.whereType<Map>()) {
+        final rn = raw['relay_number'];
+        final numRelay = rn is int ? rn : (rn is num ? rn.toInt() : int.tryParse('$rn') ?? 0);
+        if (numRelay <= 0) continue;
+        final ten = raw['ten_duong']?.toString().trim();
+        out.add({
+          'relay': numRelay,
+          'name': ten != null && ten.isNotEmpty ? ten : 'Relay $numRelay',
+        });
+      }
+      out.sort((a, b) => (a['relay'] as int).compareTo(b['relay'] as int));
+      return out;
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      throw Exception('Không lấy được danh sách relay');
+      throw Exception('Không lấy được control lines');
+    }
+  }
+
+  /// Luôn dùng control-lines như trang web (không phụ thuộc room/data + hien_thi_ttcds).
+  Future<List<Map<String, dynamic>>> getDeviceRelays(
+    String deviceId, {
+    int? roomId,
+    List<Map<String, dynamic>>? cachedDevices,
+  }) async {
+    return getDeviceControlLinesRelays(deviceId);
+  }
+
+  // Get data-keys (fields) available for a device
+  Future<Map<String, dynamic>> getDeviceDataKeys(String deviceId) async {
+    if (_token == null) await loadToken();
+
+    final enc = Uri.encodeComponent(deviceId);
+    final response = await http.get(
+      Uri.parse('$baseUrl/devices/$enc/data-keys'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được data keys');
     }
   }
 

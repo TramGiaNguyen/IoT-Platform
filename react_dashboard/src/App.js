@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { fetchDevices, fetchDashboards } from './services';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { fetchDevices, fetchDashboards, refreshToken } from './services';
 import Login from './components/Login';
+import ActivityTracker from './components/ActivityTracker';
 import DeviceSetupWizard from './components/DeviceSetupWizard';
 import Dashboard from './components/Dashboard';
 import DeviceDetail from './components/DeviceDetail';
@@ -15,14 +16,40 @@ import DashboardViewer from './components/DashboardViewer/DashboardViewer';
 import TTCDSDashboard from './components/TTCDSDashboard';
 import RoomDetail from './components/RoomDetail';
 import { canAccessPage } from './config/pages';
+import { GlobalCacheProvider, useGlobalCache } from './context/GlobalCache';
 import './styles/style.css';
 
+// ── JWT helpers ────────────────────────────────────────────────────────────────
+
+/** Decode a raw JWT (payload only) without signature verification. Returns null on failure. */
+const decodeJWT = (token) => {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const raw = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(raw));
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Returns seconds until token expiry.
+ * Returns a negative number if already expired; returns null if cannot decode.
+ */
+const getTokenTTL = (token) => {
+  const payload = decodeJWT(token);
+  if (!payload || !payload.exp) return null;
+  return payload.exp - Math.floor(Date.now() / 1000);
+};
+
+const REFRESH_BEFORE_SECS = 10 * 60; // refresh when < 10 minutes left
+const PROACTIVE_CHECK_INTERVAL_MS = 60 * 1000; // check every 60s
+
 function App() {
-  // Initialize state from localStorage
   const [token, setToken] = useState(() => localStorage.getItem('token') || '');
   const [devices, setDevices] = useState([]);
   const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('token'));
-  const [loadingDevices, setLoadingDevices] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
   const [userRole, setUserRole] = useState(() => localStorage.getItem('userRole') || '');
@@ -34,39 +61,62 @@ function App() {
     }
   });
   const [customDashboards, setCustomDashboards] = useState([]);
-
+  const [refreshTokenValue, setRefreshTokenValue] = useState(() => localStorage.getItem('refreshToken') || '');
 
   const isAdmin = userRole === 'admin';
-  const canAccess = (pageId) => {
-    return true;
-  };
+
+  // ── Token refresh: single-flight guard + JWT-exp check ───────────────────
+  const refreshInFlightRef = useRef(false);
+  /** Silently refreshes the access token only when it is close to expiry. */
+  const refreshTokenSilently = useCallback(async () => {
+    const access = localStorage.getItem('token');
+    const rt = localStorage.getItem('refreshToken');
+    if (!access || !rt) return;
+    // No-op if another refresh is already in-flight
+    if (refreshInFlightRef.current) return;
+    // No-op if token still has enough time left
+    const ttl = getTokenTTL(access);
+    if (ttl !== null && ttl >= REFRESH_BEFORE_SECS) return;
+
+    refreshInFlightRef.current = true;
+    try {
+      const res = await refreshToken(rt, null, null);
+      const newAccess = res.data.access_token;
+      const newRefresh = res.data.refresh_token;
+      setToken(newAccess);
+      setRefreshTokenValue(newRefresh);
+      localStorage.setItem('token', newAccess);
+      localStorage.setItem('refreshToken', newRefresh);
+    } catch (e) {
+      handleLogout();
+    } finally {
+      refreshInFlightRef.current = false;
+    }
+  }, []); // intentionally empty deps — reads from localStorage directly
+
+  // ── Proactive check every 60s (independent of user activity) ─────────────
+  useEffect(() => {
+    if (!token || !isLoggedIn) return;
+    const id = setInterval(refreshTokenSilently, PROACTIVE_CHECK_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [token, isLoggedIn, refreshTokenSilently]);
 
   const loadDevices = async (authToken = null) => {
     const tokenToUse = authToken || token;
-    if (!tokenToUse) {
-      console.warn('No token available to load devices');
-      return;
-    }
-
-    setLoadingDevices(true);
+    if (!tokenToUse) return;
     try {
       const r = await fetchDevices(tokenToUse);
-      const devicesList = Array.isArray(r.data.devices)
-        ? r.data.devices
-        : [];
+      const devicesList = Array.isArray(r.data.devices) ? r.data.devices : [];
       setDevices(devicesList);
     } catch (err) {
-      console.error('Không tải được danh sách thiết bị', err);
+      console.error('Khong tai duoc danh sach thiet bi', err);
       setDevices([]);
-    } finally {
-      setLoadingDevices(false);
     }
   };
 
   const loadCustomDashboards = async (authToken = null) => {
     const tokenToUse = authToken || token;
     if (!tokenToUse) return;
-
     try {
       const res = await fetchDashboards(tokenToUse);
       setCustomDashboards(res.data.dashboards || []);
@@ -76,99 +126,98 @@ function App() {
     }
   };
 
-  const handleLoginSuccess = async (accessToken, vai_tro, pages) => {
-    // Save to state
+  const handleLoginSuccess = async (accessToken, refreshTk, vai_tro, pages) => {
     setToken(accessToken);
+    setRefreshTokenValue(refreshTk || '');
     setUserRole(vai_tro || '');
     setAllowedPages(pages || []);
     setIsLoggedIn(true);
-
-    // Persist to localStorage
     localStorage.setItem('token', accessToken);
+    localStorage.setItem('refreshToken', refreshTk || '');
     localStorage.setItem('userRole', vai_tro || '');
     localStorage.setItem('allowedPages', JSON.stringify(pages || []));
-
-    await loadDevices(accessToken);
+    // Pre-fetch dashboards cho sidebar menu (GlobalCache sẽ handle devices/rooms/rules tự động)
     await loadCustomDashboards(accessToken);
   };
 
-  const handleWizardComplete = async () => {
-    // Sau khi đăng ký thiết bị thành công, reload danh sách
-    await loadDevices();
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('allowedPages');
+    setToken('');
+    setRefreshTokenValue('');
+    setUserRole('');
+    setAllowedPages([]);
+    setIsLoggedIn(false);
+    setDevices([]);
+    setCustomDashboards([]);
+    window.location.hash = '';
   };
 
-  // Load custom dashboards when logged in
-  useEffect(() => {
-    if (isLoggedIn && token) {
-      loadCustomDashboards();
-    }
-  }, [isLoggedIn, token]);
-
-  // Load data on app startup if token exists
+  // Load on startup if already logged in — dashboards loaded here; devices/rooms/rules handled by GlobalCache
+  // Đăng ký Service Worker ở startup
   useEffect(() => {
     if (token && isLoggedIn) {
-      loadDevices(token);
       loadCustomDashboards(token);
     }
-  }, []); // Run once on mount
-
-  // Xử lý hash routing
-  useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash;
-      if (hash.startsWith('#/rules')) {
-        setCurrentView('rules');
-        setSelectedDeviceId(null);
-      } else if (hash.startsWith('#/rooms/') && hash !== '#/rooms') {
-        // Chi tiết phòng: #/rooms/123
-        const roomId = hash.replace('#/rooms/', '');
-        setSelectedDeviceId(roomId);
-        setCurrentView('room-detail');
-      } else       if (hash.startsWith('#/rooms')) {
-        setCurrentView('rooms');
-        setSelectedDeviceId(null);
-      } else if (hash.startsWith('#/alerts')) {
-        setCurrentView('alerts');
-        setSelectedDeviceId(null);
-      } else if (hash.startsWith('#/device-profiles')) {
-        setCurrentView('device-profiles');
-        setSelectedDeviceId(null);
-      } else if (hash.startsWith('#/users')) {
-        setCurrentView('users');
-        setSelectedDeviceId(null);
-      } else if (hash.startsWith('#/classes')) {
-        setCurrentView('classes');
-        setSelectedDeviceId(null);
-      } else if (hash.startsWith('#/classroom') || hash === '#classroom') {
-        setCurrentView('classroom');
-        setSelectedDeviceId(null);
-      } else if (hash.startsWith('#/dashboards-manage') || hash === '#dashboards-manage') {
-        setCurrentView('dashboards-manage');
-        setSelectedDeviceId(null);
-      } else if (hash.startsWith('#/ttcds') || hash === '#ttcds') {
-        setCurrentView('ttcds');
-        setSelectedDeviceId(null);
-      } else if (hash.startsWith('#/dashboards/')) {
-        const dashboardId = hash.replace('#/dashboards/', '');
-        setCurrentView('dashboard-viewer');
-        setSelectedDeviceId(dashboardId);
-      } else if (hash.startsWith('#/devices/')) {
-        const deviceId = hash.replace('#/devices/', '');
-        setSelectedDeviceId(deviceId);
-        setCurrentView('device-detail');
-      } else {
-        setCurrentView('dashboard');
-        setSelectedDeviceId(null);
-      }
-    };
-
-    // Kiểm tra hash ban đầu
-    handleHashChange();
-
-    // Lắng nghe thay đổi hash
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.warn('[App] SW registration failed:', err);
+      });
+    }
   }, []);
+
+  if (!isLoggedIn) {
+    return <Login setToken={handleLoginSuccess} />;
+  }
+
+  // GlobalCacheProvider wraps authenticated app.
+  // Inside: GlobalCache.initialize() runs in its useEffect (1-time load of all data).
+  return (
+    <GlobalCacheProvider token={token}>
+      {isLoggedIn && (
+        <ActivityTracker
+          onIdleTimeout={handleLogout}
+        />
+      )}
+      <AppContent
+        token={token}
+        devices={devices}
+        setDevices={setDevices}
+        currentView={currentView}
+        setCurrentView={setCurrentView}
+        selectedDeviceId={selectedDeviceId}
+        setSelectedDeviceId={setSelectedDeviceId}
+        userRole={userRole}
+        isAdmin={isAdmin}
+        customDashboards={customDashboards}
+        handleLogout={handleLogout}
+      />
+    </GlobalCacheProvider>
+  );
+}
+
+// AppContent runs INSIDE GlobalCacheProvider — can call useGlobalCache()
+function AppContent({
+  token, devices, setDevices, currentView, setCurrentView,
+  selectedDeviceId, setSelectedDeviceId, userRole, isAdmin,
+  customDashboards, handleLogout,
+}) {
+  const { updateCache } = useGlobalCache();
+
+  // Sync devices + dashboards into global cache when App.js finishes loading
+  useEffect(() => {
+    if (devices.length > 0) {
+      updateCache({ devices });
+    }
+  }, [devices]);
+
+  useEffect(() => {
+    if (customDashboards.length > 0) {
+      updateCache({ dashboards: customDashboards });
+    }
+  }, [customDashboards]);
 
   const handleBackToDashboard = () => {
     window.location.hash = '';
@@ -218,39 +267,57 @@ function App() {
     setSelectedDeviceId(null);
   };
 
-  const handleLogout = () => {
-    // Clear localStorage
-    localStorage.removeItem('token');
-    localStorage.removeItem('userRole');
-    localStorage.removeItem('allowedPages');
-    
-    // Clear state
-    setToken('');
-    setUserRole('');
-    setAllowedPages([]);
-    setIsLoggedIn(false);
-    setDevices([]);
-    setCustomDashboards([]);
-    
-    // Redirect to login
-    window.location.hash = '';
-  };
+  const canAccess = () => true;
 
-
-  if (!isLoggedIn) {
-    return <Login setToken={handleLoginSuccess} />;
-  }
-
-  // Hiển thị loading khi đang tải danh sách thiết bị
-  if (loadingDevices) {
-    return (
-      <div style={{ padding: '40px', textAlign: 'center' }}>
-        <p>Đang tải...</p>
-      </div>
-    );
-  }
-
-
+  // Hash routing
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash.startsWith('#/rules')) {
+        setCurrentView('rules');
+        setSelectedDeviceId(null);
+      } else if (hash.startsWith('#/rooms/') && hash !== '#/rooms') {
+        setSelectedDeviceId(hash.replace('#/rooms/', ''));
+        setCurrentView('room-detail');
+      } else if (hash.startsWith('#/rooms')) {
+        setCurrentView('rooms');
+        setSelectedDeviceId(null);
+      } else if (hash.startsWith('#/alerts')) {
+        setCurrentView('alerts');
+        setSelectedDeviceId(null);
+      } else if (hash.startsWith('#/device-profiles')) {
+        setCurrentView('device-profiles');
+        setSelectedDeviceId(null);
+      } else if (hash.startsWith('#/users')) {
+        setCurrentView('users');
+        setSelectedDeviceId(null);
+      } else if (hash.startsWith('#/classes')) {
+        setCurrentView('classes');
+        setSelectedDeviceId(null);
+      } else if (hash.startsWith('#/classroom') || hash === '#classroom') {
+        setCurrentView('classroom');
+        setSelectedDeviceId(null);
+      } else if (hash.startsWith('#/dashboards-manage') || hash === '#dashboards-manage') {
+        setCurrentView('dashboards-manage');
+        setSelectedDeviceId(null);
+      } else if (hash.startsWith('#/ttcds') || hash === '#ttcds') {
+        setCurrentView('ttcds');
+        setSelectedDeviceId(null);
+      } else if (hash.startsWith('#/dashboards/')) {
+        setCurrentView('dashboard-viewer');
+        setSelectedDeviceId(hash.replace('#/dashboards/', ''));
+      } else if (hash.startsWith('#/devices/')) {
+        setSelectedDeviceId(hash.replace('#/devices/', ''));
+        setCurrentView('device-detail');
+      } else {
+        setCurrentView('dashboard');
+        setSelectedDeviceId(null);
+      }
+    };
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   let content = null;
   let activeTab = 'dashboard';
@@ -290,7 +357,7 @@ function App() {
       activeTab = 'dashboard';
     }
   } else if (currentView === 'dashboards-manage') {
-    content = <DashboardManagement token={token} onBack={handleBackToDashboard} onDashboardsChange={loadCustomDashboards} />;
+    content = <DashboardManagement token={token} onBack={handleBackToDashboard} />;
     activeTab = 'dashboards-manage';
   } else if (currentView === 'dashboard-viewer' && selectedDeviceId) {
     content = <DashboardViewer dashboardId={parseInt(selectedDeviceId)} token={token} onBack={handleBackToDashboard} />;
@@ -312,8 +379,6 @@ function App() {
     <div className="app-shell">
       <aside className="app-sidebar">
         <div className="sidebar-logo">BDU IoT</div>
-        
-        
         <nav className="sidebar-nav">
           {canAccess('dashboard') && (
             <button className={activeTab === 'dashboard' ? 'active' : ''} onClick={handleBackToDashboard}>
@@ -322,17 +387,17 @@ function App() {
           )}
           {canAccess('rooms') && (
             <button className={activeTab === 'rooms' ? 'active' : ''} onClick={openRooms}>
-              Quản lý phòng
+              Quan ly phong
             </button>
           )}
           {canAccess('rules') && (
             <button className={activeTab === 'rules' ? 'active' : ''} onClick={openRules}>
-              Quản lý rule
+              Quan ly rule
             </button>
           )}
           {canAccess('alerts') && (
             <button className={activeTab === 'alerts' ? 'active' : ''} onClick={openAlerts}>
-              Quản lý cảnh báo
+              Quan ly canh bao
             </button>
           )}
           {canAccess('device-profiles') && (
@@ -342,17 +407,17 @@ function App() {
           )}
           {canAccess('dashboards') && (
             <button className={activeTab === 'dashboards-manage' ? 'active' : ''} onClick={openDashboardsManage}>
-              Quản lý Dashboard
+              Quan ly Dashboard
             </button>
           )}
           {isAdmin && (
             <button className={activeTab === 'ttcds' ? 'active' : ''} onClick={openTTCDS}>
-              Trung tâm chuyển đổi số
+              Trung tam chuyen doi so
             </button>
           )}
           {isAdmin && (
             <button className={activeTab === 'users' ? 'active' : ''} onClick={openUsers}>
-              Quản lý người dùng
+              Quan ly nguoi dung
             </button>
           )}
           {(isAdmin || userRole === 'teacher') && (
@@ -361,10 +426,9 @@ function App() {
               setCurrentView('classes');
               setSelectedDeviceId(null);
             }}>
-              Quản lý lớp học
+              Quan ly lop hoc
             </button>
           )}
-          {/* Custom Dashboards */}
           {customDashboards.map(dashboard => (
             <button
               key={dashboard.id}
@@ -379,28 +443,17 @@ function App() {
             </button>
           ))}
         </nav>
-        
-        {/* Logout Button */}
         <div style={{ padding: '15px', marginTop: 'auto', borderTop: '1px solid #374151' }}>
           <button
             onClick={handleLogout}
             style={{
-              width: '100%',
-              padding: '10px',
-              background: '#ef4444',
-              border: 'none',
-              borderRadius: '6px',
-              color: '#fff',
-              fontWeight: '600',
-              cursor: 'pointer',
-              fontSize: '14px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
+              width: '100%', padding: '10px', background: '#ef4444', border: 'none',
+              borderRadius: '6px', color: '#fff', fontWeight: '600', cursor: 'pointer',
+              fontSize: '14px', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', gap: '8px',
             }}
           >
-            🚪 Đăng xuất
+            Dang xuat
           </button>
         </div>
       </aside>

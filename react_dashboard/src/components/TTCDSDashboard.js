@@ -1,19 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { API_BASE } from '../config/api';
-import { controlRelay, fetchAcStatus, controlAcCommand } from '../services';
+import { controlRelay, fetchAcStatus } from '../services';
+import { useGlobalCache } from '../context/GlobalCache';
 
 const TTCDSDashboard = ({ token }) => {
+  const { cache } = useGlobalCache();
   const [deviceData, setDeviceData] = useState(null);
   const [envDeviceData, setEnvDeviceData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [controlLoading, setControlLoading] = useState({});
   const [availableDevices, setAvailableDevices] = useState([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState('gateway-701e68b1');
-  const [envDeviceId, setEnvDeviceId] = useState('gateway-701e68b1');
+  const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [envDeviceId, setEnvDeviceId] = useState(null);
   const [dashboardRelays, setDashboardRelays] = useState([]);
   const [acStatus, setAcStatus] = useState(null);
-  const [acControlLoading, setAcControlLoading] = useState(false);
 
   const ROOM_ID = 2; // TTCDS room ID
 
@@ -53,16 +54,6 @@ const TTCDSDashboard = ({ token }) => {
       }
       return next;
     });
-  };
-
-  const parseAcOnState = (value) => {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value === 1;
-    if (typeof value === 'string') {
-      const v = value.trim().toLowerCase();
-      return v === 'on' || v === 'true' || v === '1';
-    }
-    return false;
   };
 
   useEffect(() => {
@@ -136,13 +127,20 @@ const TTCDSDashboard = ({ token }) => {
     };
   }, [selectedDeviceId, envDeviceId, token]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    // Lấy danh sách device_id từ GlobalCache (devices đã pre-fetch sẵn)
+    const cachedDeviceIds = (cache.devices || [])
+      .filter(d => d.ma_thiet_bi)
+      .map(d => d.ma_thiet_bi);
+
     try {
+      // Vẫn gọi /rooms/2/data để lấy device data mới nhất + phân biệt power device vs env device
       const res = await axios.get(`${API_BASE}/rooms/${ROOM_ID}/data`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.devices && res.data.devices.length > 0) {
-        const devices = res.data.devices.map(d => d.device_id);
+        // Ưu tiên device_id từ API (thực tế hơn), fallback sang GlobalCache
+        const devices = cachedDeviceIds.length > 0 ? cachedDeviceIds : res.data.devices.map(d => d.device_id);
         setAvailableDevices(devices);
 
         const pickDifferentDevice = (baseId) => {
@@ -150,15 +148,13 @@ const TTCDSDashboard = ({ token }) => {
           if (devices.length === 1) return baseId;
           return devices.find(id => id !== baseId) || baseId;
         };
-        
-        // Nếu selectedDeviceId / envDeviceId không nằm trong list, ưu tiên thiết bị đầu tiên
+
         let currentDeviceId = selectedDeviceId;
         if (!devices.includes(selectedDeviceId)) currentDeviceId = devices[0];
 
         let currentEnvDeviceId = envDeviceId;
         if (!devices.includes(envDeviceId)) currentEnvDeviceId = devices[0];
 
-        // Tránh trùng thiết bị giữa 2 dropdown
         if (devices.length > 1 && currentEnvDeviceId === currentDeviceId) {
           currentEnvDeviceId = pickDifferentDevice(currentDeviceId);
         }
@@ -171,6 +167,9 @@ const TTCDSDashboard = ({ token }) => {
 
         const envDevice = res.data.devices.find(d => d.device_id === currentEnvDeviceId);
         if (envDevice) setEnvDeviceData(envDevice);
+      } else if (cachedDeviceIds.length > 0) {
+        // API trả rỗng → dùng cache để hiển thị dropdown
+        setAvailableDevices(cachedDeviceIds);
       }
 
       try {
@@ -182,35 +181,14 @@ const TTCDSDashboard = ({ token }) => {
       }
     } catch (err) {
       console.error('Load data failed', err);
+      // Nếu API lỗi hoàn toàn → dùng cache để hiển thị dropdown
+      if (cachedDeviceIds.length > 0) {
+        setAvailableDevices(cachedDeviceIds);
+      }
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleAcControl = async (command) => {
-    if (acControlLoading) return;
-    setAcControlLoading(true);
-    try {
-      await controlAcCommand(command, token);
-
-      // Một số gateway phản hồi lệnh nhanh hơn trạng thái thực tế,
-      // nên đọc lại /ac/status sau nhịp ngắn để UI không bị "kẹt" trạng thái cũ.
-      const refreshStatus = async () => {
-        const statusRes = await fetchAcStatus(token);
-        const nextAc = statusRes.data || null;
-        setAcStatus(nextAc);
-        syncEnvFromAc(nextAc);
-      };
-
-      await refreshStatus();
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      await refreshStatus();
-    } catch (err) {
-      alert('Điều khiển máy lạnh thất bại: ' + (err.response?.data?.detail || err.message));
-    } finally {
-      setAcControlLoading(false);
-    }
-  };
+  }, [token, selectedDeviceId, envDeviceId, cache.devices]);
 
   const handleRelayControl = async (deviceId, relayNum, state) => {
     const key = `${deviceId}_relay_${relayNum}`;
@@ -315,8 +293,6 @@ const TTCDSDashboard = ({ token }) => {
   // Extract môi trường: chỉ lấy đúng 2 key theo yêu cầu: indoorTemp, humidity
   const temperature = Number(acStatus?.indoorTemp ?? envData.indoorTemp?.value ?? 0) || 0;
   const humidity = Number(acStatus?.humidity ?? envData.humidity?.value ?? 0) || 0;
-  const targetTemp = Number(acStatus?.temp ?? envData.temp?.value ?? 0) || 0;
-  const acOn = parseAcOnState(acStatus?.on ?? envData.on?.value ?? false);
 
   return (
     <div style={{ padding: '20px', color: '#fff', minHeight: '100vh', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}>
@@ -498,55 +474,8 @@ const TTCDSDashboard = ({ token }) => {
               </div>
             </div>
           </div>
-
-          {/* AC Control */}
-          <div style={{ background: 'rgba(30, 41, 59, 0.35)', borderRadius: '12px', padding: '16px', border: '1px solid rgba(148, 163, 184, 0.1)', marginTop: '18px' }}>
-            <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', color: '#22d3ee' }}>❄️ Điều khiển máy lạnh</h3>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', color: '#cbd5e1' }}>
-              <span>Nhiệt độ cài đặt: <b style={{ color: '#fff' }}>{targetTemp.toFixed(0)}°C</b></span>
-              <span>Trạng thái: <b style={{ color: acOn ? '#22c55e' : '#ef4444' }}>{acOn ? 'ĐANG BẬT' : 'ĐANG TẮT'}</b></span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: '12px' }}>
-              <button
-                onClick={() => handleAcControl('on')}
-                disabled={acControlLoading}
-                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#22c55e', color: '#fff', fontSize: '0.95rem', fontWeight: '700', cursor: acControlLoading ? 'not-allowed' : 'pointer', opacity: acControlLoading ? 0.6 : 1 }}
-              >
-                BẬT MÁY
-              </button>
-              <button
-                onClick={() => handleAcControl('off')}
-                disabled={acControlLoading}
-                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#ef4444', color: '#fff', fontSize: '0.95rem', fontWeight: '700', cursor: acControlLoading ? 'not-allowed' : 'pointer', opacity: acControlLoading ? 0.6 : 1 }}
-              >
-                TẮT MÁY
-              </button>
-              <button
-                onClick={() => handleAcControl('up')}
-                disabled={acControlLoading}
-                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#334155', color: '#fff', fontSize: '0.95rem', fontWeight: '700', cursor: acControlLoading ? 'not-allowed' : 'pointer', opacity: acControlLoading ? 0.6 : 1 }}
-              >
-                TĂNG +
-              </button>
-              <button
-                onClick={() => handleAcControl('down')}
-                disabled={acControlLoading}
-                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#334155', color: '#fff', fontSize: '0.95rem', fontWeight: '700', cursor: acControlLoading ? 'not-allowed' : 'pointer', opacity: acControlLoading ? 0.6 : 1 }}
-              >
-                GIẢM -
-              </button>
-            </div>
-          </div>
         </div>
 
-        {/* Status */}
-        <div style={{ background: 'rgba(30, 41, 59, 0.6)', borderRadius: '12px', padding: '16px', border: '1px solid rgba(148, 163, 184, 0.1)', textAlign: 'center' }}>
-          <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
-            Trạng thái: <span style={{ color: '#22c55e', fontWeight: '600' }}>● {deviceData.trang_thai?.toUpperCase()}</span>
-            {' • '}
-            Cập nhật: {new Date(deviceData.last_seen * 1000).toLocaleString('vi-VN')}
-          </span>
-        </div>
       </div>
     </div>
   );

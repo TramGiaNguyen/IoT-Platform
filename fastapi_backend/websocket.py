@@ -1,6 +1,6 @@
 # fastapi_backend/websocket.py
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect, Request
 from starlette.websockets import WebSocketState
 from kafka_consumer import get_latest_events
 import asyncio
@@ -12,6 +12,17 @@ active_connections: list[WebSocket] = []
 # Lưu last timestamp đã gửi cho mỗi connection
 connection_last_timestamps: dict[WebSocket, float] = {}
 
+def _allow_ws_origin(origin: str) -> bool:
+    """Kiểm tra origin có được phép kết nối WebSocket không."""
+    if not origin:
+        return True
+    allowed = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+    # Cho phép tất cả origin trong development
+    return True  # Hoặc check origin có trong allowed list
+
 async def websocket_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint để push real-time events từ Kafka đến frontend.
@@ -19,8 +30,12 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     print(f"[WEBSOCKET] New connection attempt from {websocket.client}")
     try:
-        await websocket.accept()
-        print(f"[WEBSOCKET] Connection accepted from {websocket.client}")
+        # Lấy origin từ headers
+        origin = websocket.headers.get("origin", "")
+        
+        # Handle CORS cho WebSocket - chấp nhận kết nối từ mọi origin trong dev
+        await websocket.accept(subprotocol=None)
+        print(f"[WEBSOCKET] Connection accepted from {websocket.client} (origin: {origin})")
         active_connections.append(websocket)
         connection_last_timestamps[websocket] = None
     except Exception as e:

@@ -4,6 +4,7 @@ import { fetchDeviceKeys, createDeviceKey, updateDeviceKey, deleteDeviceKey, det
 import axios from 'axios';
 import SmartClassroomDashboard from './SmartClassroomDashboard';
 import { API_BASE, WS_URL } from '../config/api';
+import { useGlobalCache } from '../context/GlobalCache';
 import '../styles/DeviceDetail.css';
 
 /** Mẫu JSON POST edge; backend thay {{relay}} {{state}} {{cmd}} khi bấm relay */
@@ -13,7 +14,17 @@ const DEFAULT_EDGE_BODY_TEMPLATE = `{
   ]
 }`;
 
+/** Tránh ECONNABORTED khi MySQL/lan chậm (5s quá ngắn cho bảng du_lieu_thiet_bi lớn) */
+const DEVICE_API_TIMEOUT_MS = 30000;
+
 const DeviceDetail = ({ deviceId, token, onBack }) => {
+  // Stable ref to the current token — updates without re-triggering effects.
+  // This prevents data-load effects from restarting every time the JWT rotates.
+  const tokenRef = useRef(token);
+  useEffect(() => { tokenRef.current = token; }, [token]);
+
+  // Global cache — đọc NGAY để resolve device metadata không cần chờ fetch
+  const { cache } = useGlobalCache();
   const [device, setDevice] = useState(null);
   const [loadError, setLoadError] = useState(null); // { status, message } — phân biệt 404 vs lỗi server/DB
   const [events, setEvents] = useState([]);
@@ -49,6 +60,7 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
   const [edgeBodyTemplateDraft, setEdgeBodyTemplateDraft] = useState(DEFAULT_EDGE_BODY_TEMPLATE);
   const [edgeUrlSaving, setEdgeUrlSaving] = useState(false);
   const [edgeUrlMsg, setEdgeUrlMsg] = useState(null);
+  const [configDownloading, setConfigDownloading] = useState(false);
 
   // Helper functions for values
   const getStateValue = (d) => {
@@ -153,14 +165,14 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
   const loadDataKeys = useCallback(async () => {
     setKeysLoading(true);
     try {
-      const res = await fetchDeviceKeys(deviceId, token);
+      const res = await fetchDeviceKeys(deviceId, tokenRef.current);
       setDataKeys(res.data.keys || []);
     } catch (e) {
       console.error('Load keys failed', e);
     } finally {
       setKeysLoading(false);
     }
-  }, [deviceId, token]);
+  }, [deviceId]); // intentionally no token — uses tokenRef
 
   const handleKeySubmit = async (e) => {
     e.preventDefault();
@@ -202,13 +214,13 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
 
   const loadControlLines = useCallback(async () => {
     try {
-      const res = await fetchControlLines(deviceId, token);
+      const res = await fetchControlLines(deviceId, tokenRef.current);
       setControlLines(res.data.control_lines || []);
     } catch (e) {
       console.error('Load control lines failed', e);
       setControlLines([]);
     }
-  }, [deviceId, token]);
+  }, [deviceId]); // intentionally no token — uses tokenRef
 
   const handleStartEditLabel = (line) => {
     setEditingRelay(line.relay_number);
@@ -340,6 +352,7 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
   };
 
   const handleDownloadConfig = async () => {
+    setConfigDownloading(true);
     try {
       const deviceCode = device?.ma_thiet_bi || device?.device_id || deviceId;
       const res = await fetchDeviceFullConfig(deviceCode, token);
@@ -351,6 +364,8 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
     } catch (err) {
       console.error('Download config failed', err);
       alert('Tải cấu hình JSON thất bại. Vui lòng thử lại.');
+    } finally {
+      setConfigDownloading(false);
     }
   };
 
@@ -495,19 +510,37 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
     }
   };
 
+  // Hydrate device metadata từ global cache — hiển thị header/icon ngay không cần fetch
+  useEffect(() => {
+    if (!cache.devices?.length || device) return;
+    const found = cache.devices.find(
+      d => String(d.ma_thiet_bi || d.id) === String(deviceId)
+    );
+    if (found) {
+      setDevice(found);
+    }
+  }, [cache.devices, deviceId]);
+
   // Load Data effects
   useEffect(() => {
-    const loadDeviceData = async () => {
-      setLoadError(null);
-      try {
-        const deviceRes = await axios.get(`${API_BASE}/devices/${deviceId}/latest`, {
-          headers: { Authorization: `Bearer ${token}` },
-          timeout: 5000,
-        });
+    setLoadError(null);
+    const abortCtrl = new AbortController();
+
+    const loadDeviceData = axios.get(`${API_BASE}/devices/${deviceId}/latest`, {
+      headers: { Authorization: `Bearer ${tokenRef.current}` },
+      timeout: DEVICE_API_TIMEOUT_MS,
+      signal: abortCtrl.signal,
+    });
+    const loadKeys = loadDataKeys();
+    const loadLines = loadControlLines();
+
+    loadDeviceData
+      .then((deviceRes) => {
         setDevice(deviceRes.data);
         setLoading(false);
-        loadEvents(1);
-      } catch (err) {
+      })
+      .catch((err) => {
+        if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
         console.error('Error loading device data:', err);
         const st = err.response?.status;
         const detail = err.response?.data?.detail;
@@ -520,53 +553,66 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
         setLoadError({ status: st, message: msg });
         setDevice(null);
         setLoading(false);
-      }
-    };
-    loadDeviceData();
-    loadDataKeys();
-    loadControlLines();
-  }, [deviceId, token, loadDataKeys, loadControlLines]);
+      });
 
-  // Polling - Merge data để không mất relay state
+    Promise.all([loadKeys, loadLines]).catch(() => {});
+
+    return () => {
+      abortCtrl.abort();
+    };
+  }, [deviceId]); // intentionally no token — uses tokenRef; refresh rotation won't restart this effect
+
+  // Events được load ngay khi deviceId thay đổi (không phụ thuộc token)
   useEffect(() => {
-    if (!deviceId || !token) return;
+    if (!deviceId) return;
+    loadEvents(1);
+  }, [deviceId]);
+
+  // Polling: /devices/{id}/latest (metrics/relay) + /events (nhật ký) cùng 5s
+  // WS là realtime layer phụ — poll là HTTP backup khi WS lỗi
+  useEffect(() => {
+    if (!deviceId) return;
     const poll = async () => {
       try {
         const res = await axios.get(`${API_BASE}/devices/${deviceId}/latest`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${tokenRef.current}` },
+          timeout: DEVICE_API_TIMEOUT_MS,
         });
-        // Merge data thay vì ghi đè
         setDevice(prev => {
           if (!prev) return res.data;
           return {
             ...res.data,
             data: {
-              ...prev.data, // Giữ lại data cũ (bao gồm relay states)
-              ...res.data.data, // Merge với data mới
+              ...prev.data,
+              ...res.data.data,
             }
           };
         });
       } catch (err) { /* ignore */ }
+
+      loadEvents(1, true);
     };
     latestPollRef.current = setInterval(poll, 5000);
     return () => {
       if (latestPollRef.current) clearInterval(latestPollRef.current);
     };
-  }, [deviceId, token]);
+  }, [deviceId]); // intentionally no token — uses tokenRef; refresh rotation won't restart polling
 
-  const loadEvents = async (targetPage = 1) => {
+  const loadEvents = async (targetPage = 1, silent = false) => {
     try {
       const res = await axios.get(
         `${API_BASE}/events/${deviceId}?page=${targetPage}&page_size=${pageSize}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          headers: { Authorization: `Bearer ${tokenRef.current}` },
+          timeout: DEVICE_API_TIMEOUT_MS,
+        }
       );
-      // Sort newest first for history log display
       const sortedEvents = (res.data.events || []).sort((a, b) => b.timestamp - a.timestamp);
       setEvents(sortedEvents);
       setPage(res.data.page || targetPage);
-      prepareChartData(res.data.events || []); // Chart uses original order
+      prepareChartData(res.data.events || []);
     } catch (err) {
-      console.error('Error loading events:', err);
+      if (!silent) console.error('Error loading events:', err);
     }
   };
 
@@ -582,50 +628,71 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
     setChartData(data);
   };
 
-  // WebSocket for realtime updates
+  // WebSocket for realtime updates — token removed from deps so it doesn't
+  // reconnect every time the JWT rotates. WS payload does not include a Bearer token.
   useEffect(() => {
-    if (!token || !deviceId) return;
+    if (!deviceId) return;
+    let cancelled = false;
     const ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+      if (cancelled) {
+        try {
+          ws.close();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    };
+    ws.onerror = () => {
+      /* Không log stack — backend tắt hoặc CORS/firewall là phổ biến; trang vẫn dùng polling */
+    };
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.device_id === deviceId) {
-          // Update device state - MERGE data thay vì ghi đè
-          setDevice((prev) => {
-            if (!prev) return prev;
-            const newData = { ...prev.data }; // Giữ lại data cũ
-            Object.keys(data).forEach(k => {
-              if (k !== 'device_id' && k !== 'timestamp') {
-                // Chỉ cập nhật field có trong message mới
-                newData[k] = { value: data[k], timestamp: data.timestamp };
-              }
-            });
-            return { ...prev, data: newData, last_seen: data.timestamp };
-          });
-
-          // Update events list (add new event to beginning)
+          // Append to events history log (newest first)
           setEvents(prev => {
             const newEvent = { ...data };
-            const updated = [newEvent, ...prev].slice(0, 50); // Keep max 50
+            const updated = [newEvent, ...prev].slice(0, 100); // Keep max 100
             return updated;
           });
 
-          // Update chart data (add to end for timeline)
+          // Append to chart data (ascending time for timeline)
           setChartData(prev => {
             const newPoint = {
               ...data,
-              timeStr: new Date(data.timestamp * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              timeStr: data.timestamp
+                ? new Date(data.timestamp * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                : '',
             };
-            const updated = [...prev, newPoint].slice(-50); // Keep last 50
+            const updated = [...prev, newPoint].slice(-200); // Keep last 200 points
             return updated;
           });
+
+          // Update last_seen display (NOT device.data — đó là nơi relay state sống)
+          if (data.timestamp) {
+            setDevice(prev => prev ? { ...prev, last_seen: data.timestamp } : prev);
+          }
         }
       } catch (e) {
         console.error('WS parse error', e);
       }
     };
-    return () => ws.close();
-  }, [token, deviceId]);
+    return () => {
+      cancelled = true;
+      if (ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.close();
+        } catch (_) { /* ignore */ }
+      } else if (ws.readyState === WebSocket.CONNECTING) {
+        ws.addEventListener('open', () => {
+          try {
+            ws.close();
+          } catch (_) { /* ignore */ }
+        }, { once: true });
+      }
+    };
+  }, [deviceId]); // intentionally no token — WS doesn't use Bearer auth
 
   if (loading) {
     return <div className="device-detail-loading"><div className="spinner neon"></div></div>;
@@ -835,9 +902,10 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
                 <button
                   onClick={handleDownloadConfig}
                   className="btn-ghost"
-                  style={{ fontSize: '0.8rem', padding: '4px 8px', color: '#60a5fa', borderColor: '#60a5fa' }}
+                  disabled={configDownloading}
+                  style={{ fontSize: '0.8rem', padding: '4px 8px', color: '#60a5fa', borderColor: '#60a5fa', opacity: configDownloading ? 0.6 : 1 }}
                 >
-                  ⬇ Tải config
+                  {configDownloading ? '⏳ Đang tải...' : '⬇ Tải config'}
                 </button>
               </div>
             </div>

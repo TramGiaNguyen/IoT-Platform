@@ -33,6 +33,9 @@ MYSQL_CONFIG = {
     "database": "iot_data",
 }
 
+AI_ANALYST_URL = os.getenv("AI_ANALYST_URL", "http://ai-analyst:8101").rstrip("/")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "internal-rule-engine-key-change-in-production")
+
 RULE_REFRESH_SECONDS = 30
 COMMAND_POLL_SECONDS = 2
 DEVICE_OFFLINE_THRESHOLD_MINUTES = int(os.getenv("DEVICE_OFFLINE_THRESHOLD_MINUTES", "10"))
@@ -83,36 +86,21 @@ _OCC_TTL = 1.0  # giây
 
 
 def _get_occupancy(phong_id: int) -> int:
-    """Trả về so_nguoi (room_total) cho phong_id, đọc DB nếu cache hết hạn."""
+    """Trả về so_nguoi (room_total) cho phong_id, gọi ai_analyst API (realtime, không dùng bảng phong_occupancy)."""
     global _occ_cache
     now = time.time()
     if phong_id in _occ_cache:
         ts, val = _occ_cache[phong_id]
         if now - ts < _OCC_TTL:
             return val
-    conn = None
-    cursor = None
     try:
-        conn = get_mysql_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT so_nguoi
-            FROM phong_occupancy
-            WHERE phong_id = %s AND count_type = 'room_total'
-            LIMIT 1
-            """,
-            (phong_id,),
-        )
-        row = cursor.fetchone()
-        val = int(row[0]) if row else 0
+        resp = requests.get(f"{AI_ANALYST_URL}/internal/ai/occupancy/{phong_id}", timeout=3)
+        if resp.status_code == 200:
+            val = resp.json().get("so_nguoi", 0)
+        else:
+            val = 0
     except Exception:
         val = 0
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
     _occ_cache[phong_id] = (now, val)
     return val
 
@@ -353,25 +341,18 @@ def occupancy_polling_loop():
             if not phong_ids:
                 continue
 
-            # Bulk đọc occupancy: phong_id -> so_nguoi
+            # Bulk đọc occupancy từ ai_analyst (realtime, không dùng bảng phong_occupancy)
             occ_map = {}
-            occ_conn = get_mysql_conn()
-            occ_cursor = occ_conn.cursor(dictionary=True)
             try:
-                placeholders = ",".join(["%s"] * len(phong_ids))
-                occ_cursor.execute(
-                    f"""
-                    SELECT phong_id, so_nguoi
-                    FROM phong_occupancy
-                    WHERE phong_id IN ({placeholders}) AND count_type = 'room_total'
-                    """,
-                    tuple(phong_ids),
-                )
-                for row in occ_cursor.fetchall():
-                    occ_map[row["phong_id"]] = int(row["so_nguoi"] or 0)
-            finally:
-                occ_cursor.close()
-                occ_conn.close()
+                resp = requests.get(f"{AI_ANALYST_URL}/internal/ai/occupancy-list", timeout=5)
+                if resp.status_code == 200:
+                    occ_data = resp.json()
+                    for item in occ_data.get("occupancy", []):
+                        rid = item.get("room_id")
+                        if rid is not None:
+                            occ_map[rid] = occ_map.get(rid, 0) + item.get("so_nguoi", 0)
+            except Exception as e:
+                logging.warning("[OCC_RULE] Failed to get occupancy from ai_analyst: %s", e)
 
             now = time.time()
 

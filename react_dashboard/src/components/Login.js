@@ -14,8 +14,8 @@ const Login = ({ setToken }) => {
     try {
       const res = await login(username, password);
       console.log('[Login] Response:', res.data);
-      // Pass token, vai_tro, and allowed_pages to parent
-      setToken(res.data.access_token, res.data.vai_tro, res.data.allowed_pages);
+      // Pass token, refresh_token, vai_tro, and allowed_pages to parent
+      setToken(res.data.access_token, res.data.refresh_token, res.data.vai_tro, res.data.allowed_pages);
     } catch (err) {
       setError('Sai tài khoản hoặc mật khẩu');
     } finally {

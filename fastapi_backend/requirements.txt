@@ -11,3 +11,4 @@ websockets
 paho-mqtt
 requests
 cryptography
+redis
