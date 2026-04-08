@@ -32,9 +32,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
     super.initState();
     _loadUserInfo();
     _loadRooms();
-    // Don't connect WebSocket immediately - wait for successful data load
-    // _connectWebSocket();
-    // Auto refresh every 30 seconds
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) => _loadRooms(silent: true),
@@ -51,13 +48,10 @@ class _RoomListScreenState extends State<RoomListScreen> {
   }
 
   void _connectWebSocket() {
-    // Connect to WebSocket
     _wsService.connect();
     
-    // Listen to events (for future use - can update room stats)
     _wsSubscription = _wsService.eventStream.listen((event) {
       // Can be used to update device online/offline counts in real-time
-      // For now, we rely on periodic refresh
     });
   }
 
@@ -95,7 +89,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
           _isLoading = false;
         });
 
-        if (_error!.contains('hết hạn')) {
+        if (_error!.contains('het han')) {
           _logout();
         }
       }
@@ -129,199 +123,292 @@ class _RoomListScreenState extends State<RoomListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Phòng của tôi'),
-        backgroundColor: Colors.blue.shade900,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.rule),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const RulesScreen(),
-                ),
-              );
-            },
-            tooltip: 'Tất cả Rules',
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadRooms,
-            tooltip: 'Làm mới',
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.account_circle),
-            onSelected: (value) {
-              if (value == 'logout') {
-                _logout();
-              }
-            },
-            itemBuilder: (context) => [
-              if (_userInfo != null)
-                PopupMenuItem(
-                  enabled: false,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _userInfo!['username'] ?? '',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        _userInfo!['role'] ?? '',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout, size: 20),
-                    SizedBox(width: 8),
-                    Text('Đăng xuất'),
-                  ],
-                ),
+      body: Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFFF7FAFC),
+        ),
+        child: Column(
+          children: [
+            // Glassmorphism App Bar
+            Container(
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + 8,
+                left: 8,
+                right: 8,
+                bottom: 8,
               ),
-            ],
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.error_outline,
-                        size: 60,
-                        color: Colors.red,
-                      ),
-                      const SizedBox(height: 16),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadRooms,
-                        child: const Text('Thử lại'),
-                      ),
-                    ],
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7FAFC).withOpacity(0.4),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x0F1C1E06),
+                    blurRadius: 24,
+                    offset: Offset(0, 8),
                   ),
-                )
-              : RefreshIndicator(
-                  onRefresh: () => _loadRooms(),
-                  child: Column(
+                ],
+              ),
+              child: Column(
+                children: [
+                  Row(
                     children: [
-                      // Search bar
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: TextField(
-                          controller: _searchController,
-                          decoration: InputDecoration(
-                            hintText: 'Tìm kiếm phòng...',
-                            prefixIcon: const Icon(Icons.search),
-                            suffixIcon: _searchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      _filterRooms('');
-                                    },
-                                  )
-                                : null,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.grey[100],
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Phong cua toi',
+                          style: TextStyle(
+                            fontFamily: 'Manrope',
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.02,
+                            color: Color(0xFF003345),
                           ),
-                          onChanged: _filterRooms,
                         ),
                       ),
-
-                      // Room count
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          children: [
-                            Text(
-                              '${_filteredRooms.length} phòng',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w500,
+                      IconButton(
+                        icon: const Icon(
+                          Icons.rule,
+                          color: Color(0xFF006a6a),
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const RulesScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.refresh,
+                          color: Color(0xFF006a6a),
+                        ),
+                        onPressed: _loadRooms,
+                      ),
+                      PopupMenuButton<String>(
+                        icon: const Icon(
+                          Icons.account_circle,
+                          color: Color(0xFF003345),
+                        ),
+                        onSelected: (value) {
+                          if (value == 'logout') {
+                            _logout();
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          if (_userInfo != null)
+                            PopupMenuItem(
+                              enabled: false,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _userInfo!['username'] ?? '',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF003345),
+                                    ),
+                                  ),
+                                  Text(
+                                    _userInfo!['role'] ?? '',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF40484C),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem(
+                            value: 'logout',
+                            child: Row(
+                              children: [
+                                Icon(Icons.logout, size: 20, color: Color(0xFFBA1A1A)),
+                                SizedBox(width: 8),
+                                Text('Dang xuat', style: TextStyle(color: Color(0xFFBA1A1A))),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ],
+              ),
+            ),
 
-                      // Room list
-                      Expanded(
-                        child: _filteredRooms.isEmpty
-                            ? Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.meeting_room_outlined,
-                                      size: 80,
-                                      color: Colors.grey[400],
+            // Content
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF006a6a),
+                      ),
+                    )
+                  : _error != null
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                size: 64,
+                                color: Color(0xFFBA1A1A),
+                              ),
+                              const SizedBox(height: 16),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 32),
+                                child: Text(
+                                  _error!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(color: Color(0xFF40484C)),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFF003345), Color(0xFF004B63)],
+                                  ),
+                                  borderRadius: BorderRadius.circular(9999),
+                                ),
+                                child: const Text(
+                                  'Thu lai',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontFamily: 'Manrope',
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : RefreshIndicator(
+                          onRefresh: () => _loadRooms(),
+                          color: const Color(0xFF006a6a),
+                          child: Column(
+                            children: [
+                              // Search bar
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                                child: TextField(
+                                  controller: _searchController,
+                                  decoration: InputDecoration(
+                                    hintText: 'Tim kiem phong...',
+                                    prefixIcon: const Icon(
+                                      Icons.search,
+                                      color: Color(0xFF006a6a),
                                     ),
-                                    const SizedBox(height: 16),
+                                    suffixIcon: _searchController.text.isNotEmpty
+                                        ? IconButton(
+                                            icon: const Icon(Icons.clear, color: Color(0xFF40484C)),
+                                            onPressed: () {
+                                              _searchController.clear();
+                                              _filterRooms('');
+                                            },
+                                          )
+                                        : null,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide(
+                                        color: const Color(0xFFC0C7CD).withOpacity(0.15),
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide(
+                                        color: const Color(0xFFC0C7CD).withOpacity(0.15),
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide(
+                                        color: const Color(0xFF006a6a).withOpacity(0.3),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    filled: true,
+                                    fillColor: const Color(0xFFF1F4F6),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                  ),
+                                  onChanged: _filterRooms,
+                                ),
+                              ),
+
+                              // Room count
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                                child: Row(
+                                  children: [
                                     Text(
-                                      _searchController.text.isNotEmpty
-                                          ? 'Không tìm thấy phòng'
-                                          : 'Chưa có phòng nào',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        color: Colors.grey[600],
+                                      '${_filteredRooms.length} PHONG',
+                                      style: const TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.15,
+                                        color: Color(0xFF40484C),
                                       ),
                                     ),
                                   ],
                                 ),
-                              )
-                            : ListView.builder(
-                                padding: const EdgeInsets.all(16),
-                                itemCount: _filteredRooms.length,
-                                itemBuilder: (context, index) {
-                                  final room = _filteredRooms[index];
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 12),
-                                    child: RoomCard(
-                                      room: room,
-                                      onTap: () {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) => RoomDetailScreen(
-                                              room: room,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  );
-                                },
                               ),
-                      ),
-                    ],
-                  ),
-                ),
+
+                              // Room list
+                              Expanded(
+                                child: _filteredRooms.isEmpty
+                                    ? Center(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.meeting_room_outlined,
+                                              size: 80,
+                                              color: const Color(0xFFC0C7CD),
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Text(
+                                              _searchController.text.isNotEmpty
+                                                  ? 'Khong tim thay phong'
+                                                  : 'Chua co phong nao',
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                color: Color(0xFF40484C),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : ListView.builder(
+                                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                                        itemCount: _filteredRooms.length,
+                                        itemBuilder: (context, index) {
+                                          final room = _filteredRooms[index];
+                                          return RoomCard(
+                                            room: room,
+                                            onTap: () {
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (_) => RoomDetailScreen(
+                                                    room: room,
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          );
+                                        },
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -39,7 +39,7 @@ ALTER TABLE `nguoi_dung`
 -- Seed user admin mặc định
 INSERT INTO `nguoi_dung` (`ten`, `email`, `mat_khau_hash`, `vai_tro`)
 VALUES (
-  'nguyen',
+  'tramgianguyen',
   '22050026@student.bdu.edu.vn',
   '$2b$12$hLW99Na4HJueC6LoUoczT.6sMtexA5y6vUUkeVMxQ5t.L9OFUp6Te',
   'admin'
@@ -155,6 +155,8 @@ CREATE TABLE `du_lieu_thiet_bi` (
   PRIMARY KEY (`id`),
   KEY `thiet_bi_id` (`thiet_bi_id`,`thoi_gian`),
   KEY `idx_device_time` (`thiet_bi_id`,`thoi_gian`),
+  -- Tối ưu GET /devices/{id}/latest (GROUP BY khoa, MAX(thoi_gian) theo thiet_bi_id)
+  KEY `idx_thiet_bi_khoa_time` (`thiet_bi_id`,`khoa`,`thoi_gian`),
   KEY `idx_key_time` (`khoa`,`thoi_gian`),
   KEY `idx_thoi_gian` (`thoi_gian`),
   CONSTRAINT `du_lieu_thiet_bi_ibfk_1` FOREIGN KEY (`thiet_bi_id`) REFERENCES `thiet_bi` (`id`)
@@ -464,19 +466,23 @@ CREATE TABLE IF NOT EXISTS `phong_camera` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
--- Bảng phong_occupancy (people count per room/camera)
--- =========================================================
-CREATE TABLE IF NOT EXISTS `phong_occupancy` (
-  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
-  `phong_id` INT NOT NULL,
-  `phong_camera_id` INT DEFAULT NULL COMMENT 'Camera that provided the count (NULL = aggregated)',
-  `so_nguoi` INT NOT NULL DEFAULT 0 COMMENT 'Number of people detected',
-  `count_type` ENUM('camera', 'room_total') NOT NULL DEFAULT 'camera' COMMENT 'camera-level or room-level aggregated',
-  `cap_nhat_luc` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `nguon` VARCHAR(50) DEFAULT 'ai_analyst' COMMENT 'Source: ai_analyst, manual, ...',
-  UNIQUE KEY `uk_occupancy_key` (`phong_id`, `phong_camera_id`, `count_type`),
-  KEY `idx_occupancy_phong` (`phong_id`),
-  KEY `idx_occupancy_time` (`cap_nhat_luc`),
-  CONSTRAINT `fk_occ_phong` FOREIGN KEY (`phong_id`) REFERENCES `phong` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_occ_camera` FOREIGN KEY (`phong_camera_id`) REFERENCES `phong_camera` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- Bảng phong_occupancy (ĐÃ BỎ — không còn dùng từ 2026-04-05)
+-- Trước đây: lưu số người đếm được từ ai_analyst, ghi liên tục mỗi giây → tốn dung lượng.
+-- Giờ: occupancy realtime được giữ trong memory của ai_analyst service,
+--       các service khác (fastapi_backend, rule_engine) gọi API trực tiếp từ ai_analyst.
+--       Endpoint: GET http://ai-analyst:8101/internal/ai/occupancy/{room_id}
+--                 GET http://ai-analyst:8101/internal/ai/occupancy-list
+-- CREATE TABLE IF NOT EXISTS `phong_occupancy` (
+--   `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+--   `phong_id` INT NOT NULL,
+--   `phong_camera_id` INT DEFAULT NULL COMMENT 'Camera that provided the count (NULL = aggregated)',
+--   `so_nguoi` INT NOT NULL DEFAULT 0 COMMENT 'Number of people detected',
+--   `count_type` ENUM('camera', 'room_total') NOT NULL DEFAULT 'camera' COMMENT 'camera-level or room-level aggregated',
+--   `cap_nhat_luc` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+--   `nguon` VARCHAR(50) DEFAULT 'ai_analyst' COMMENT 'Source: ai_analyst, manual, ...',
+--   UNIQUE KEY `uk_occupancy_key` (`phong_id`, `phong_camera_id`, `count_type`),
+--   KEY `idx_occupancy_phong` (`phong_id`),
+--   KEY `idx_occupancy_time` (`cap_nhat_luc`),
+--   CONSTRAINT `fk_occ_phong` FOREIGN KEY (`phong_id`) REFERENCES `phong` (`id`) ON DELETE CASCADE,
+--   CONSTRAINT `fk_occ_camera` FOREIGN KEY (`phong_camera_id`) REFERENCES `phong_camera` (`id`) ON DELETE SET NULL
+-- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

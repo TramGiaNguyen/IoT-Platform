@@ -9,6 +9,7 @@ import {
   fetchRoomOccupancy,
   fetchRoomDeviceData,
 } from '../services';
+import { useGlobalCache } from '../context/GlobalCache';
 
 /* ------------------------------------------------------------------ */
 /* CSS classes for this component (appended to style.css)              */
@@ -373,20 +374,26 @@ function CameraCard({ camera, roomId, token, onDelete, onUpdate, onPeopleCount }
 /* RoomDetail main component                                            */
 /* ------------------------------------------------------------------ */
 export default function RoomDetail({ roomId, token, onBack }) {
+  // Global cache — rooms list từ cache để hydrate header ngay
+  const { cache } = useGlobalCache();
   const [room, setRoom] = useState(null);
   const [devices, setDevices] = useState([]);
   const [cameras, setCameras] = useState([]);
   const [occupancy, setOccupancy] = useState(null);
   // Số người tức thời từ CameraCard (AI đang chạy), đồng bộ với banner nhanh hơn poll DB
   const [liveOccupancy, setLiveOccupancy] = useState(null);
+  // Cùng nguồn với poll /sessions/.../status (1s) — tránh banner số động mà "Cap nhat" đứng im
+  const [liveOccupancyAt, setLiveOccupancyAt] = useState(null);
 
   const handleCameraPeopleCount = useCallback((count) => {
     setLiveOccupancy(count);
+    setLiveOccupancyAt(new Date());
   }, []);
 
   // Banner: ưu tiên liveOccupancy (từ AI session đang chạy), fallback occupancy từ API
   const bannerCount = liveOccupancy !== null ? liveOccupancy : (occupancy?.so_nguoi ?? '—');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // false = không block toàn trang
+  const [initialLoading, setInitialLoading] = useState(true); // chỉ cho lần đầu
   const [error, setError] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({
@@ -398,6 +405,8 @@ export default function RoomDetail({ roomId, token, onBack }) {
     password: '',
     stream_url: '',
   });
+
+  const _cacheKey = `room_detail_${roomId}`;
 
   const loadData = useCallback(async () => {
     try {
@@ -411,14 +420,51 @@ export default function RoomDetail({ roomId, token, onBack }) {
       setDevices(devRes.data.devices || []);
       setCameras(camRes.data.cameras || []);
       setOccupancy(occRes.data);
+      // Cache vào sessionStorage để lần sau vào thấy ngay
+      try {
+        sessionStorage.setItem(_cacheKey, JSON.stringify({
+          room: roomRes.data,
+          devices: devRes.data.devices || [],
+          cameras: camRes.data.cameras || [],
+          occupancy: occRes.data,
+          ts: Date.now(),
+        }));
+      } catch (_) { /* quota exceeded */ }
     } catch (e) {
       setError(e.response?.data?.detail || e.message);
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
   }, [roomId, token]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // Hydrate room name ngay từ global cache — hiển thị header tức thì
+  useEffect(() => {
+    if (!cache.rooms?.length) return;
+    const found = cache.rooms.find(r => String(r.id) === String(roomId));
+    if (found && !room) {
+      setRoom(found);
+    }
+  }, [cache.rooms, roomId]);
+
+  // Hydrate từ sessionStorage trước khi fetch
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(_cacheKey);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (Date.now() - (cached.ts || 0) < 60_000) {
+          setRoom(prev => prev || cached.room);
+          setDevices(cached.devices || []);
+          setCameras(cached.cameras || []);
+          setOccupancy(cached.occupancy);
+          setInitialLoading(false); // hiển thị ngay, fetch ngầm
+          loadData(); // refresh ngầm
+          return;
+        }
+      }
+    } catch (_) { /* parse error */ }
+    loadData();
+  }, [loadData]);
 
   /* poll occupancy every 3s */
   useEffect(() => {
@@ -434,6 +480,7 @@ export default function RoomDetail({ roomId, token, onBack }) {
     try {
       await deleteRoomCamera(roomId, cameraId, token);
       setCameras(cs => cs.filter(c => c.id !== cameraId));
+      try { sessionStorage.removeItem(_cacheKey); } catch (_) {}
     } catch (e) {
       alert('Loi xoa: ' + (e.response?.data?.detail || e.message));
     }
@@ -448,14 +495,21 @@ export default function RoomDetail({ roomId, token, onBack }) {
       }, token);
       setShowAdd(false);
       setAddForm({ ten: '', ip_address: '', port: 554, rtsp_path: '', username: '', password: '', stream_url: '' });
+      try { sessionStorage.removeItem(_cacheKey); } catch (_) {}
       loadData();
     } catch (e) {
       alert('Loi tao camera: ' + (e.response?.data?.detail || e.message));
     }
   };
 
-  if (loading) return <div className="room-detail-page"><p style={{ color: '#94a3b8' }}>Dang tai...</p></div>;
-  if (error) return <div className="room-detail-page"><p style={{ color: '#fca5a5' }}>{error}</p><button onClick={onBack}>Quay lai</button></div>;
+  if (initialLoading) {
+    return (
+      <div className="room-detail-page">
+        <p style={{ color: '#94a3b8' }}>Đang tải...</p>
+      </div>
+    );
+  }
+  if (error) return <div className="room-detail-page"><p style={{ color: '#fca5a5' }}>{error}</p><button onClick={onBack}>Quay lại</button></div>;
 
   return (
     <div className="room-detail-page">
@@ -477,11 +531,15 @@ export default function RoomDetail({ roomId, token, onBack }) {
         <div className="room-occupancy-count">{bannerCount}</div>
         <div className="room-occupancy-label">
           <div>nguoi trong phong</div>
-          {occupancy?.cap_nhat_luc && (
+          {(liveOccupancy !== null && liveOccupancyAt) || occupancy?.cap_nhat_luc ? (
             <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-              Cap nhat: {new Date(occupancy.cap_nhat_luc).toLocaleTimeString()}
+              Cap nhat:{' '}
+              {(liveOccupancy !== null && liveOccupancyAt
+                ? liveOccupancyAt
+                : new Date(occupancy.cap_nhat_luc)
+              ).toLocaleTimeString()}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 

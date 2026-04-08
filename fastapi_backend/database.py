@@ -21,7 +21,7 @@ def _get_pool():
     if _mysql_pool is None:
         _mysql_pool = mysql.connector.pooling.MySQLConnectionPool(
             pool_name="iot_pool",
-            pool_size=10,
+            pool_size=25,
             pool_reset_session=True,
             **_MYSQL_CONFIG
         )
@@ -47,3 +47,29 @@ def _get_mongo_client():
 def get_mongo():
     """Trả về MongoDB database 'iot'. Client được tái sử dụng (singleton)."""
     return _get_mongo_client().iot
+
+
+# ============================================================
+# Redis – Connection singleton cho cache
+# ============================================================
+_REDIS_CONFIG = {
+    "host":     os.getenv("REDIS_HOST", "redis"),
+    "port":     int(os.getenv("REDIS_PORT", 6379)),
+    "db":       0,
+    "decode_responses": True,
+}
+
+_redis_client = None
+
+def get_redis():
+    """Trả về Redis client singleton. Nếu Redis không khả dụng, trả None (graceful degradation)."""
+    global _redis_client
+    if _redis_client is None:
+        try:
+            import redis as _redis_lib
+            _redis_client = _redis_lib.Redis(**_REDIS_CONFIG)
+            _redis_client.ping()  # verify connection
+        except Exception as e:
+            print(f"[REDIS] Không kết nối được: {e}")
+            _redis_client = None
+    return _redis_client

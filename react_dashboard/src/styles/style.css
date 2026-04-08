@@ -1691,6 +1691,119 @@ body {
   white-space: nowrap;
 }
 
+.alerts-hint {
+  font-size: 13px;
+  margin-top: 6px;
+  margin-bottom: 0;
+  opacity: 0.85;
+}
+
+.alert-row-clickable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.alert-row-clickable:hover {
+  background: rgba(56, 189, 248, 0.08) !important;
+}
+
+.alert-row-clickable:focus {
+  outline: 2px solid rgba(56, 189, 248, 0.5);
+  outline-offset: -2px;
+}
+
+.alert-actions-cell {
+  white-space: nowrap;
+}
+
+.alert-actions-cell .btn-sm + .btn-sm {
+  margin-left: 8px;
+}
+
+.alerts-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(9, 12, 24, 0.95));
+  border: 1px solid #1f2a44;
+  border-radius: 12px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.alerts-pagination-buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.alerts-pagination-page {
+  min-width: 100px;
+  text-align: center;
+  color: #e2e8f0;
+}
+
+.alerts-pagination .secondary-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.alerts-detail-modal {
+  max-width: 640px;
+  width: 92vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.alerts-detail-body {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.alerts-detail-dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px 16px;
+  font-size: 14px;
+  color: #e2e8f0;
+}
+
+.alerts-detail-dl dt {
+  margin: 0;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.alerts-detail-dl dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.alerts-detail-message {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.alerts-detail-pre {
+  margin: 0;
+  padding: 12px;
+  background: #0f172a;
+  border: 1px solid #1f2a44;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-x: auto;
+  max-height: 240px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .loai-badge,
 .muc-do-badge,
 .trang-thai-badge {

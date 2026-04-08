@@ -33,3 +33,7 @@ UPDATE `rules` SET `nguoi_so_huu_id` = (SELECT `id` FROM `nguoi_dung` WHERE `vai
 UPDATE `scheduled_rules` SET `nguoi_so_huu_id` = (SELECT `id` FROM `nguoi_dung` WHERE `vai_tro` = 'admin' LIMIT 1);
 
 -- Force NOT NULL now that data is patched (optional but good practice, though we can leave it nullable just in case)
+
+-- 7. Index tối ưu trang chi tiết thiết bị (GET /devices/{id}/latest)
+-- Chạy một lần; nếu báo duplicate key name thì bỏ qua (đã có index).
+ALTER TABLE `du_lieu_thiet_bi` ADD INDEX `idx_thiet_bi_khoa_time` (`thiet_bi_id`, `khoa`, `thoi_gian`);

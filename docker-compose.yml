@@ -99,6 +99,21 @@ services:
       - mysql-data:/var/lib/mysql
       - ./data.sql:/docker-entrypoint-initdb.d/data.sql
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: always
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   fastapi-backend:
     build:
       context: ./fastapi_backend
@@ -106,6 +121,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
+      redis:
+        condition: service_started
       mongodb:
         condition: service_healthy
       mysql:
@@ -124,6 +141,7 @@ services:
       - ALLOWED_ORIGINS=*
       - DEBUG_LOG_PATH=/workspace/debug-6eeaf8.log
       - INTERNAL_API_KEY=internal-rule-engine-key-change-in-production
+      - AI_ANALYST_URL=http://ai-analyst:8101
       # Gửi X-API-Key = http_api_key của thiết bị (cùng ak_... trong file config tải về) khi POST relay xuống edge
       - EDGE_CONTROL_USE_DEVICE_HTTP_KEY=1
       # Hoặc key cố định cho mọi thiết bị: EDGE_CONTROL_API_KEY=ak_...
@@ -276,6 +294,7 @@ services:
       - DEVICE_OFFLINE_THRESHOLD_MINUTES=10
       - IOT_PLATFORM_URL=http://fastapi-backend:8000
       - INTERNAL_API_KEY=internal-rule-engine-key-change-in-production
+      - AI_ANALYST_URL=http://ai-analyst:8101
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - ZALO_ACCESS_TOKEN=${ZALO_ACCESS_TOKEN:-}
       - SMTP_SERVER=${SMTP_SERVER:-smtp.gmail.com}
@@ -345,3 +364,4 @@ volumes:
   mysql-data:
   mongo-data:
   mqtt-data:
+  redis-data:

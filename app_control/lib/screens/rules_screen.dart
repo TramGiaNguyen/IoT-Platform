@@ -1,5 +1,3 @@
-// app_control/lib/screens/rules_screen.dart
-
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/rule.dart';
@@ -48,12 +46,10 @@ class _RulesScreenState extends State<RulesScreen>
     });
 
     try {
-      // Load conditional rules
       final conditionalData = await _apiService.getRules(
         phongId: widget.roomId,
       );
       
-      // Load scheduled rules
       final scheduledData = await _apiService.getScheduledRules(
         phongId: widget.roomId,
       );
@@ -82,8 +78,8 @@ class _RulesScreenState extends State<RulesScreen>
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(newStatus == 'enabled' ? 'Đã bật rule' : 'Đã tắt rule'),
-          backgroundColor: Colors.green,
+          content: Text(newStatus == 'enabled' ? 'Da bat rule' : 'Da tat rule'),
+          backgroundColor: const Color(0xFF006a6a),
         ),
       );
       
@@ -91,8 +87,8 @@ class _RulesScreenState extends State<RulesScreen>
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Lỗi: ${e.toString()}'),
-          backgroundColor: Colors.red,
+          content: Text('Loi: ${e.toString()}'),
+          backgroundColor: const Color(0xFFBA1A1A),
         ),
       );
     }
@@ -105,8 +101,8 @@ class _RulesScreenState extends State<RulesScreen>
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(newStatus == 'enabled' ? 'Đã bật rule' : 'Đã tắt rule'),
-          backgroundColor: Colors.green,
+          content: Text(newStatus == 'enabled' ? 'Da bat lich trinh' : 'Da tat lich trinh'),
+          backgroundColor: const Color(0xFF006a6a),
         ),
       );
       
@@ -114,8 +110,8 @@ class _RulesScreenState extends State<RulesScreen>
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Lỗi: ${e.toString()}'),
-          backgroundColor: Colors.red,
+          content: Text('Loi: ${e.toString()}'),
+          backgroundColor: const Color(0xFFBA1A1A),
         ),
       );
     }
@@ -125,16 +121,19 @@ class _RulesScreenState extends State<RulesScreen>
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Xác nhận xóa'),
-        content: Text('Bạn có chắc muốn xóa rule "${rule.tenRule}"?'),
+        title: const Text('Xac nhan xoa'),
+        content: Text('Ban co chac muon xoa rule "${rule.tenRule}"?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: Colors.white,
+        titleTextStyle: const TextStyle(fontFamily: 'Manrope', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF003345)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Hủy'),
+            child: const Text('Huy', style: TextStyle(color: Color(0xFF40484C))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Xóa', style: TextStyle(color: Colors.red)),
+            child: const Text('Xoa', style: TextStyle(color: Color(0xFFBA1A1A))),
           ),
         ],
       ),
@@ -146,8 +145,8 @@ class _RulesScreenState extends State<RulesScreen>
         
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Đã xóa rule'),
-            backgroundColor: Colors.green,
+            content: Text('Da xoa rule'),
+            backgroundColor: Color(0xFF006a6a),
           ),
         );
         
@@ -155,8 +154,8 @@ class _RulesScreenState extends State<RulesScreen>
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Lỗi: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: Text('Loi: ${e.toString()}'),
+            backgroundColor: const Color(0xFFBA1A1A),
           ),
         );
       }
@@ -167,16 +166,19 @@ class _RulesScreenState extends State<RulesScreen>
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Xác nhận xóa'),
-        content: Text('Bạn có chắc muốn xóa rule "${rule.tenRule}"?'),
+        title: const Text('Xac nhan xoa'),
+        content: Text('Ban co chac muon xoa lich trinh "${rule.tenRule}"?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: Colors.white,
+        titleTextStyle: const TextStyle(fontFamily: 'Manrope', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF003345)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Hủy'),
+            child: const Text('Huy', style: TextStyle(color: Color(0xFF40484C))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Xóa', style: TextStyle(color: Colors.red)),
+            child: const Text('Xoa', style: TextStyle(color: Color(0xFFBA1A1A))),
           ),
         ],
       ),
@@ -188,8 +190,8 @@ class _RulesScreenState extends State<RulesScreen>
         
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Đã xóa rule'),
-            backgroundColor: Colors.green,
+            content: Text('Da xoa lich trinh'),
+            backgroundColor: Color(0xFF006a6a),
           ),
         );
         
@@ -197,8 +199,8 @@ class _RulesScreenState extends State<RulesScreen>
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Lỗi: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: Text('Loi: ${e.toString()}'),
+            backgroundColor: const Color(0xFFBA1A1A),
           ),
         );
       }
@@ -240,110 +242,194 @@ class _RulesScreenState extends State<RulesScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.roomId != null ? 'Rules của phòng' : 'Tất cả Rules'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Điều kiện', icon: Icon(Icons.rule)),
-            Tab(text: 'Lịch trình', icon: Icon(Icons.schedule)),
+      body: Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFFF7FAFC),
+        ),
+        child: Column(
+          children: [
+            // Glassmorphism App Bar
+            Container(
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + 8,
+                left: 4,
+                right: 8,
+                bottom: 8,
+              ),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF7FAFC),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x0F1C1E06),
+                    blurRadius: 24,
+                    offset: Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Color(0xFF003345)),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  Expanded(
+                    child: Text(
+                      widget.roomId != null ? 'Rules cua phong' : 'Tat ca Rules',
+                      style: const TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.02,
+                        color: Color(0xFF003345),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Tab bar - pill style
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F4F6),
+                  borderRadius: BorderRadius.circular(9999),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  dividerColor: Colors.transparent,
+                  indicator: BoxDecoration(
+                    color: const Color(0xFF006a6a),
+                    borderRadius: BorderRadius.circular(9999),
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: const Color(0xFF40484C),
+                  labelStyle: const TextStyle(fontFamily: 'Manrope', fontWeight: FontWeight.w600, fontSize: 13),
+                  unselectedLabelStyle: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w500, fontSize: 13),
+                  tabs: const [
+                    Tab(text: 'Dieu kien', icon: Icon(Icons.rule, size: 18)),
+                    Tab(text: 'Lich trinh', icon: Icon(Icons.schedule, size: 18)),
+                  ],
+                ),
+              ),
+            ),
+
+            // Tab content
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  // Conditional Rules Tab
+                  _conditionalRules.isEmpty
+                      ? _buildEmptyState('Chua co rule dieu kien', Icons.rule)
+                      : RefreshIndicator(
+                          color: const Color(0xFF006a6a),
+                          onRefresh: _loadRules,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _conditionalRules.length,
+                            itemBuilder: (context, index) => RuleCard(
+                              rule: _conditionalRules[index],
+                              onTap: () => _navigateToConditionalRuleForm(_conditionalRules[index]),
+                              onToggle: () => _toggleConditionalRule(_conditionalRules[index]),
+                              onDelete: () => _deleteConditionalRule(_conditionalRules[index]),
+                            ),
+                          ),
+                        ),
+                  
+                  // Scheduled Rules Tab
+                  _scheduledRules.isEmpty
+                      ? _buildEmptyState('Chua co lich trinh', Icons.schedule)
+                      : RefreshIndicator(
+                          color: const Color(0xFF006a6a),
+                          onRefresh: _loadRules,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _scheduledRules.length,
+                            itemBuilder: (context, index) => ScheduledRuleCard(
+                              rule: _scheduledRules[index],
+                              onTap: () => _navigateToScheduledRuleForm(_scheduledRules[index]),
+                              onToggle: () => _toggleScheduledRule(_scheduledRules[index]),
+                              onDelete: () => _deleteScheduledRule(_scheduledRules[index]),
+                            ),
+                          ),
+                        ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.error, size: 64, color: Colors.red),
-                      const SizedBox(height: 16),
-                      Text(_error!),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadRules,
-                        child: const Text('Thử lại'),
-                      ),
-                    ],
-                  ),
-                )
-              : TabBarView(
-                  controller: _tabController,
-                  children: [
-                    // Conditional Rules Tab
-                    _conditionalRules.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.rule, size: 64, color: Colors.grey.shade400),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Chưa có rule điều kiện',
-                                  style: TextStyle(color: Colors.grey.shade600),
-                                ),
-                              ],
-                            ),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _loadRules,
-                            child: ListView.builder(
-                              itemCount: _conditionalRules.length,
-                              itemBuilder: (context, index) {
-                                final rule = _conditionalRules[index];
-                                return RuleCard(
-                                  rule: rule,
-                                  onTap: () => _navigateToConditionalRuleForm(rule),
-                                  onToggle: () => _toggleConditionalRule(rule),
-                                  onDelete: () => _deleteConditionalRule(rule),
-                                );
-                              },
-                            ),
-                          ),
-                    
-                    // Scheduled Rules Tab
-                    _scheduledRules.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.schedule, size: 64, color: Colors.grey.shade400),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Chưa có rule lịch trình',
-                                  style: TextStyle(color: Colors.grey.shade600),
-                                ),
-                              ],
-                            ),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _loadRules,
-                            child: ListView.builder(
-                              itemCount: _scheduledRules.length,
-                              itemBuilder: (context, index) {
-                                final rule = _scheduledRules[index];
-                                return ScheduledRuleCard(
-                                  rule: rule,
-                                  onTap: () => _navigateToScheduledRuleForm(rule),
-                                  onToggle: () => _toggleScheduledRule(rule),
-                                  onDelete: () => _deleteScheduledRule(rule),
-                                );
-                              },
-                            ),
-                          ),
-                  ],
-                ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          if (_tabController.index == 0) {
-            _navigateToConditionalRuleForm();
-          } else {
-            _navigateToScheduledRuleForm();
-          }
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Tạo Rule'),
+
+      // Gradient FAB
+      floatingActionButton: Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF003345), Color(0xFF004B63)],
+          ),
+          borderRadius: BorderRadius.circular(9999),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0x40003345),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: FloatingActionButton.extended(
+          onPressed: () {
+            if (_tabController.index == 0) {
+              _navigateToConditionalRuleForm();
+            } else {
+              _navigateToScheduledRuleForm();
+            }
+          },
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          highlightElevation: 0,
+          icon: const Icon(Icons.add, color: Colors.white),
+          label: const Text(
+            'Tao Rule',
+            style: TextStyle(
+              fontFamily: 'Manrope',
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(String message, IconData icon) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFC0C7CD).withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              size: 48,
+              color: const Color(0xFFC0C7CD),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            style: const TextStyle(
+              fontSize: 16,
+              color: Color(0xFF40484C),
+            ),
+          ),
+        ],
       ),
     );
   }

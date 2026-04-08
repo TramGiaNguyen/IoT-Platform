@@ -13,6 +13,7 @@ import os
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "secret-bdu-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -77,6 +78,33 @@ def create_access_token(data: dict):
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     data.update({"exp": expire})
     return jwt.encode(data, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_refresh_token(user_info: dict):
+    """Token dài hạn cho refresh flow. Chứa type=refresh để phân biệt với access token."""
+    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    data = {
+        "sub": user_info["email"],
+        "type": "refresh",
+        "vai_tro": user_info.get("vai_tro"),
+        "vai_tro_admin": user_info.get("vai_tro") == "admin",
+    }
+    data.update({"exp": expire})
+    return jwt.encode(data, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_refresh_token(token: str):
+    """Verify refresh token, trả về user info nếu hợp lệ. Trả về None nếu không hợp lệ."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "refresh":
+            return None
+        return {
+            "email": payload.get("sub"),
+            "vai_tro": payload.get("vai_tro"),
+        }
+    except JWTError:
+        return None
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)):

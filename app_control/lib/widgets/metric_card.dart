@@ -8,7 +8,6 @@ class MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Determine widget type based on metric type
     switch (metric.type.toLowerCase()) {
       case 'gauge':
         return _buildGaugeCard(context);
@@ -27,61 +26,97 @@ class MetricCard extends StatelessWidget {
     final percentage = _calculatePercentage();
     final color = _getColorForMetric();
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Circular gauge
-            SizedBox(
-              width: 70,
-              height: 70,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CircularProgressIndicator(
-                    value: percentage,
-                    strokeWidth: 6,
-                    backgroundColor: Colors.grey[200],
-                    valueColor: AlwaysStoppedAnimation(color),
-                  ),
-                  Text(
-                    metric.displayValue,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: color,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFC0C7CD).withOpacity(0.15),
+          width: 1,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F1C1E10),
+            blurRadius: 32,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Thin-stroke circular progress
+          SizedBox(
+            width: 72,
+            height: 72,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Track (2px)
+                SizedBox(
+                  width: 72,
+                  height: 72,
+                  child: CircularProgressIndicator(
+                    value: 1.0,
+                    strokeWidth: 2,
+                    backgroundColor: Colors.transparent,
+                    valueColor: const AlwaysStoppedAnimation(
+                      Color(0xFFC0C7CD),
                     ),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              metric.displayLabel,
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey[700],
-                fontWeight: FontWeight.w500,
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (metric.unit != null && metric.unit!.isNotEmpty)
-              Text(
-                metric.unit!,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey[500],
                 ),
+                // Active (4px)
+                SizedBox(
+                  width: 72,
+                  height: 72,
+                  child: CircularProgressIndicator(
+                    value: percentage,
+                    strokeWidth: 4,
+                    backgroundColor: Colors.transparent,
+                    valueColor: AlwaysStoppedAnimation(color),
+                  ),
+                ),
+                // Value
+                Text(
+                  metric.displayValue,
+                  style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.02,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            metric.displayLabel,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+              color: Color(0xFF40484C),
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (metric.unit != null && metric.unit!.isNotEmpty)
+            Text(
+              metric.unit!,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF71787D),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -90,174 +125,283 @@ class MetricCard extends StatelessWidget {
     final color = _getColorForMetric();
     final icon = _getIconForMetric();
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: color, size: 24),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              metric.displayLabel,
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey[600],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              metric.displayText,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-            ),
-          ],
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFC0C7CD).withOpacity(0.15),
+          width: 1,
         ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F1C1E10),
+            blurRadius: 32,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Icon container
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            metric.displayLabel,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+              color: Color(0xFF40484C),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            metric.displayText,
+            style: const TextStyle(
+              fontFamily: 'Manrope',
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.02,
+              color: Color(0xFF003345),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildTextCard(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.info_outline,
-              size: 32,
-              color: Colors.blue[700],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              metric.displayLabel,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              metric.value.toString(),
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFC0C7CD).withOpacity(0.15),
+          width: 1,
         ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F1C1E10),
+            blurRadius: 32,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF006a6a).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.info_outline,
+              size: 28,
+              color: Color(0xFF006a6a),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            metric.displayLabel,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+              color: Color(0xFF40484C),
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            metric.value.toString(),
+            style: const TextStyle(
+              fontFamily: 'Manrope',
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.02,
+              color: Color(0xFF003345),
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildBooleanCard(BuildContext context) {
     final boolValue = _parseBoolValue();
-    final color = boolValue ? Colors.green : Colors.grey;
+    final color = boolValue ? const Color(0xFF006a6a) : const Color(0xFF40484C);
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              boolValue ? Icons.check_circle : Icons.cancel,
-              size: 40,
-              color: color,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              metric.displayLabel,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              boolValue ? 'BẬT' : 'TẮT',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-          ],
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFC0C7CD).withOpacity(0.15),
+          width: 1,
         ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F1C1E10),
+            blurRadius: 32,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            boolValue ? Icons.check_circle : Icons.cancel_outlined,
+            size: 36,
+            color: color,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            metric.displayLabel,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+              color: Color(0xFF40484C),
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 8),
+          // Pill-shaped chip with dot
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: boolValue
+                  ? const Color(0xFF90EFEF).withOpacity(0.3)
+                  : const Color(0xFFE0E3E5),
+              borderRadius: BorderRadius.circular(9999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: boolValue
+                        ? const Color(0xFF006a6a)
+                        : const Color(0xFF71787D),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  boolValue ? 'BAT' : 'TAT',
+                  style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: boolValue
+                        ? const Color(0xFF006e6e)
+                        : const Color(0xFF40484C),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildGenericCard(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.sensors,
-              size: 32,
-              color: Colors.grey[600],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              metric.displayLabel,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              metric.displayText,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFC0C7CD).withOpacity(0.15),
+          width: 1,
         ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F1C1E10),
+            blurRadius: 32,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF006a6a).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.sensors,
+              size: 28,
+              color: Color(0xFF006a6a),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            metric.displayLabel,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+              color: Color(0xFF40484C),
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            metric.displayText,
+            style: const TextStyle(
+              fontFamily: 'Manrope',
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.02,
+              color: Color(0xFF003345),
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }
@@ -284,28 +428,26 @@ class MetricCard extends StatelessWidget {
   }
 
   Color _getColorForMetric() {
-    // Try to parse color from metric
     if (metric.color != null) {
       try {
         return Color(int.parse(metric.color!.replaceFirst('#', '0xFF')));
       } catch (e) {
-        // Fallback to auto-detect
+        // Fallback
       }
     }
 
-    // Auto-detect based on key
     final key = metric.key.toLowerCase();
-    if (key.contains('temp')) return Colors.orange;
-    if (key.contains('humi')) return Colors.blue;
-    if (key.contains('volt')) return Colors.amber;
-    if (key.contains('current')) return Colors.red;
-    if (key.contains('power')) return Colors.green;
-    if (key.contains('energy')) return Colors.teal;
-    if (key.contains('freq')) return Colors.purple;
-    if (key.contains('soil')) return Colors.brown;
-    if (key.contains('light')) return Colors.yellow;
+    if (key.contains('temp')) return const Color(0xFFF97316); // Orange
+    if (key.contains('humi')) return const Color(0xFF0EA5E9); // Blue
+    if (key.contains('volt')) return const Color(0xFFF59E0B); // Amber
+    if (key.contains('current')) return const Color(0xFFEF4444); // Red
+    if (key.contains('power')) return const Color(0xFF22C55E); // Green
+    if (key.contains('energy')) return const Color(0xFF14B8A6); // Teal
+    if (key.contains('freq')) return const Color(0xFFA855F7); // Purple
+    if (key.contains('soil')) return const Color(0xFF92400E); // Brown
+    if (key.contains('light')) return const Color(0xFFFACC15); // Yellow
 
-    return Colors.blueGrey;
+    return const Color(0xFF006a6a);
   }
 
   IconData _getIconForMetric() {

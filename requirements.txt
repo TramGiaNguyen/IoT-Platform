@@ -10,3 +10,4 @@ requests
 paho-mqtt
 cryptography
 python-jose[cryptography]
+redis

@@ -1,5 +1,7 @@
 // app_control/lib/models/rule.dart
 
+import 'dart:convert';
+
 class Rule {
   final int id;
   final String tenRule;
@@ -102,7 +104,10 @@ class RuleCondition {
         operatorText = '≠';
         break;
     }
-    return '$field $operatorText $value';
+    final fieldLabel = field == 'so_nguoi_trong_phong'
+        ? 'So nguoi trong phong'
+        : field;
+    return '$fieldLabel $operatorText $value';
   }
 }
 
@@ -124,13 +129,26 @@ class RuleAction {
   });
 
   factory RuleAction.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic>? params;
+    final ap = json['action_params'];
+    if (ap is Map<String, dynamic>) {
+      params = ap;
+    } else if (ap is String && ap.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(ap);
+        if (decoded is Map) {
+          params = Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {
+        params = null;
+      }
+    }
+
     return RuleAction(
       id: json['id'] ?? json['action_id'],
       deviceId: json['device_id'] ?? json['action_device_id'] ?? '',
       actionCommand: json['action_command'] ?? '',
-      actionParams: json['action_params'] is String
-          ? null
-          : json['action_params'] as Map<String, dynamic>?,
+      actionParams: params,
       delaySeconds: json['delay_seconds'] ?? 0,
       thuTu: json['thu_tu'] ?? 1,
     );
@@ -150,8 +168,13 @@ class RuleAction {
     if (actionCommand == 'relay' && actionParams != null) {
       final relay = actionParams!['relay'];
       final state = actionParams!['state'];
-      return 'Relay $relay: $state';
+      if (relay != null && state != null) {
+        return 'Relay $relay: $state';
+      }
     }
-    return actionCommand;
+    if (actionCommand.isNotEmpty) {
+      return actionCommand;
+    }
+    return 'Han dong';
   }
 }

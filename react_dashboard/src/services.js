@@ -1,6 +1,34 @@
 import axios from 'axios';
 import { API_BASE } from './config/api';
 
+/** Default axios instance với interceptor xử lý 401. */
+const api = axios.create({ baseURL: API_BASE, timeout: 30000 });
+
+api.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response?.status === 401) {
+      localStorage.clear();
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+export { api };
+
+/** Timeout cho các API truy vấn MySQL/DB nặng (du_lieu_thiet_bi lớn, Docker LAN). */
+const DEVICE_API_TIMEOUT_MS = 30000;
+
+export const refreshToken = (refreshTokenValue, username, password) =>
+  axios.post(`${API_BASE}/refresh`, {}, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(refreshTokenValue ? { 'X-Refresh-Token': refreshTokenValue } : {}),
+      ...(username && password ? { 'X-User': username, 'X-Password': password } : {}),
+    },
+  });
+
 export const login = (username, password) =>
   axios.post(`${API_BASE}/token`, new URLSearchParams({ username, password }), {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -11,9 +39,11 @@ export const fetchDevices = (token) =>
     headers: { Authorization: `Bearer ${token}` },
   });
 
-export const fetchDevicesLatestAll = (token) =>
+export const fetchDevicesLatestAll = (token, workspaceId = null) =>
   axios.get(`${API_BASE}/devices/latest-all`, {
     headers: { Authorization: `Bearer ${token}` },
+    params: workspaceId ? { workspace_id: workspaceId } : {},
+    timeout: DEVICE_API_TIMEOUT_MS,
   });
 
 export const fetchDeviceLatest = (deviceId, token) =>
@@ -121,6 +151,7 @@ export const saveControlLines = (deviceId, lines, token) =>
 export const fetchDeviceFullConfig = (deviceId, token) =>
   axios.get(`${API_BASE}/devices/${deviceId}/full-config`, {
     headers: { Authorization: `Bearer ${token}` },
+    timeout: DEVICE_API_TIMEOUT_MS,
   });
 
 /** URL HTTP + template body (placeholder {{relay}} {{state}} {{cmd}}) — để trống template = format mặc định backend */
@@ -265,7 +296,7 @@ export const fetchDeviceDataKeys = (deviceId, token) =>
 export const fetchAlerts = (token, params = {}) =>
   axios.get(`${API_BASE}/alerts`, {
     headers: { Authorization: `Bearer ${token}` },
-    params: { limit: 50, ...params },
+    params: { limit: 15, offset: 0, ...params },
   });
 
 export const acknowledgeAlert = (alertId, token) =>

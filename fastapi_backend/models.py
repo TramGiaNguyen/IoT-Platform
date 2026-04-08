@@ -18,6 +18,7 @@ class Token(BaseModel):
     token_type: str
     vai_tro: Optional[str] = None
     allowed_pages: Optional[List[str]] = None
+    refresh_token: Optional[str] = None
 
 
 # =========================================================

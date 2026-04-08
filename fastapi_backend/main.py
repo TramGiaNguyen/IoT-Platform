@@ -51,6 +51,31 @@ def _startup_kafka_consumer():
     """
     start_kafka_consumer_background()
 
+
+# ============================================================
+# MongoDB index setup – chạy một lần khi startup, không bao giờ trong hot path
+# ============================================================
+_mongo_index_ready = False
+
+
+@app.on_event("startup")
+def _ensure_mongo_indexes():
+    """Tạo index cho collection `events` trên MongoDB một lần duy nhất khi process khởi động."""
+    global _mongo_index_ready
+    try:
+        from database import get_mongo
+        collection = get_mongo()["events"]
+        indexes = collection.index_information()
+        if "device_id_1_timestamp_-1" not in indexes:
+            collection.create_index(
+                [("device_id", 1), ("timestamp", -1)],
+                name="device_id_1_timestamp_-1"
+            )
+        _mongo_index_ready = True
+    except Exception as e:
+        print(f"[MONGODB] Index setup warning: {e}")
+        _mongo_index_ready = True  # Vẫn tiếp tục – index có thể đã tồn tại
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to Binh Duong IoT Platform API"}

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { fetchDevicesLatestAll } from '../services';
 import { API_BASE, WS_URL } from '../config/api';
+import { useGlobalCache } from '../context/GlobalCache';
 import '../styles/Dashboard.css';
 
 // Một vài icon dạng SVG nhỏ để mô phỏng phong cách trong sample
@@ -60,7 +61,12 @@ const getDefaultKeysForDeviceType = (type) => {
 };
 
 const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRooms, workspaceId }) => {
-  const [devices, setDevices] = useState(initialDevices);
+  // Global cache — đọc NGAY từ cache, không cần chờ fetch
+  const { cache, updateCache } = useGlobalCache();
+  // Ưu tiên: global cache → props → rỗng
+  const initialFromCache = cache.devices?.length > 0 ? cache.devices : initialDevices;
+
+  const [devices, setDevices] = useState(initialFromCache);
   const [deviceData, setDeviceData] = useState({});
   const [loading, setLoading] = useState(true);
   const [wsConnected, setWsConnected] = useState(false);
@@ -96,6 +102,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   const [controlLines, setControlLines] = useState([]);
   const [controlLinesSaved, setControlLinesSaved] = useState(false);
   const [savingControlLines, setSavingControlLines] = useState(false);
+  const [downloadingConfig, setDownloadingConfig] = useState(false);
 
   // Statistics state
   const [hourlyStats, setHourlyStats] = useState([]);
@@ -106,11 +113,23 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   const [currentPage, setCurrentPage] = useState(1);
   const devicesPerPage = 12;
 
-  const loadLatestAll = async () => {
+  // ─── Data loading functions ───
+  // Cache key theo workspace để tách biệt cache giữa các workspace
+  const _cacheKey = (workspaceId) => `dashboard_latest_${workspaceId ?? 'global'}`;
+  const CACHE_TTL_MS = 60_000; // 60s
+
+  // Tái sử dụng devices.map trong WebSocket handler mà không re-trigger effect
+  const devicesIdsRef = useRef([]);
+
+  const loadLatestAll = async (silent = false) => {
+    // Silent mode: không set loading, chỉ cập nhật data
     try {
       const res = await fetchDevicesLatestAll(token, workspaceId);
       const payload = res.data.devices || [];
-      // Cập nhật list devices theo payload (để đồng bộ với latest-all)
+
+      // Cache được lưu tự động bởi GlobalCache.updateCache() → localStorage persistence
+      // (saveToStorage debounced trong GlobalCache.js)
+
       const mappedDevices = payload.map((d) => ({
         ma_thiet_bi: d.device_id,
         ten_thiet_bi: d.ten_thiet_bi,
@@ -121,22 +140,27 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
         ten_phong: d.ten_phong,
         ma_phong: d.ma_phong,
       }));
+
+      // Chuẩn hóa: ref luôn là String[] để so sánh với data.device_id từ WS không bị lệch kiểu
+      devicesIdsRef.current = mappedDevices.map(d => String(d.ma_thiet_bi));
+
       setDevices(mappedDevices);
 
-      // Merge deviceData - keep newer last_seen from WebSocket
+      // Chia sẻ device list cho các component khác qua GlobalCache
+      updateCache({ devices: mappedDevices });
+
       setDeviceData((prev) => {
         const newDeviceData = {};
         payload.forEach((item) => {
           const existing = prev[item.device_id] || {};
           const existingLastSeen = Number(existing.last_seen || 0);
           const newLastSeen = Number(item.last_seen || 0);
-
-          // Use the more recent last_seen between API and existing (from WebSocket)
           newDeviceData[item.device_id] = {
             ...item,
             last_seen: Math.max(existingLastSeen, newLastSeen),
-            // Also preserve existing data that might be newer
-            data: { ...item.data, ...existing.data },
+            // API data (item.data) thắng cho các key trùng — đảm bảo thẻ luôn hiển thị số mới nhất từ MySQL
+            // existing.data chỉ bổ sung các key mà API không có (fallback từ WS hoặc poll trước)
+            data: { ...(existing.data || {}), ...(item.data || {}) },
           };
         });
         return newDeviceData;
@@ -144,11 +168,41 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     } catch (err) {
       console.error('Error loading latest all:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
-  // Load statistics data
+  // Hydrate từ GlobalCache (localStorage-backed) NGAY khi mount — không blocking
+  useEffect(() => {
+    if (!token) return;
+    // GlobalCache đã hydrate từ localStorage khi mount
+    // → devices đã có trong cache, chỉ cần sync vào component state
+    if (cache.devices && cache.devices.length > 0) {
+      const mappedDevices = cache.devices.map((d) => ({
+        ma_thiet_bi: d.ma_thiet_bi || d.device_id,
+        ten_thiet_bi: d.ten_thiet_bi || d.ten_thiet_bi,
+        loai_thiet_bi: d.loai_thiet_bi,
+        trang_thai: d.trang_thai,
+        last_seen: d.last_seen,
+        phong_id: d.phong_id,
+        ten_phong: d.ten_phong,
+        ma_phong: d.ma_phong,
+      }));
+      devicesIdsRef.current = mappedDevices.map(d => String(d.ma_thiet_bi));
+      setDevices(mappedDevices);
+      const newDeviceData = {};
+      (cache.devices || []).forEach((item) => {
+        const id = item.ma_thiet_bi || item.device_id;
+        newDeviceData[id] = { ...item };
+      });
+      setDeviceData(newDeviceData);
+      setLoading(false); // cache từ localStorage còn tươi → không cần spinner
+      loadLatestAll(true); // refresh background
+      return;
+    }
+    loadLatestAll(false);
+  }, [token, workspaceId]);
+
   const loadStats = async () => {
     try {
       const [hourlyRes, dailyRes] = await Promise.all([
@@ -168,104 +222,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     }
   };
 
-  // Đồng bộ prop devices từ App xuống state cục bộ
-  useEffect(() => {
-    setDevices(initialDevices);
-    if (initialDevices.length === 0) {
-      setLoading(false);
-    }
-  }, [initialDevices]);
-
-  // Load stats on mount and every 5 seconds for realtime updates
-  useEffect(() => {
-    if (!token) return;
-    loadStats();
-    const interval = setInterval(loadStats, 5000); // 5 seconds
-    return () => clearInterval(interval);
-  }, [token, workspaceId]);
-
-  useEffect(() => {
-    if (!token || devices.length === 0) return;
-
-    let ws;
-    let reconnectTimer;
-
-    const connectWs = () => {
-      ws = new WebSocket(WS_URL);
-
-      ws.onopen = () => {
-        setWsConnected(true);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.device_id) {
-            // Chỉ update data cho các thiết bị đã đăng ký
-            const registeredDeviceIds = devices.map(d => d.ma_thiet_bi);
-            if (!registeredDeviceIds.includes(data.device_id)) {
-              // Thiết bị chưa đăng ký, bỏ qua
-              return;
-            }
-
-            setDeviceData((prev) => {
-              const currentDeviceData = prev[data.device_id] || {};
-              const currentData = currentDeviceData.data || {};
-              const newData = { ...currentData };
-              Object.keys(data).forEach((key) => {
-                if (key !== 'device_id' && key !== 'timestamp' && key !== 'type') {
-                  newData[key] = {
-                    ...currentData[key],
-                    value: data[key],
-                    timestamp: data.timestamp,
-                  };
-                }
-              });
-
-              return {
-                ...prev,
-                [data.device_id]: {
-                  ...currentDeviceData,
-                  device_id: data.device_id,
-                  last_seen: data.timestamp,
-                  data: newData,
-                },
-              };
-            });
-          }
-        } catch (err) {
-          console.error('Error parsing WebSocket message:', err);
-        }
-      };
-
-      ws.onerror = () => {
-        setWsConnected(false);
-      };
-
-      ws.onclose = () => {
-        setWsConnected(false);
-        reconnectTimer = setTimeout(connectWs, 3000);
-      };
-    };
-
-    connectWs();
-
-    return () => {
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      try {
-        ws && ws.close();
-      } catch (e) {
-        /* ignore */
-      }
-    };
-  }, [token, devices.length]);
-
-  useEffect(() => {
-    if (!token) return;
-    loadLatestAll();
-    const interval = setInterval(loadLatestAll, 5000);
-    return () => clearInterval(interval);
-  }, [token, workspaceId]);
+  // ─── Handlers (định nghĩa trước useEffect để tránh stale closure) ───
 
   const formatValue = (value, unit = '') => {
     if (value === null || value === undefined) return 'N/A';
@@ -353,22 +310,145 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       return;
     }
     try {
-      await axios.delete(
-        `${API_BASE}/devices/${device.ma_thiet_bi}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      // Xóa khỏi state
-      setDevices(prev => prev.filter(d => d.ma_thiet_bi !== device.ma_thiet_bi));
-      setDeviceData(prev => {
-        const updated = { ...prev };
-        delete updated[device.ma_thiet_bi];
-        return updated;
+      await axios.delete(`${API_BASE}/devices/${device.ma_thiet_bi}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDevices((prev) => prev.filter((d) => d.ma_thiet_bi !== device.ma_thiet_bi));
+      setDeviceData((prev) => {
+        const next = { ...prev };
+        delete next[device.ma_thiet_bi];
+        return next;
       });
     } catch (err) {
       console.error('Delete device failed', err);
-      alert('Xóa thiết bị thất bại: ' + (err.response?.data?.detail || err.message));
     }
   };
+
+  // ─── useEffects ───
+
+  // Đồng bộ prop devices từ App xuống state cục bộ
+  useEffect(() => {
+    setDevices(initialDevices);
+  }, [initialDevices]);
+
+  // Stats: poll mỗi 60s + poll latest-all mỗi 30s (Redis cache backend giảm DB load)
+  // WebSocket vẫn xử lý real-time → polling chỉ là backup / sync data định kỳ
+  useEffect(() => {
+    if (!token) return;
+
+    // Poll ngay lần đầu
+    loadStats();
+    loadLatestAll();
+
+    const statsInterval = setInterval(loadStats, 60000);
+    // 10s: đủ nhanh để cảm nhận realtime mà không gây overload server
+    const latestInterval = setInterval(() => loadLatestAll(true), 10000);
+
+    return () => {
+      clearInterval(statsInterval);
+      clearInterval(latestInterval);
+    };
+  }, [token, workspaceId]);
+
+  // WebSocket: chỉ phụ thuộc [token] — dùng devicesIdsRef thay vì devices.map
+  useEffect(() => {
+    if (!token) return;
+
+    const wsRef = { current: null };
+    const reconnectTimerRef = { current: null };
+    let mounted = false;
+
+    const connectWs = () => {
+      if (mounted && !wsRef.current) {
+        wsRef.current = new WebSocket(WS_URL);
+
+        wsRef.current.onopen = () => {
+          if (!mounted) {
+            try { wsRef.current.close(); } catch (_) { /* ignore */ }
+            return;
+          }
+          setWsConnected(true);
+        };
+
+        wsRef.current.onmessage = (event) => {
+          if (!mounted) return;
+          try {
+            const data = JSON.parse(event.data);
+            const wsDeviceId = String(data.device_id || '');
+            if (!wsDeviceId) return;
+            if (!devicesIdsRef.current.includes(wsDeviceId)) return;
+
+            setDeviceData((prev) => {
+              const currentDeviceData = prev[wsDeviceId] || {};
+              const currentData = currentDeviceData.data || {};
+              const newData = { ...currentData };
+              Object.keys(data).forEach((key) => {
+                if (key !== 'device_id' && key !== 'timestamp' && key !== 'type') {
+                  newData[key] = {
+                    ...currentData[key],
+                    value: data[key],
+                    timestamp: data.timestamp,
+                  };
+                }
+              });
+              // Chỉ update last_seen nếu WS timestamp mới hơn (so sánh ở đơn vị giây)
+              const wsTsSec = data.timestamp > 1e12
+                ? Math.floor(data.timestamp / 1000)
+                : Math.floor(data.timestamp);
+              const existingTsSec = currentDeviceData.last_seen
+                ? (currentDeviceData.last_seen > 1e12
+                    ? Math.floor(currentDeviceData.last_seen / 1000)
+                    : Math.floor(currentDeviceData.last_seen))
+                : 0;
+              const newLastSeen = wsTsSec > existingTsSec ? data.timestamp : currentDeviceData.last_seen;
+              return {
+                ...prev,
+                [wsDeviceId]: {
+                  ...currentDeviceData,
+                  device_id: wsDeviceId,
+                  last_seen: newLastSeen,
+                  data: newData,
+                },
+              };
+            });
+          } catch (err) {
+            console.error('Error parsing WebSocket message:', err);
+          }
+        };
+
+        wsRef.current.onerror = () => setWsConnected(false);
+
+        wsRef.current.onclose = () => {
+          setWsConnected(false);
+          wsRef.current = null;
+          if (mounted) {
+            reconnectTimerRef.current = setTimeout(connectWs, 3000);
+          }
+        };
+      }
+    };
+
+    mounted = true;
+    connectWs();
+
+    return () => {
+      mounted = false;
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (wsRef.current) {
+        if (wsRef.current.readyState === WebSocket.OPEN) {
+          try { wsRef.current.close(); } catch (_) { /* ignore */ }
+        } else if (wsRef.current.readyState === WebSocket.CONNECTING) {
+          wsRef.current.addEventListener(
+            'open',
+            () => {
+              try { wsRef.current.close(); } catch (_) { /* ignore */ }
+            },
+            { once: true }
+          );
+        }
+      }
+    };
+  }, [token]);
 
   const formatTime = (timestamp) => {
     if (!timestamp) return 'Chưa có dữ liệu';
@@ -1096,8 +1176,10 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                                 }
                                 
                                 // Lấy full config từ backend
+                                setDownloadingConfig(true);
                                 const res = await axios.get(`${API_BASE}/devices/${deviceId}/full-config`, {
-                                  headers: { Authorization: `Bearer ${token}` }
+                                  headers: { Authorization: `Bearer ${token}` },
+                                  timeout: 30000,
                                 });
                                 
                                 const configJson = JSON.stringify(res.data, null, 2);
@@ -1111,10 +1193,13 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                               } catch (err) {
                                 console.error('Download config error:', err);
                                 alert('❌ Lỗi tải config: ' + (err.response?.data?.detail || err.message) + '\n\nVui lòng thử lại hoặc liên hệ admin.');
+                              } finally {
+                                setDownloadingConfig(false);
                               }
                             }}
+                            disabled={downloadingConfig}
                           >
-                            📥 Download Config
+                            {downloadingConfig ? '⏳ Đang tải...' : '📥 Download Config'}
                           </button>
                           <button
                             className="register-btn-modal"
