@@ -24,6 +24,8 @@ from pydantic import BaseModel
 import torch
 from ultralytics import YOLO
 
+from zone_tracker import ZoneTracker, ZoneInfo
+
 # ============================================================
 # Configuration
 # ============================================================
@@ -96,6 +98,20 @@ class SessionStatus(BaseModel):
     so_nguoi: int
     fps: Optional[float] = None
     error: Optional[str] = None
+    stream_w: Optional[int] = None
+    stream_h: Optional[int] = None
+
+
+class SessionInfo(BaseModel):
+    session_id: str
+    room_id: int
+    camera_id: int
+    status: str
+    so_nguoi: int
+    fps: Optional[float] = None
+    error: Optional[str] = None
+    stream_w: Optional[int] = None
+    stream_h: Optional[int] = None
 
 
 # ============================================================
@@ -145,8 +161,25 @@ class CaptureSession:
         self._count_history: list[int] = []
         self._history_maxlen = 5
 
+        self._zone_tracker: Optional[ZoneTracker] = None
+        self._zone_seconds_start_time: float = time.time()
+        self._session_start_ts: float = time.time()
+
+        # Actual MJPEG output resolution (may be smaller than camera res due to max-1280 cap)
+        self._stream_w: int = 0
+        self._stream_h: int = 0
+
+    def set_zones(self, zones: List[dict]):
+        """Set zone definitions for this session. Zones are fetched from MySQL via FastAPI."""
+        if zones:
+            self._zone_tracker = ZoneTracker(zones, self.camera_id)
+            logger.info("[%s] ZoneTracker initialized with %d zones", self.session_id, len(zones))
+        else:
+            self._zone_tracker = None
+            logger.info("[%s] ZoneTracker cleared (no zones)", self.session_id)
+
     def start(self, model: YOLO, device: Any) -> bool:
-        """Mở RTSP và chạy hai thread capture + inference."""
+        # Initialize VideoCapture here so _cap.isOpened() is valid
         self._cap = cv2.VideoCapture(self.stream_url)
         if not self._cap.isOpened():
             self.error = f"Cannot open stream: {self.stream_url}"
@@ -207,6 +240,10 @@ class CaptureSession:
             with self._state_lock:
                 boxes = list(self._overlay_boxes)
 
+            # Draw zone overlay first (below people boxes)
+            if self._zone_tracker is not None:
+                frame = self._zone_tracker.draw_overlay(frame)
+
             # Sắp xếp theo y_center (từ trên xuống, trái sang) → nhãn 1..N nhất quán
             boxes_sorted = sorted(
                 boxes,
@@ -236,6 +273,9 @@ class CaptureSession:
             if max(h, w) > 1280:
                 s = 1280.0 / max(h, w)
                 preview = cv2.resize(vis, (int(w * s), int(h * s)))
+
+            self._stream_w = preview.shape[1]
+            self._stream_h = preview.shape[0]
 
             ok, buf = cv2.imencode(".jpg", preview, [cv2.IMWRITE_JPEG_QUALITY, 72])
             if ok:
@@ -351,6 +391,11 @@ class CaptureSession:
                 if len(self._count_history) > self._history_maxlen:
                     self._count_history.pop(0)
 
+            # Update zone tracker
+            if self._zone_tracker is not None:
+                frame_time = time.time() - self._session_start_ts
+                self._zone_tracker.update(boxes_out, frame_time)
+
     def get_jpeg_bytes(self) -> Optional[bytes]:
         with self._frame_lock:
             return self._latest_frame
@@ -378,6 +423,8 @@ class CaptureSession:
             so_nguoi=smoothed,
             fps=self.fps,
             error=self.error,
+            stream_w=self._stream_w,
+            stream_h=self._stream_h,
         )
 
 
@@ -458,9 +505,28 @@ def _fetch_stream_url(room_id: int, camera_id: int) -> str:
     url = data.get("stream_url", "")
     if not url:
         raise HTTPException(status_code=400, detail="Backend returned empty stream_url")
-    
+
     logger.info("Stream URL ready for camera %s (length=%s)", camera_id, len(url))
     return url
+
+
+def _fetch_zones_for_camera(camera_id: int) -> List[dict]:
+    """Ask FastAPI backend for zone definitions for a camera."""
+    try:
+        resp = httpx.get(
+            f"{IOT_PLATFORM_URL}/internal/ai/zones/{camera_id}",
+            headers={"X-Internal-Key": INTERNAL_API_KEY},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            zones = data.get("zones", [])
+            if zones:
+                logger.info("Fetched %d zones for camera %s from FastAPI", len(zones), camera_id)
+            return zones
+    except Exception as e:
+        logger.warning("Could not fetch zones for camera %s: %s", camera_id, e)
+    return []
 
 
 def _report_occupancy(room_id: int, camera_id: int, so_nguoi: int):
@@ -564,6 +630,12 @@ def _ensure_session(room_id: int, camera_id: int) -> tuple[str, bool]:
     model = _get_model()
     device = _get_inference_device()
     session = CaptureSession(session_id, room_id, camera_id, stream_url)
+
+    # Auto-load zones from FastAPI
+    zones = _fetch_zones_for_camera(camera_id)
+    if zones:
+        session.set_zones(zones)
+
     if not session.start(model, device):
         logger.error("[BG] Session start failed for room=%s camera=%s: %s", room_id, camera_id, session.error)
         raise HTTPException(status_code=502, detail=session.error or "Failed to start capture")
@@ -595,6 +667,30 @@ def get_session_status(session_id: str):
     if session_id not in _active_sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     return _active_sessions[session_id].get_status()
+
+
+@app.get("/sessions/{session_id}/info", response_model=SessionInfo)
+def get_session_info(session_id: str):
+    """Returns session metadata including the actual MJPEG output resolution.
+
+    The polygon coordinates stored in the DB are in the camera's native resolution.
+    The MJPEG stream may be downscaled (max 1280px) by OpenCV.
+    Clients must use the ratio (stream_w / polygon_w) to scale coordinates correctly.
+    """
+    if session_id not in _active_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s = _active_sessions[session_id].get_status()
+    return SessionInfo(
+        session_id=s.session_id,
+        room_id=s.room_id,
+        camera_id=s.camera_id,
+        status=s.status,
+        so_nguoi=s.so_nguoi,
+        fps=s.fps,
+        error=s.error,
+        stream_w=s.stream_w,
+        stream_h=s.stream_h,
+    )
 
 
 @app.post("/sessions/{session_id}/stop")
@@ -642,6 +738,49 @@ def mjpeg_stream(session_id: str):
         generate(),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
+
+
+@app.get("/internal/ai/zones/occupancy/{camera_id}")
+def get_zone_occupancy(camera_id: int):
+    """
+    Return current zone occupancy status for a camera.
+    """
+    for sid, sess in _active_sessions.items():
+        if sess.camera_id == camera_id and sess.status == "running":
+            if sess._zone_tracker is not None:
+                return {"camera_id": camera_id, "zones": sess._zone_tracker.get_occupancy()}
+    raise HTTPException(status_code=404, detail="No active session for this camera or no zones configured")
+
+
+class ZoneSetRequest(BaseModel):
+    zones: List[dict]
+
+
+@app.post("/sessions/{session_id}/zones")
+def set_session_zones(session_id: str, body: ZoneSetRequest):
+    """
+    Set zone definitions for a session. Called by FastAPI backend after saving zones to MySQL.
+    """
+    if session_id not in _active_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    sess = _active_sessions[session_id]
+    sess.set_zones(body.zones)
+    return {"message": "zones set", "zone_count": len(body.zones)}
+
+
+@app.get("/sessions/{session_id}/zones")
+def get_session_zones(session_id: str):
+    """Return zone occupancy for a session."""
+    if session_id not in _active_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    sess = _active_sessions[session_id]
+    if sess._zone_tracker is None:
+        return {"session_id": session_id, "zones": [], "message": "no zones configured"}
+    return {
+        "session_id": session_id,
+        "camera_id": sess.camera_id,
+        "zones": sess._zone_tracker.get_occupancy(),
+    }
 
 
 # ============================================================

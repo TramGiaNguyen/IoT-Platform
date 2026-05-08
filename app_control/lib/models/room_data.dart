@@ -1,9 +1,11 @@
 import 'device.dart';
+import 'camera.dart';
 
 class RoomData {
   final int roomId;
   final String roomName;
   final List<Device> devices;
+  final List<RoomCamera> cameras;
   final DateTime timestamp;
   /// room_total từ `phong_occupancy` (cùng GET /rooms/{id}/data).
   final int soNguoiTrongPhong;
@@ -12,6 +14,7 @@ class RoomData {
     required this.roomId,
     required this.roomName,
     required this.devices,
+    this.cameras = const [],
     DateTime? timestamp,
     this.soNguoiTrongPhong = 0,
   }) : timestamp = timestamp ?? DateTime.now();
@@ -21,6 +24,13 @@ class RoomData {
     if (json['devices'] != null) {
       for (var deviceJson in json['devices'] as List) {
         devicesList.add(Device.fromJson(deviceJson as Map<String, dynamic>));
+      }
+    }
+
+    final camerasList = <RoomCamera>[];
+    if (json['cameras'] != null) {
+      for (var cameraJson in json['cameras'] as List) {
+        camerasList.add(RoomCamera.fromJson(cameraJson as Map<String, dynamic>));
       }
     }
 
@@ -36,6 +46,7 @@ class RoomData {
       roomId: json['room_id'] as int? ?? json['room']?['id'] as int,
       roomName: json['room_name'] as String? ?? json['room']?['name'] as String,
       devices: devicesList,
+      cameras: camerasList,
       soNguoiTrongPhong: readSoNguoi(),
     );
   }
@@ -48,6 +59,12 @@ class RoomData {
   int get offlineCount => deviceCount - onlineCount;
   
   bool get hasDevices => devices.isNotEmpty;
+
+  int get cameraCount => cameras.length;
+  
+  bool get hasCameras => cameras.isNotEmpty;
+  
+  List<RoomCamera> get activeCameras => cameras.where((c) => c.isActive).toList();
   
   List<Device> get onlineDevices => devices.where((d) => d.isOnline).toList();
   

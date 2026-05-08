@@ -12,3 +12,4 @@ paho-mqtt
 requests
 cryptography
 redis
+APScheduler==3.10.4

@@ -165,16 +165,160 @@ class RuleAction {
   }
 
   String get displayText {
-    if (actionCommand == 'relay' && actionParams != null) {
-      final relay = actionParams!['relay'];
-      final state = actionParams!['state'];
-      if (relay != null && state != null) {
-        return 'Relay $relay: $state';
-      }
+    switch (actionCommand) {
+      case 'relay':
+        if (actionParams != null) {
+          final relay = actionParams!['relay'];
+          final state = actionParams!['state'];
+          if (relay != null && state != null) {
+            return 'Relay $relay: $state';
+          }
+        }
+        return 'Relay';
+      case 'turn_on':
+        return 'Bat thi bi';
+      case 'turn_off':
+        return 'Tat thi bi';
+      case 'toggle':
+        return 'Dao trang thai';
+      case 'set_ac_temp':
+        final temp = actionParams?['temperature'];
+        return 'Dat nhiet do: ${temp ?? '?'}C';
+      case 'set_mode':
+        final mode = actionParams?['mode'];
+        return 'Che do: ${mode ?? '?'}';
+      case 'set_fan_speed':
+        final speed = actionParams?['speed'];
+        return 'Toc do quat: ${speed ?? '?'}';
+      case 'set_brightness':
+        final brightness = actionParams?['brightness'];
+        return 'Do sang: ${brightness ?? '?'}%';
+      case 'set_humidity':
+        final humidity = actionParams?['humidity'];
+        return 'Do am: ${humidity ?? '?'}%';
+      default:
+        if (actionCommand.isNotEmpty) {
+          return actionCommand;
+        }
+        return 'Han dong';
     }
-    if (actionCommand.isNotEmpty) {
-      return actionCommand;
+  }
+}
+
+enum ActionCommandType {
+  relay,
+  turnOn,
+  turnOff,
+  toggle,
+  setAcTemp,
+  setMode,
+  setFanSpeed,
+  setBrightness,
+  setHumidity,
+}
+
+extension ActionCommandTypeExtension on ActionCommandType {
+  String get command {
+    switch (this) {
+      case ActionCommandType.relay:
+        return 'relay';
+      case ActionCommandType.turnOn:
+        return 'turn_on';
+      case ActionCommandType.turnOff:
+        return 'turn_off';
+      case ActionCommandType.toggle:
+        return 'toggle';
+      case ActionCommandType.setAcTemp:
+        return 'set_ac_temp';
+      case ActionCommandType.setMode:
+        return 'set_mode';
+      case ActionCommandType.setFanSpeed:
+        return 'set_fan_speed';
+      case ActionCommandType.setBrightness:
+        return 'set_brightness';
+      case ActionCommandType.setHumidity:
+        return 'set_humidity';
     }
-    return 'Han dong';
+  }
+
+  String get displayName {
+    switch (this) {
+      case ActionCommandType.relay:
+        return 'Relay';
+      case ActionCommandType.turnOn:
+        return 'Bat thi bi (turn_on)';
+      case ActionCommandType.turnOff:
+        return 'Tat thi bi (turn_off)';
+      case ActionCommandType.toggle:
+        return 'Dao trang thai (toggle)';
+      case ActionCommandType.setAcTemp:
+        return 'Dat nhiet do AC';
+      case ActionCommandType.setMode:
+        return 'Dat che do AC';
+      case ActionCommandType.setFanSpeed:
+        return 'Toc do quat';
+      case ActionCommandType.setBrightness:
+        return 'Do sang';
+      case ActionCommandType.setHumidity:
+        return 'Do am';
+    }
+  }
+
+  bool get requiresParam {
+    switch (this) {
+      case ActionCommandType.relay:
+      case ActionCommandType.turnOn:
+      case ActionCommandType.turnOff:
+      case ActionCommandType.toggle:
+        return false;
+      case ActionCommandType.setAcTemp:
+      case ActionCommandType.setMode:
+      case ActionCommandType.setFanSpeed:
+      case ActionCommandType.setBrightness:
+      case ActionCommandType.setHumidity:
+        return true;
+    }
+  }
+
+  Map<String, dynamic>? defaultParams() {
+    switch (this) {
+      case ActionCommandType.setAcTemp:
+        return {'temperature': 25};
+      case ActionCommandType.setMode:
+        return {'mode': 'cool'};
+      case ActionCommandType.setFanSpeed:
+        return {'speed': 3};
+      case ActionCommandType.setBrightness:
+        return {'brightness': 80};
+      case ActionCommandType.setHumidity:
+        return {'humidity': 60};
+      default:
+        return null;
+    }
+  }
+
+  static ActionCommandType? fromCommand(String command) {
+    switch (command) {
+      case 'relay':
+        return ActionCommandType.relay;
+      case 'turn_on':
+        return ActionCommandType.turnOn;
+      case 'turn_off':
+        return ActionCommandType.turnOff;
+      case 'toggle':
+        return ActionCommandType.toggle;
+      case 'set_ac_temp':
+        return ActionCommandType.setAcTemp;
+      case 'set_mode':
+        return ActionCommandType.setMode;
+      case 'set_fan_speed':
+        return ActionCommandType.setFanSpeed;
+      case 'set_brightness':
+        return ActionCommandType.setBrightness;
+      case 'set_humidity':
+        return ActionCommandType.setHumidity;
+      default:
+        return null;
+    }
   }
 }

@@ -39,7 +39,7 @@ class LoginRequest(BaseModel):
 
 class RelayControlRequest(BaseModel):
     relay: int
-    state: str  # "ON" or "OFF"
+    state: str  # "ON", "OFF", "LOW", "MED", "HIGH", "PRESS"
     device_id: Optional[str] = None
 
 class LoginResponse(BaseModel):
@@ -51,6 +51,7 @@ class RelayConfig(BaseModel):
     relay: int
     name: str
     state: str
+    control_type: Optional[str] = "on_off"  # "on_off", "toggle", "momentary"
 
 class RelayStatusResponse(BaseModel):
     relays: list[RelayConfig]
@@ -211,10 +212,21 @@ async def get_relay_status(
                     # Trạng thái hiện tại trong metrics (vd: relay_1_state hoặc relay_1)
                     st = data.get(f"relay_{rn}_state", data.get(f"relay_{rn}", {}))
                     state_val = st.get("value", "OFF") if isinstance(st, dict) else st
+                    # Xác định state hiển thị theo control_type
+                    ctrl_type = line.get("control_type", "on_off")
+                    if ctrl_type == "toggle":
+                        valid_states = ["OFF", "LOW", "MED", "HIGH"]
+                        display_state = state_val if state_val in valid_states else "OFF"
+                    elif ctrl_type == "momentary":
+                        # Momentary button: chỉ hiển thị PRESS khi đang nhấn, không lưu trạng thái
+                        display_state = state_val if state_val == "PRESS" else "READY"
+                    else:
+                        display_state = state_val if state_val in ["ON", "OFF"] else "OFF"
                     dynamic_relays.append({
                         "relay": rn,
                         "name": line.get("ten_duong") or f"Relay {rn}",
-                        "state": state_val if state_val in ["ON", "OFF"] else "OFF"
+                        "state": display_state,
+                        "control_type": ctrl_type,
                     })
             
             return {
@@ -242,10 +254,12 @@ async def control_relay(
     """
     if request.relay < 1:
         raise HTTPException(status_code=400, detail="Relay không hợp lệ")
-    
-    if request.state not in ["ON", "OFF"]:
-        raise HTTPException(status_code=400, detail="State phải là ON hoặc OFF")
-    
+
+    # Hỗ trợ ON/OFF cho on_off, LOW/MED/HIGH cho toggle, PRESS cho momentary
+    valid_states = ["ON", "OFF", "LOW", "MED", "HIGH", "PRESS"]
+    if request.state not in valid_states:
+        raise HTTPException(status_code=400, detail=f"State phải là một trong: {', '.join(valid_states)}")
+
     target_device = request.device_id if request.device_id else DEVICE_ID
     platform_token = token_data["platform_token"]
     
@@ -351,7 +365,7 @@ async def control_ac(
 class RoomControlRequest(BaseModel):
     device_id: str
     relay: int
-    state: str  # "ON" or "OFF"
+    state: str  # "ON", "OFF", "LOW", "MED", "HIGH", "PRESS"
 
 
 @app.get("/rooms")
@@ -458,12 +472,13 @@ async def control_room_relay(
     """
     if request.relay < 1:
         raise HTTPException(status_code=400, detail="Relay không hợp lệ")
-    
-    if request.state not in ["ON", "OFF"]:
-        raise HTTPException(status_code=400, detail="State phải là ON hoặc OFF")
-    
+
+    valid_states = ["ON", "OFF", "LOW", "MED", "HIGH", "PRESS"]
+    if request.state not in valid_states:
+        raise HTTPException(status_code=400, detail=f"State phải là một trong: {', '.join(valid_states)}")
+
     platform_token = token_data["platform_token"]
-    
+
     async with httpx.AsyncClient() as client:
         try:
             # Gọi API platform để điều khiển
@@ -756,6 +771,122 @@ async def get_room_devices(
     )
 
 
+@app.get("/rooms/{room_id}/cameras")
+async def get_room_cameras(
+    room_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional),
+):
+    """Proxy: Lấy danh sách camera của một phòng từ platform"""
+    platform_token = token_data["platform_token"]
+    return await _proxy_platform_json_get(
+        f"{IOT_PLATFORM_URL}/rooms/{room_id}/cameras",
+        platform_token,
+        "Không lấy được danh sách camera",
+    )
+
+
+@app.get("/rooms/{room_id}/cameras/{camera_id}/stream-session")
+async def get_camera_stream_session(
+    room_id: int,
+    camera_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional),
+):
+    """
+    Proxy: Lấy AI Analyst session cho camera để stream video với bounding boxes.
+    Trả về session_id để app có thể gọi /sessions/{id}/stream.mjpeg
+    """
+    AI_ANALYST_URL = os.getenv("AI_ANALYST_URL", "http://ai-analyst:8101")
+    # URL for mobile app (replace hostname with IP)
+    AI_ANALYST_PUBLIC_URL = os.getenv("AI_ANALYST_PUBLIC_URL", "http://192.168.69.152:8101")
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            # Lookup existing session
+            response = await client.get(
+                f"{AI_ANALYST_URL}/sessions/lookup",
+                params={"room_id": room_id, "camera_id": camera_id},
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return {
+                    "session_id": data.get("session_id"),
+                    "status": "running",
+                    "stream_url": f"{AI_ANALYST_PUBLIC_URL}/sessions/{data.get('session_id')}/stream.mjpeg",
+                    "status_url": f"{AI_ANALYST_PUBLIC_URL}/sessions/{data.get('session_id')}/status",
+                }
+            elif response.status_code == 404:
+                # Session chưa có, AI Analyst sẽ tự tạo trong background
+                return {
+                    "session_id": None,
+                    "status": "starting",
+                    "message": "AI session đang được khởi tạo, vui lòng thử lại sau 5 giây",
+                }
+            else:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail="Không kết nối được AI Analyst"
+                )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Không kết nối được AI Analyst: {str(e)}"
+            )
+
+
+@app.get("/rooms/{room_id}/cameras/{camera_id}/occupancy")
+async def get_camera_occupancy(
+    room_id: int,
+    camera_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional),
+):
+    """Proxy: Lấy số người từ camera qua AI Analyst"""
+    AI_ANALYST_URL = os.getenv("AI_ANALYST_URL", "http://ai-analyst:8101")
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            # Lookup session first
+            lookup_resp = await client.get(
+                f"{AI_ANALYST_URL}/sessions/lookup",
+                params={"room_id": room_id, "camera_id": camera_id},
+            )
+            if lookup_resp.status_code == 200:
+                session_data = lookup_resp.json()
+                session_id = session_data.get("session_id")
+                if session_id:
+                    # Get session status with people count
+                    status_resp = await client.get(
+                        f"{AI_ANALYST_URL}/sessions/{session_id}/status"
+                    )
+                    if status_resp.status_code == 200:
+                        status_data = status_resp.json()
+                        return {
+                            "phong_id": room_id,
+                            "camera_id": camera_id,
+                            "so_nguoi": status_data.get("so_nguoi", 0),
+                            "fps": status_data.get("fps"),
+                            "cap_nhat_luc": datetime.utcnow().isoformat(),
+                            "nguon": "ai_analyst",
+                        }
+            return {
+                "phong_id": room_id,
+                "camera_id": camera_id,
+                "so_nguoi": 0,
+                "cap_nhat_luc": None,
+                "nguon": "ai_analyst",
+            }
+        except httpx.RequestError:
+            return {
+                "phong_id": room_id,
+                "camera_id": camera_id,
+                "so_nguoi": 0,
+                "cap_nhat_luc": None,
+                "nguon": "ai_analyst",
+            }
+
+
 @app.get("/rooms/{room_id}/occupancy")
 async def get_room_occupancy_proxy(
     room_id: int,
@@ -849,6 +980,7 @@ async def get_device_relays(
                     relays.append({
                         'relay': line.get('relay_number'),
                         'name': line.get('ten_duong') or f"Relay {line.get('relay_number')}",
+                        'control_type': line.get('control_type', 'on_off'),
                     })
             
             return {"relays": relays}

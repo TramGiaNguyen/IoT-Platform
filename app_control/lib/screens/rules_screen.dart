@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/rule.dart';
 import '../models/scheduled_rule.dart';
+import '../models/room.dart';
 import '../widgets/rule_card.dart';
 import '../widgets/scheduled_rule_card.dart';
 import 'rule_form_screen.dart';
@@ -26,11 +27,30 @@ class _RulesScreenState extends State<RulesScreen>
   bool _isLoading = true;
   String? _error;
 
+  /// Room filter
+  List<Room> _rooms = [];
+  int? _selectedRoomId;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _selectedRoomId = widget.roomId;
+    _loadRooms();
     _loadRules();
+  }
+
+  Future<void> _loadRooms() async {
+    try {
+      final rooms = await _apiService.getRooms();
+      if (mounted) {
+        setState(() {
+          _rooms = rooms;
+        });
+      }
+    } catch (_) {
+      // Silent fail - rooms filter is optional
+    }
   }
 
   @override
@@ -47,11 +67,11 @@ class _RulesScreenState extends State<RulesScreen>
 
     try {
       final conditionalData = await _apiService.getRules(
-        phongId: widget.roomId,
+        phongId: _selectedRoomId,
       );
-      
+
       final scheduledData = await _apiService.getScheduledRules(
-        phongId: widget.roomId,
+        phongId: _selectedRoomId,
       );
 
       setState(() {
@@ -274,7 +294,12 @@ class _RulesScreenState extends State<RulesScreen>
                   ),
                   Expanded(
                     child: Text(
-                      widget.roomId != null ? 'Rules cua phong' : 'Tat ca Rules',
+                      _selectedRoomId != null
+                          ? _rooms.firstWhere(
+                              (r) => r.id == _selectedRoomId,
+                              orElse: () => Room(id: _selectedRoomId!, name: 'Phong $_selectedRoomId', deviceCount: 0, onlineCount: 0),
+                            ).name
+                          : 'Tat ca Rules',
                       style: const TextStyle(
                         fontFamily: 'Manrope',
                         fontSize: 20,
@@ -287,6 +312,67 @@ class _RulesScreenState extends State<RulesScreen>
                 ],
               ),
             ),
+
+            // Room filter dropdown (only show if no room is specified)
+            if (widget.roomId == null && _rooms.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFFC0C7CD).withOpacity(0.2),
+                    ),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int?>(
+                      value: _selectedRoomId,
+                      isExpanded: true,
+                      icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF006a6a)),
+                      items: [
+                        const DropdownMenuItem<int?>(
+                          value: null,
+                          child: Text(
+                            'Tat ca phong',
+                            style: TextStyle(
+                              fontFamily: 'Manrope',
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF40484C),
+                            ),
+                          ),
+                        ),
+                        ..._rooms.map((room) {
+                          return DropdownMenuItem<int?>(
+                            value: room.id,
+                            child: Row(
+                              children: [
+                                const Icon(Icons.meeting_room, size: 18, color: Color(0xFF006a6a)),
+                                const SizedBox(width: 8),
+                                Text(
+                                  room.name,
+                                  style: const TextStyle(
+                                    fontFamily: 'Manrope',
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF003345),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedRoomId = value;
+                        });
+                        _loadRules();
+                      },
+                    ),
+                  ),
+                ),
+              ),
 
             // Tab bar - pill style
             Padding(

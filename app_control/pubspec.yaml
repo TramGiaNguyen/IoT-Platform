@@ -9,16 +9,19 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
+
   # HTTP client
-  http: ^1.1.0
-  
+  http: ^0.13.6
+
   # WebSocket
   web_socket_channel: ^2.4.0
-  
+
   # Secure storage for token
   flutter_secure_storage: ^9.0.0
-  
+
+  # MJPEG stream viewer for IP cameras
+  flutter_mjpeg: ^2.0.4
+
   # UI
   cupertino_icons: ^1.0.2
 

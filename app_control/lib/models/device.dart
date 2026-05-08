@@ -1,3 +1,5 @@
+import 'control_type.dart';
+
 class Device {
   final String deviceId;
   final String name;
@@ -65,11 +67,31 @@ class Device {
   }
 
   bool get isOnline => status.toLowerCase() == 'online';
-  
+
   bool get hasMetrics => metrics.isNotEmpty;
-  
+
   bool get hasControls => controls.isNotEmpty;
-  
+
+  Device copyWith({
+    String? deviceId,
+    String? name,
+    String? type,
+    String? status,
+    DateTime? lastSeen,
+    Map<String, Metric>? metrics,
+    List<Control>? controls,
+  }) {
+    return Device(
+      deviceId: deviceId ?? this.deviceId,
+      name: name ?? this.name,
+      type: type ?? this.type,
+      status: status ?? this.status,
+      lastSeen: lastSeen ?? this.lastSeen,
+      metrics: metrics ?? this.metrics,
+      controls: controls ?? this.controls,
+    );
+  }
+
   String get statusDisplay {
     switch (status.toLowerCase()) {
       case 'online':
@@ -84,17 +106,21 @@ class Device {
   }
 }
 
+import 'control_type.dart';
+
 class Control {
   final int relay;
   final String name;
   final String state;
   final bool controllable;
+  final ControlType controlType;
 
   Control({
     required this.relay,
     required this.name,
     required this.state,
     this.controllable = true,
+    this.controlType = ControlType.onOff,
   });
 
   factory Control.fromJson(Map<String, dynamic> json) {
@@ -103,12 +129,40 @@ class Control {
       name: json['name'] as String,
       state: json['state'] as String,
       controllable: json['controllable'] as bool? ?? true,
+      controlType: ControlType.fromString(json['control_type'] as String?),
     );
   }
 
   bool get isOn => state.toUpperCase() == 'ON';
-  
-  String get stateDisplay => isOn ? 'BẬT' : 'TẮT';
+  bool get isPress => state.toUpperCase() == 'PRESS';
+
+  String get stateDisplay {
+    switch (controlType) {
+      case ControlType.toggle:
+        return state.isEmpty ? 'OFF' : state;
+      case ControlType.momentary:
+        return isPress ? 'ĐANG NHẤN' : 'SẴN SÀNG';
+      case ControlType.onOff:
+      default:
+        return isOn ? 'BẬT' : 'TẮT';
+    }
+  }
+
+  Control copyWith({
+    int? relay,
+    String? name,
+    String? state,
+    bool? controllable,
+    ControlType? controlType,
+  }) {
+    return Control(
+      relay: relay ?? this.relay,
+      name: name ?? this.name,
+      state: state ?? this.state,
+      controllable: controllable ?? this.controllable,
+      controlType: controlType ?? this.controlType,
+    );
+  }
 }
 
 class Metric {

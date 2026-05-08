@@ -46,6 +46,58 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
   const [pageSize] = useState(50);
   const latestPollRef = useRef(null);
 
+  // Control type options — values must match ENUM in control_lines table
+const CONTROL_TYPES = [
+  { value: 'on_off', label: 'Cong tac ON/OFF', states: ['ON', 'OFF'] },
+  { value: 'three_way', label: 'Cong tac gat 3 trang thai', states: ['LOW', 'MED', 'HIGH'] },
+  { value: 'momentary', label: 'Cong tac hanh trinh nhan tha', states: ['PRESS'] },
+];
+
+  // Render relay button based on control type
+const renderRelayButton = (line, relayState, onToggle, onThreeWay) => {
+  const ctrlType = line.control_type || 'on_off';
+  if (ctrlType === 'momentary') {
+    return (
+      <button
+        className='power-btn-large'
+        onClick={onToggle}
+        style={{ width: '100%', padding: '10px 16px', background: '#0ea5e9', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+      >
+        NHAN
+      </button>
+    );
+  }
+  if (ctrlType === 'three_way') {
+    const states = ['LOW', 'MED', 'HIGH'];
+    const currentIdx = states.indexOf(relayState);
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {states.map((s) => (
+          <button
+            key={s}
+            className='power-btn-large'
+            onClick={() => onThreeWay(s)}
+            style={{ width: '100%', padding: '8px 16px', fontSize: '0.85rem' }}
+          >
+            {relayState === s ? 'DANG ' + s : s}
+          </button>
+        ))}
+      </div>
+    );
+  }
+  // Default ON/OFF
+  const isOn = relayState === 'ON';
+  return (
+    <button
+      className='power-btn-large'
+      onClick={onToggle}
+      style={{ width: '100%', padding: '10px 16px' }}
+    >
+      {isOn ? 'DANG BAT' : 'DANG TAT'}
+    </button>
+  );
+};
+
   // Control lines (relays) - mỗi relay có nút ON/OFF riêng
   const [controlLines, setControlLines] = useState([]);
   const [relayStates, setRelayStates] = useState({}); // { 1: 'ON', 2: 'OFF', ... }
@@ -54,6 +106,7 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
   const [editingLabel, setEditingLabel] = useState('');
   const [editingTopic, setEditingTopic] = useState('');
   const [editingHienThiTtcds, setEditingHienThiTtcds] = useState(true);
+  const [editingControlType, setEditingControlType] = useState('on_off');
 
   // Edge HTTP relay control (POST JSON control_commands xuống thiết bị LAN)
   const [edgeUrlDraft, setEdgeUrlDraft] = useState('');
@@ -220,20 +273,21 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
       console.error('Load control lines failed', e);
       setControlLines([]);
     }
-  }, [deviceId]); // intentionally no token — uses tokenRef
+  }, [deviceId]);
 
   const handleStartEditLabel = (line) => {
     setEditingRelay(line.relay_number);
     setEditingLabel(line.ten_duong || `Relay ${line.relay_number}`);
     setEditingTopic(line.topic || '');
     setEditingHienThiTtcds(line.hien_thi_ttcds ?? true);
+    setEditingControlType(line.control_type || 'on_off');
   };
 
   const handleSaveConfig = async () => {
     if (editingRelay == null) return;
     const updated = controlLines.map(l =>
-      l.relay_number === editingRelay 
-      ? { ...l, ten_duong: editingLabel.trim(), topic: editingTopic.trim(), hien_thi_ttcds: editingHienThiTtcds } 
+      l.relay_number === editingRelay
+      ? { ...l, ten_duong: editingLabel.trim(), topic: editingTopic.trim(), hien_thi_ttcds: editingHienThiTtcds, control_type: editingControlType }
       : l
     );
     setControlLines(updated);
@@ -241,9 +295,9 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
     setEditingLabel('');
     setEditingTopic('');
     setEditingHienThiTtcds(true);
-    const deviceCode = device?.ma_thiet_bi || device?.device_id || deviceId;
+    setEditingControlType('on_off');
     try {
-      await saveControlLines(deviceCode, updated, token);
+      await saveControlLines(deviceId, updated, token);
     } catch (err) {
       console.error('Save config failed', err);
       loadControlLines(); // Rollback
@@ -256,31 +310,31 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
       relay_number: nextRelayNum,
       ten_duong: `Relay ${nextRelayNum}`,
       topic: '',
-      hien_thi_ttcds: true
+      hien_thi_ttcds: true,
+      control_type: 'on_off',
     };
     const updated = [...controlLines, newLine];
     setControlLines(updated);
-    
-    const deviceCode = device?.ma_thiet_bi || device?.device_id || deviceId;
+
     try {
-      await saveControlLines(deviceCode, updated, token);
+      await saveControlLines(deviceId, updated, token);
     } catch (err) {
       console.error('Failed to add relay', err);
-      loadControlLines(); // rollback
+      setControlLines(prev => prev.filter(l => l.relay_number !== nextRelayNum));
     }
   };
 
   const handleDeleteRelay = async (relayNum) => {
     if (!window.confirm(`Xóa biến điều khiển Relay ${relayNum}?`)) return;
+    const originalLines = controlLines;
     const updated = controlLines.filter(l => l.relay_number !== relayNum);
     setControlLines(updated);
     setEditingRelay(null);
-    const deviceCode = device?.ma_thiet_bi || device?.device_id || deviceId;
     try {
-      await saveControlLines(deviceCode, updated, token);
+      await saveControlLines(deviceId, updated, token);
     } catch (err) {
       console.error('Delete config failed', err);
-      loadControlLines(); // Rollback
+      setControlLines(originalLines); // Rollback
     }
   };
 
@@ -327,8 +381,6 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
   };
 
   const handleEnsureEightRelays = async () => {
-    const deviceCode = device?.ma_thiet_bi || device?.device_id || deviceId;
-    if (!deviceCode) return;
     const lines = Array.from({ length: 8 }, (_, i) => {
       const n = i + 1;
       const existing = controlLines.find((l) => l.relay_number === n);
@@ -337,10 +389,11 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
         ten_duong: existing?.ten_duong || `Relay ${n}`,
         topic: existing?.topic || '',
         hien_thi_ttcds: existing?.hien_thi_ttcds ?? true,
+        control_type: existing?.control_type || 'on_off',
       };
     });
     try {
-      await saveControlLines(deviceCode, lines, token);
+      await saveControlLines(deviceId, lines, token);
       await loadControlLines();
       setEdgeUrlMsg({ type: 'success', text: 'Đã tạo/cập nhật 8 relay (1–8).' });
     } catch (err) {
@@ -374,6 +427,15 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
     if (typeof d === 'string') return d;
     if (Array.isArray(d)) return d.map((x) => x?.msg || JSON.stringify(x)).join('; ');
     return err.message || 'Điều khiển thất bại';
+  };
+
+  const handleThreeWayToggle = async (relayNumber, state) => {
+    setRelayControlError(null);
+    try {
+      await controlRelay(deviceId, relayNumber, state, token);
+    } catch (err) {
+      setRelayControlError(formatControlApiError(err));
+    }
   };
 
   const handleRelayToggle = async (relayNumber) => {
@@ -957,13 +1019,23 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
                               style={{ width: '100%', marginBottom: '10px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #64748b', background: '#0b1224', color: '#e2e8f0', fontSize: '0.85rem' }}
                             />
                             <label style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Chèn đè MQTT Topic riêng (nếu có):</label>
-                            <input 
+                            <input
                               type="text"
                               value={editingTopic}
                               onChange={(e) => setEditingTopic(e.target.value)}
                               placeholder={`Để trống = dùng topic mặc định`}
                               style={{ width: '100%', marginBottom: '10px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #64748b', background: '#0b1224', color: '#e2e8f0', fontSize: '0.85rem' }}
                             />
+                            <label style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Dạng nút điều khiển:</label>
+                            <select
+                              value={editingControlType}
+                              onChange={(e) => setEditingControlType(e.target.value)}
+                              style={{ width: '100%', marginBottom: '10px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #64748b', background: '#0b1224', color: '#e2e8f0', fontSize: '0.85rem' }}
+                            >
+                              {CONTROL_TYPES.map((ct) => (
+                                <option key={ct.value} value={ct.value}>{ct.label}</option>
+                              ))}
+                            </select>
 
                             <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '8px', cursor: 'pointer' }}>
                               <input 
@@ -988,19 +1060,18 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
                               <button onClick={() => {
                                 const updated = controlLines.map(l => l.relay_number === rn ? { ...l, hien_thi_ttcds: !l.hien_thi_ttcds } : l);
                                 setControlLines(updated);
-                                saveControlLines(device?.ma_thiet_bi || device?.device_id || deviceId, updated, token).catch(() => loadControlLines());
+                                saveControlLines(deviceId, updated, token).catch(() => loadControlLines());
                               }} title="Ẩn/hiện trên bảng TTCDS" style={{ padding: '2px 4px', fontSize: '0.9rem', cursor: 'pointer', background: 'transparent', border: 'none', opacity: line.hien_thi_ttcds ? 1 : 0.4 }} type="button">{line.hien_thi_ttcds ? '👁️' : '🙈'}</button>
                               <button onClick={() => handleDeleteRelay(rn)} title="Xóa nút điều khiển" style={{ padding: '2px 4px', fontSize: '0.9rem', cursor: 'pointer', background: 'transparent', border: 'none', color: '#f87171' }} type="button">🗑️</button>
                             </div>
                           </div>
                         )}
-                        <button
-                          className={`power-btn-large ${isOn ? 'active' : ''}`}
-                          onClick={() => handleRelayToggle(rn)}
-                          style={{ width: '100%', padding: '10px 16px' }}
-                        >
-                          {isOn ? 'ĐANG BẬT' : 'ĐANG TẮT'}
-                        </button>
+                        {renderRelayButton(
+                          line,
+                          relayState,
+                          () => handleRelayToggle(rn),
+                          (state) => handleThreeWayToggle(rn, state)
+                        )}
                       </div>
                     );
                   })}

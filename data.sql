@@ -440,6 +440,7 @@ CREATE TABLE IF NOT EXISTS `control_lines` (
     `ten_duong` VARCHAR(100) DEFAULT NULL COMMENT 'Tên đường điều khiển (VD: Đèn trần, Quạt)',
     `topic` VARCHAR(255) DEFAULT NULL COMMENT 'Custom MQTT topic',
     `hien_thi_ttcds` TINYINT(1) DEFAULT 1 COMMENT '0: Ẩn, 1: Hiện trên TTCDS',
+    `control_type` ENUM('toggle', 'three_way', 'momentary', 'on_off') NOT NULL DEFAULT 'on_off' COMMENT 'toggle=Công tắc gạt 3 trạng thái, momentary=Công tắc hành trình nhấn thả, on_off=Công tắc bật tắt',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (`thiet_bi_id`) REFERENCES `thiet_bi`(`id`) ON DELETE CASCADE,
     UNIQUE KEY `unique_relay` (`thiet_bi_id`, `relay_number`)
@@ -486,3 +487,47 @@ CREATE TABLE IF NOT EXISTS `phong_camera` (
 --   CONSTRAINT `fk_occ_phong` FOREIGN KEY (`phong_id`) REFERENCES `phong` (`id`) ON DELETE CASCADE,
 --   CONSTRAINT `fk_occ_camera` FOREIGN KEY (`phong_camera_id`) REFERENCES `phong_camera` (`id`) ON DELETE SET NULL
 -- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Zone Occupancy Timer — Database Schema
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `zone_definitions` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `camera_id` INT NOT NULL,
+  `zone_name` VARCHAR(100) NOT NULL,
+  `zone_index` INT NOT NULL,
+  `polygon_points` JSON NOT NULL,
+  `is_entry_zone` TINYINT(1) DEFAULT 0,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uk_camera_zone` (`camera_id`, `zone_index`)
+);
+
+CREATE TABLE IF NOT EXISTS `zone_occupancy_log` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `camera_id` INT NOT NULL,
+  `zone_id` INT NOT NULL,
+  `track_id` INT DEFAULT NULL,
+  `zone_entered_at` DATETIME NOT NULL,
+  `zone_exited_at` DATETIME DEFAULT NULL,
+  `duration_seconds` INT DEFAULT NULL,
+  `entered_count` INT DEFAULT 1,
+  UNIQUE KEY `uk_track_session` (`zone_id`, `track_id`, `zone_entered_at`),
+  INDEX `idx_zone_time` (`zone_id`, `zone_entered_at`),
+  INDEX `idx_camera_time` (`camera_id`, `zone_entered_at`)
+);
+
+CREATE TABLE IF NOT EXISTS `zone_occupancy_daily` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `camera_id` INT NOT NULL,
+  `zone_id` INT NOT NULL,
+  `zone_name` VARCHAR(100) NOT NULL,
+  `ngay` DATE NOT NULL,
+  `total_seconds` INT DEFAULT 0,
+  `peak_count` INT DEFAULT 0,
+  `total_entries` INT DEFAULT 0,
+  `avg_count` DECIMAL(5,2) DEFAULT 0.00,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uk_daily` (`zone_id`, `ngay`),
+  INDEX `idx_ngay` (`ngay`)
+);

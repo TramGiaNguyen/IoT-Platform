@@ -28,7 +28,6 @@ RUN pip install --no-cache-dir \
     uvicorn[standard]==0.30.0 \
     pydantic==2.9.0 \
     pydantic-settings==2.5.0 \
-    "numpy<2.0" \
     opencv-python-headless==4.10.0.84 \
     ultralytics==8.3.0 \
     paho-mqtt==1.6.1 \

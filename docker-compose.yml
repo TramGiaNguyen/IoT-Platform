@@ -234,6 +234,7 @@ services:
       - JWT_SECRET=your-secret-key-change-in-production
       - DEVICE_ID=gateway-701e68b1
       - AC_CONTROL_URL=http://192.168.190.101
+      - AI_ANALYST_URL=http://ai-analyst:8101
     depends_on:
       fastapi-backend:
         condition: service_healthy

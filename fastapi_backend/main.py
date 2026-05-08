@@ -76,6 +76,31 @@ def _ensure_mongo_indexes():
         print(f"[MONGODB] Index setup warning: {e}")
         _mongo_index_ready = True  # Vẫn tiếp tục – index có thể đã tồn tại
 
+
+@app.on_event("startup")
+def _start_zone_aggregator_scheduler():
+    """
+    Khởi động APScheduler cho daily zone occupancy aggregation.
+    Chạy lúc 00:05 hàng ngày.
+    """
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from zone_aggregator import aggregate_daily_zone_occupancy
+
+        scheduler = BackgroundScheduler(timezone="Asia/Ho_Chi_Minh")
+        scheduler.add_job(
+            aggregate_daily_zone_occupancy,
+            "cron",
+            hour=0,
+            minute=5,
+            id="daily_zone_aggregator",
+            replace_existing=True,
+        )
+        scheduler.start()
+        print("[ZONE_AGG] Daily zone aggregator scheduler started (runs at 00:05 ICT)")
+    except Exception as e:
+        print(f"[ZONE_AGG] Scheduler start failed: {e}")
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to Binh Duong IoT Platform API"}
