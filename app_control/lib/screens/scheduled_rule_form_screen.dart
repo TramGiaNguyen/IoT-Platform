@@ -30,6 +30,11 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
   Set<int> _selectedDays = {1, 2, 3, 4, 5};
   bool _isDaily = true;
 
+  /// Interval mode
+  bool _isIntervalMode = false;
+  int _intervalValue = 5;
+  String _intervalUnit = 'minutes'; // 'minutes' or 'hours'
+
   int? _actionRelay;
   String _actionState = 'ON';
   bool _isEnabled = true;
@@ -58,6 +63,22 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
   }
 
   void _parseCronExpression(String cron) {
+    // Check for interval mode: */X * * * * or @every Xm/Xh
+    if (cron.startsWith('*/')) {
+      _isIntervalMode = true;
+      final parts = cron.split(' ');
+      if (parts.isNotEmpty) {
+        final intervalStr = parts[0].replaceFirst('*/', '');
+        _intervalValue = int.tryParse(intervalStr) ?? 5;
+        if (cron.contains('h') || parts.length > 1) {
+          _intervalUnit = 'hours';
+        } else {
+          _intervalUnit = 'minutes';
+        }
+      }
+      return;
+    }
+
     final parts = cron.split(' ');
     if (parts.length >= 5) {
       final minute = int.tryParse(parts[0]) ?? 0;
@@ -84,6 +105,14 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
   }
 
   String _buildCronExpression() {
+    if (_isIntervalMode) {
+      if (_intervalUnit == 'hours') {
+        return '*/${_intervalValue * 60} * * * *';
+      } else {
+        return '*/$_intervalValue * * * *';
+      }
+    }
+
     final minute = _selectedTime.minute;
     final hour = _selectedTime.hour;
 
@@ -327,84 +356,163 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
                           _buildSectionLabel('THOI GIAN'),
                           const SizedBox(height: 10),
 
-                          // Time picker card - glass panel
-                          GestureDetector(
-                            onTap: _selectTime,
-                            child: Container(
-                              padding: const EdgeInsets.all(24),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    Color(0xFF003345),
-                                    Color(0xFF004B63),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(24),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x40003345),
-                                    blurRadius: 32,
-                                    offset: Offset(0, 12),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(14),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    child: const Icon(
-                                      Icons.access_time,
-                                      color: Colors.white,
-                                      size: 28,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'GIO THUC HIEN',
+                          // Mode toggle: Fixed time vs Interval
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F4F6),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => setState(() => _isIntervalMode = false),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: !_isIntervalMode ? Colors.white : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(10),
+                                        boxShadow: !_isIntervalMode ? [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(0.06),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ] : null,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          'Theo gio',
                                           style: TextStyle(
-                                            fontFamily: 'Inter',
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600,
-                                            letterSpacing: 0.15,
-                                            color: Color(0xFF90EFEF),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
-                                          style: const TextStyle(
                                             fontFamily: 'Manrope',
-                                            fontSize: 36,
-                                            fontWeight: FontWeight.w800,
-                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13,
+                                            color: !_isIntervalMode
+                                                ? const Color(0xFF003345)
+                                                : const Color(0xFF71787D),
                                           ),
                                         ),
-                                      ],
+                                      ),
                                     ),
                                   ),
-                                  Icon(
-                                    Icons.edit_calendar,
-                                    color: Colors.white.withOpacity(0.7),
-                                    size: 28,
+                                ),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => setState(() => _isIntervalMode = true),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: _isIntervalMode ? Colors.white : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(10),
+                                        boxShadow: _isIntervalMode ? [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(0.06),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ] : null,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          'Lap lai',
+                                          style: TextStyle(
+                                            fontFamily: 'Manrope',
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13,
+                                            color: _isIntervalMode
+                                                ? const Color(0xFF003345)
+                                                : const Color(0xFF71787D),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ),
 
                           const SizedBox(height: 14),
 
-                          // Daily or specific days
+                          if (!_isIntervalMode) ...[
+                            GestureDetector(
+                              onTap: _selectTime,
+                              child: Container(
+                                padding: const EdgeInsets.all(24),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      Color(0xFF003345),
+                                      Color(0xFF004B63),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(24),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x40003345),
+                                      blurRadius: 32,
+                                      offset: Offset(0, 12),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: const Icon(
+                                        Icons.access_time,
+                                        color: Colors.white,
+                                        size: 28,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'GIO THUC HIEN',
+                                            style: TextStyle(
+                                              fontFamily: 'Inter',
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                              letterSpacing: 0.15,
+                                              color: Color(0xFF90EFEF),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
+                                            style: const TextStyle(
+                                              fontFamily: 'Manrope',
+                                              fontSize: 36,
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(
+                                      Icons.edit_calendar,
+                                      color: Colors.white.withOpacity(0.7),
+                                      size: 28,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+
+                          // Interval mode toggle
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -418,24 +526,24 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
                             child: Row(
                               children: [
                                 Icon(
-                                  Icons.event_repeat,
-                                  color: _isDaily ? const Color(0xFF006a6a) : const Color(0xFF40484C),
+                                  Icons.timer,
+                                  color: _isIntervalMode ? const Color(0xFF006a6a) : const Color(0xFF40484C),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        _isDaily ? 'Hang ngay' : 'Chon ngay cu the',
-                                        style: const TextStyle(
+                                      const Text(
+                                        'Che do khoang cach',
+                                        style: TextStyle(
                                           fontFamily: 'Manrope',
                                           fontWeight: FontWeight.w600,
                                           color: Color(0xFF003345),
                                         ),
                                       ),
                                       Text(
-                                        _isDaily ? 'Chay moi ngay' : 'Chon ngay trong tuan',
+                                        _isIntervalMode ? 'Lap lai moi $_intervalValue ${_intervalUnit == 'minutes' ? 'phut' : 'gio'}' : 'Chay vao gio cu the',
                                         style: const TextStyle(
                                           fontFamily: 'Inter',
                                           fontSize: 12,
@@ -446,13 +554,10 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
                                   ),
                                 ),
                                 Switch(
-                                  value: _isDaily,
+                                  value: _isIntervalMode,
                                   onChanged: (value) {
                                     setState(() {
-                                      _isDaily = value;
-                                      if (value) {
-                                        _selectedDays = {1, 2, 3, 4, 5, 6, 7};
-                                      }
+                                      _isIntervalMode = value;
                                     });
                                   },
                                   activeColor: const Color(0xFF006a6a),
@@ -460,6 +565,182 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
                               ],
                             ),
                           ),
+
+                          // Interval mode settings
+                          if (_isIntervalMode) ...[
+                            const SizedBox(height: 14),
+                            _buildSectionLabel('KHOANG CACH LAP'),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F4F6),
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<int>(
+                                        value: _intervalValue,
+                                        isExpanded: true,
+                                        items: List.generate(12, (i) => i + 1)
+                                            .map((v) => DropdownMenuItem(
+                                                  value: v,
+                                                  child: Text(
+                                                    v.toString(),
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Manrope',
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Color(0xFF003345),
+                                                    ),
+                                                  ),
+                                                ))
+                                            .toList(),
+                                        onChanged: (value) {
+                                          setState(() => _intervalValue = value ?? 5);
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  flex: 3,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F4F6),
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<String>(
+                                        value: _intervalUnit,
+                                        isExpanded: true,
+                                        items: const [
+                                          DropdownMenuItem(
+                                            value: 'minutes',
+                                            child: Text(
+                                              'Phut',
+                                              style: TextStyle(
+                                                fontFamily: 'Manrope',
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF003345),
+                                              ),
+                                            ),
+                                          ),
+                                          DropdownMenuItem(
+                                            value: 'hours',
+                                            child: Text(
+                                              'Gio',
+                                              style: TextStyle(
+                                                fontFamily: 'Manrope',
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF003345),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                        onChanged: (value) {
+                                          setState(() => _intervalUnit = value ?? 'minutes');
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF006a6a).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.info_outline,
+                                    size: 16,
+                                    color: Color(0xFF006a6a),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _intervalUnit == 'minutes'
+                                          ? 'Lenh se chay moi $_intervalValue phut'
+                                          : 'Lenh se chay moi $_intervalValue gio',
+                                      style: const TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontSize: 12,
+                                        color: Color(0xFF006a6a),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+
+                          // Daily or specific days (only if not interval mode)
+                          if (!_isIntervalMode) ...[
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: const Color(0xFFC0C7CD).withOpacity(0.15),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.event_repeat,
+                                    color: _isDaily ? const Color(0xFF006a6a) : const Color(0xFF40484C),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _isDaily ? 'Hang ngay' : 'Chon ngay cu the',
+                                          style: const TextStyle(
+                                            fontFamily: 'Manrope',
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF003345),
+                                          ),
+                                        ),
+                                        Text(
+                                          _isDaily ? 'Chay moi ngay' : 'Chon ngay trong tuan',
+                                          style: const TextStyle(
+                                            fontFamily: 'Inter',
+                                            fontSize: 12,
+                                            color: Color(0xFF40484C),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Switch(
+                                    value: _isDaily,
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _isDaily = value;
+                                        if (value) {
+                                          _selectedDays = {1, 2, 3, 4, 5, 6, 7};
+                                        }
+                                      });
+                                    },
+                                    activeColor: const Color(0xFF006a6a),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
 
                           if (!_isDaily) ...[
                             const SizedBox(height: 14),
@@ -821,9 +1102,6 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
   }
 
   String _buildPreviewText() {
-    final time =
-        '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}';
-
     String relayName = 'relay $_actionRelay';
     if (_actionRelay != null) {
       final relay = _relays.firstWhere(
@@ -832,6 +1110,14 @@ class _ScheduledRuleFormScreenState extends State<ScheduledRuleFormScreen> {
       );
       relayName = relay['name'] as String;
     }
+
+    if (_isIntervalMode) {
+      final unitText = _intervalUnit == 'minutes' ? 'phut' : 'gio';
+      return 'Lap lai moi $_intervalValue $unitText: $_actionState $relayName';
+    }
+
+    final time =
+        '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}';
 
     if (_isDaily) {
       return 'Hang ngay luc $time: $_actionState $relayName';

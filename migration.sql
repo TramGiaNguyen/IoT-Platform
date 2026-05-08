@@ -1,4 +1,4 @@
-USE iot_data;
+﻿USE iot_data;
 
 -- 1. Create lop_hoc
 CREATE TABLE IF NOT EXISTS `lop_hoc` (

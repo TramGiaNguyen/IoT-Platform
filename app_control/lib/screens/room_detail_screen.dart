@@ -4,9 +4,13 @@ import '../services/api_service.dart';
 import '../services/websocket_service.dart';
 import '../models/room.dart';
 import '../models/room_data.dart';
+import '../models/control_type.dart';
 import '../models/device.dart';
+import '../models/camera.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/relay_control_widget.dart';
+import '../widgets/camera_preview_widget.dart';
+import '../widgets/camera_setup_sheet.dart';
 import 'rules_screen.dart';
 
 class RoomDetailScreen extends StatefulWidget {
@@ -25,6 +29,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final _apiService = ApiService();
   final _wsService = WebSocketService();
   RoomData? _roomData;
+  List<RoomCamera> _cameras = [];
   bool _isLoading = true;
   String? _error;
   /// Cập nhật mỗi lần load (API dùng `so_nguoi`, không dùng giá trị cũ từ danh sách).
@@ -40,6 +45,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     _loadRoomData().then((_) {
       if (_error == null) {
         _connectWebSocket();
+        _loadCameras();
       }
     });
     _refreshTimer = Timer.periodic(
@@ -95,6 +101,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 name: control.name,
                 state: value.toString().toUpperCase(),
                 controllable: control.controllable,
+                controlType: control.controlType,
               );
             }
           }
@@ -146,6 +153,63 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     }
   }
 
+  Future<void> _loadCameras() async {
+    try {
+      final cameras = await _apiService.getRoomCameras(widget.room.id);
+      final activeCameras = cameras.where((c) => c.isActive).toList();
+
+      // Load zones and AI Analyst stream URL for each camera
+      final camerasWithStream = <RoomCamera>[];
+      for (var camera in activeCameras) {
+        try {
+          // Fetch zones from API
+          List<ZoneDefinition> zones = [];
+          try {
+            zones = await _apiService.getCameraZones(widget.room.id, camera.id);
+          } catch (_) {
+            // Camera might not have zones yet
+          }
+
+          final streamInfo = await _apiService.getCameraStreamSession(
+            widget.room.id,
+            camera.id,
+          );
+          if (streamInfo['session_id'] != null) {
+            camerasWithStream.add(RoomCamera(
+              id: camera.id,
+              phongId: camera.phongId,
+              ten: camera.ten,
+              ipAddress: camera.ipAddress,
+              port: camera.port,
+              rtspPath: camera.rtspPath,
+              username: camera.username,
+              hasPassword: camera.hasPassword,
+              streamUrl: streamInfo['stream_url'],
+              thuTu: camera.thuTu,
+              isActive: camera.isActive,
+              createdAt: camera.createdAt,
+              updatedAt: camera.updatedAt,
+              zones: zones,
+            ));
+          } else {
+            camerasWithStream.add(camera.copyWithZoneList(zones));
+          }
+        } catch (e) {
+          debugPrint('Load stream for camera ${camera.id} failed: $e');
+          camerasWithStream.add(camera);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _cameras = camerasWithStream;
+        });
+      }
+    } catch (e) {
+      debugPrint('Load cameras failed: $e');
+    }
+  }
+
   Future<void> _controlRelay(String deviceId, int relay, String state) async {
     try {
       await _apiService.controlRoomRelay(
@@ -160,6 +224,80 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     } catch (e) {
       rethrow;
     }
+  }
+
+  void _changeControlType(Device device, int relay, ControlType type) {
+    final controlIndex = device.controls.indexWhere((c) => c.relay == relay);
+    if (controlIndex == -1) return;
+
+    final updatedControls = List<Control>.from(device.controls);
+    updatedControls[controlIndex] = updatedControls[controlIndex].copyWith(controlType: type);
+
+    setState(() {
+      final deviceIndex = _roomData!.devices.indexWhere((d) => d.deviceId == device.deviceId);
+      if (deviceIndex != -1) {
+        _roomData!.devices[deviceIndex] = device.copyWith(controls: updatedControls);
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Da doi thanh ${_getTypeLabel(type)}'),
+        backgroundColor: const Color(0xFF006a6a),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  String _getTypeLabel(ControlType type) {
+    switch (type) {
+      case ControlType.onOff:
+        return 'ON/OFF';
+      case ControlType.toggle:
+        return 'Gat 3 trang thai';
+      case ControlType.momentary:
+        return 'Nhan tha';
+    }
+  }
+
+  Widget _buildCameraSection() {
+    final camerasToShow = _cameras.where((c) => c.isActive).toList();
+
+    if (camerasToShow.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.videocam, color: Color(0xFF006a6a), size: 18),
+            SizedBox(width: 8),
+            Text(
+              'CAMERA',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.15,
+                color: Color(0xFF006a6a),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...camerasToShow.map((camera) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: CameraPreviewWidget(
+            cameraName: camera.ten,
+            streamUrl: camera.streamUrl,
+            occupancy: _shownOccupancy,
+            onTap: () => _showCameraFullscreen(camera),
+          ),
+        )),
+      ],
+    );
   }
 
   @override
@@ -231,6 +369,14 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                     ),
                     onPressed: _loadRoomData,
                   ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.video_settings,
+                      color: Color(0xFF006a6a),
+                    ),
+                    tooltip: 'Quan ly Camera',
+                    onPressed: _showCameraSetup,
+                  ),
                 ],
               ),
             ),
@@ -293,6 +439,12 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
+                                      // Camera section - hien thi ngay dau trang
+                                      if (_cameras.isNotEmpty) ...[
+                                        _buildCameraSection(),
+                                        const SizedBox(height: 24),
+                                      ],
+
                                       // Overview card
                                       _buildOverviewCard(),
                                       const SizedBox(height: 24),
@@ -412,6 +564,88 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCamerasSection() {
+    final activeCameras = _cameras.where((c) => c.isActive).toList();
+    if (activeCameras.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.videocam, color: Color(0xFF006a6a)),
+            SizedBox(width: 8),
+            Text(
+              'CAMERA',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.15,
+                color: Color(0xFF006a6a),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...activeCameras.map((camera) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: CameraPreviewWidget(
+            cameraName: camera.ten,
+            streamUrl: camera.streamUrl,
+            occupancy: _shownOccupancy,
+            onTap: () => _showCameraFullscreen(camera),
+          ),
+        )),
+      ],
+    );
+  }
+
+  void _showCameraFullscreen(RoomCamera camera) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppBar(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              title: Text(camera.ten),
+              leading: IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+            Expanded(
+              child: CameraPreviewWidget(
+                cameraName: camera.ten,
+                streamUrl: camera.streamUrl,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCameraSetup() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => CameraSetupSheet(
+        roomId: widget.room.id,
+        existingCameras: _cameras,
+        onSaved: () {
+          _loadCameras();
+        },
       ),
     );
   }
@@ -555,6 +789,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 control: device.controls[index],
                 deviceId: device.deviceId,
                 onControl: _controlRelay,
+                onChangeControlType: (relay, type) => _changeControlType(device, relay, type),
               );
             },
           ),

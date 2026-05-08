@@ -5,10 +5,11 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/room.dart';
 import '../models/room_data.dart';
+import '../models/camera.dart';
 
 class ApiService {
   // Thay YOUR_SERVER_IP bằng IP thực tế của server
-  static const String baseUrl = 'http://192.168.190.52:8001';
+  static const String baseUrl = 'http://192.168.69.152:8001';
   
   final storage = const FlutterSecureStorage();
   String? _token;
@@ -260,6 +261,193 @@ class ApiService {
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
       return 0;
+    }
+  }
+
+  // Get room cameras
+  Future<List<RoomCamera>> getRoomCameras(int roomId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/rooms/$roomId/cameras'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final camerasList = <RoomCamera>[];
+
+      final rawList = data['cameras'] as List<dynamic>? ?? [];
+      for (var cameraJson in rawList) {
+        camerasList.add(RoomCamera.fromJson(cameraJson as Map<String, dynamic>));
+      }
+
+      return camerasList;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được danh sách camera');
+    }
+  }
+
+  // Get AI Analyst stream session for a camera
+  Future<Map<String, dynamic>> getCameraStreamSession(int roomId, int cameraId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/rooms/$roomId/cameras/$cameraId/stream-session'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      return {'session_id': null, 'status': 'error'};
+    }
+  }
+
+  // Save camera zones
+  Future<void> saveCameraZones(int roomId, int cameraId, List<ZoneDefinition> zones) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/rooms/$roomId/cameras/$cameraId/zones'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(zones.map((z) => z.toJson()).toList()),
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Lưu zones thất bại (HTTP ${response.statusCode}): ${response.body}');
+    }
+  }
+
+  // Get camera zones
+  Future<List<ZoneDefinition>> getCameraZones(int roomId, int cameraId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/rooms/$roomId/cameras/$cameraId/zones'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final zonesList = data['zones'] as List<dynamic>? ?? [];
+      return zonesList
+          .map((z) => ZoneDefinition.fromJson(z as Map<String, dynamic>))
+          .toList();
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được danh sách zones');
+    }
+  }
+
+  // Sync zones to AI analyst
+  Future<Map<String, dynamic>> syncCameraZonesToAI(int cameraId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/internal/ai/zones/$cameraId/sync'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Sync zones thất bại (HTTP ${response.statusCode})');
+    }
+  }
+
+  // Create camera
+  Future<RoomCamera> createCamera(int roomId, Map<String, dynamic> cameraData) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/rooms/$roomId/cameras'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(cameraData),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return RoomCamera.fromJson(data['camera'] as Map<String, dynamic>);
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Tạo camera thất bại (HTTP ${response.statusCode}): ${response.body}');
+    }
+  }
+
+  // Update camera
+  Future<void> updateCamera(int roomId, int cameraId, Map<String, dynamic> cameraData) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.put(
+      Uri.parse('$baseUrl/rooms/$roomId/cameras/$cameraId'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(cameraData),
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Cập nhật camera thất bại (HTTP ${response.statusCode})');
+    }
+  }
+
+  // Delete camera
+  Future<void> deleteCamera(int roomId, int cameraId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.delete(
+      Uri.parse('$baseUrl/rooms/$roomId/cameras/$cameraId'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Xóa camera thất bại (HTTP ${response.statusCode})');
     }
   }
 

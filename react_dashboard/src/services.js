@@ -419,6 +419,24 @@ export const deleteRoomCamera = (roomId, cameraId, token) =>
   });
 
 // =========================================================
+// Zone APIs (camera zone polygon configuration)
+// =========================================================
+export const fetchCameraZones = (roomId, cameraId, token) =>
+  axios.get(`${API_BASE}/rooms/${roomId}/cameras/${cameraId}/zones`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const saveCameraZones = (roomId, cameraId, zones, token) =>
+  axios.post(`${API_BASE}/rooms/${roomId}/cameras/${cameraId}/zones`, zones, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const deleteCameraZones = (roomId, cameraId, token) =>
+  axios.delete(`${API_BASE}/rooms/${roomId}/cameras/${cameraId}/zones`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+// =========================================================
 // Room occupancy APIs
 // =========================================================
 export const fetchRoomOccupancy = (roomId, token) =>

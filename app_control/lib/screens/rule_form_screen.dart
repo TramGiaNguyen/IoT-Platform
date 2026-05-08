@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/rule.dart';
 
-/// Một hàng hành động bật/tắt relay (rule có thể có nhiều relay).
+/// Một hàng hành động relay.
 class _RelayActionDraft {
   int relay;
   String state;
@@ -12,6 +12,42 @@ class _RelayActionDraft {
     required this.relay,
     required this.state,
     this.delaySeconds = 0,
+  });
+}
+
+/// Một hành động mở rộng (command khác relay).
+class _ExtendedActionDraft {
+  ActionCommandType commandType;
+  Map<String, dynamic> params;
+  int delaySeconds;
+
+  _ExtendedActionDraft({
+    required this.commandType,
+    Map<String, dynamic>? params,
+    this.delaySeconds = 0,
+  }) : params = params ?? {};
+
+  factory _ExtendedActionDraft.fromCommand(String cmd, Map<String, dynamic>? p) {
+    final type = ActionCommandTypeExtension.fromCommand(cmd) ?? ActionCommandType.turnOn;
+    return _ExtendedActionDraft(
+      commandType: type,
+      params: Map<String, dynamic>.from(p ?? {}),
+    );
+  }
+}
+
+/// Một điều kiện trong rule.
+class _ConditionDraft {
+  String? deviceId;
+  String field;
+  String operator;
+  String value;
+
+  _ConditionDraft({
+    this.deviceId,
+    required this.field,
+    required this.operator,
+    required this.value,
   });
 }
 
@@ -30,7 +66,6 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   final _formKey = GlobalKey<FormState>();
 
   late TextEditingController _nameController;
-  late TextEditingController _conditionValueController;
 
   List<Map<String, dynamic>> _devices = [];
   List<Map<String, dynamic>> _actionRelays = [];
@@ -38,7 +73,6 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   bool _isLoadingActionRelays = false;
 
   String? _conditionDeviceId;
-  String? _actionDeviceId;
 
   /// Nhãn gợi ý khi API không có mo_ta (giống tên hiển thị quen thuộc).
   static const Map<String, String> _knownFieldLabels = {
@@ -53,13 +87,30 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   /// Field điều kiện: key + nhu mo ta tren web (tu /latest + latest_fields).
   List<MapEntry<String, String>> _dynamicFields = [];
 
+  /// Multiple conditions
+  List<_ConditionDraft> _conditions = [];
+
+  /// Action device
+  String? _actionDeviceId;
+
+  /// Relay actions
+  List<_RelayActionDraft> _actionRows = [];
+
+  /// Extended actions (non-relay commands)
+  List<_ExtendedActionDraft> _extendedActions = [];
+
+  /// Extended command type cho action hien tai
+  ActionCommandType _selectedCommandType = ActionCommandType.relay;
+
+  /// Extended command params
+  final Map<String, dynamic> _extendedParams = {};
+
+  /// Selected condition field (for backward compatibility with _buildConditionFieldItems)
   String _conditionField = 'so_nguoi_trong_phong';
-  String _conditionOperator = '>';
+
   int _priority = 1;
   bool _isEnabled = true;
   bool _isSaving = false;
-
-  List<_RelayActionDraft> _actionRows = [];
 
   String _humanizeKey(String k) {
     if (k.isEmpty) return k;
@@ -109,17 +160,28 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     super.initState();
 
     _nameController = TextEditingController();
-    _conditionValueController = TextEditingController(text: '30');
 
     if (widget.rule != null) {
       final r = widget.rule!;
       _nameController.text = r.tenRule;
       _conditionDeviceId = r.conditionDeviceId;
 
-      final relayActions =
-          r.actions.where((a) => a.actionCommand == 'relay').toList();
+      // Extended commands
+      final nonRelayActions = r.actions.where((a) => a.actionCommand != 'relay').toList();
+      if (nonRelayActions.isNotEmpty) {
+        _actionDeviceId = nonRelayActions.first.deviceId;
+        _extendedActions = nonRelayActions.map((a) {
+          return _ExtendedActionDraft.fromCommand(a.actionCommand, a.actionParams);
+        }).toList();
+        _selectedCommandType = ActionCommandTypeExtension.fromCommand(nonRelayActions.first.actionCommand) ?? ActionCommandType.turnOn;
+        _extendedParams.clear();
+        _extendedParams.addAll(nonRelayActions.first.actionParams ?? {});
+      }
+
+      // Relay actions
+      final relayActions = r.actions.where((a) => a.actionCommand == 'relay').toList();
       if (relayActions.isNotEmpty) {
-        _actionDeviceId = relayActions.first.deviceId;
+        _actionDeviceId ??= relayActions.first.deviceId;
         _actionRows = relayActions.map((a) {
           final p = a.actionParams ?? {};
           final relay = (p['relay'] as num?)?.toInt() ?? 1;
@@ -132,23 +194,36 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         }).toList();
       } else {
         _actionRows = [_RelayActionDraft(relay: 1, state: 'ON')];
-        if (r.actions.isNotEmpty) {
-          _actionDeviceId = r.actions.first.deviceId;
-        }
       }
 
-      if (r.conditions.isNotEmpty) {
-        final cond = r.conditions[0];
-        _conditionField = cond.field;
-        _conditionOperator = cond.operator;
-        _conditionValueController.text = cond.value.toString();
+      // Multiple conditions
+      _conditions = r.conditions.map((cond) {
+        return _ConditionDraft(
+          deviceId: r.conditionDeviceId,
+          field: cond.field,
+          operator: cond.operator,
+          value: cond.value.toString(),
+        );
+      }).toList();
+      if (_conditions.isEmpty) {
+        _conditions.add(_ConditionDraft(
+          field: 'so_nguoi_trong_phong',
+          operator: '>',
+          value: '1',
+        ));
       }
+
       _priority = r.mucDoUuTien;
       _isEnabled = r.trangThai == 'enabled';
     } else {
       _actionRows = [_RelayActionDraft(relay: 1, state: 'ON')];
-      _conditionField = 'so_nguoi_trong_phong';
-      _conditionValueController.text = '1';
+      _conditions = [
+        _ConditionDraft(
+          field: 'so_nguoi_trong_phong',
+          operator: '>',
+          value: '1',
+        ),
+      ];
     }
 
     _loadDevices();
@@ -157,7 +232,6 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _conditionValueController.dispose();
     super.dispose();
   }
 
@@ -356,13 +430,17 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
       return;
     }
 
-    final condVal =
-        double.tryParse(_conditionValueController.text.trim()) ?? 0.0;
+    // Validate conditions
+    final validConditions = _conditions.where((c) =>
+        c.deviceId != null &&
+        c.deviceId!.isNotEmpty &&
+        c.field.isNotEmpty &&
+        c.operator.isNotEmpty).toList();
 
-    if (_conditionDeviceId == null) {
+    if (validConditions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Vui long chon thiet bi cam bien'),
+          content: Text('Can it nhat mot dieu kien'),
           backgroundColor: Color(0xFFBA1A1A),
         ),
       );
@@ -379,30 +457,12 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
       return;
     }
 
-    if (_actionRelays.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Thiet bi khong co relay trong control_lines'),
-          backgroundColor: Color(0xFFBA1A1A),
-        ),
-      );
-      return;
-    }
-
-    if (_actionRows.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Can it nhat mot hanh dong relay'),
-          backgroundColor: Color(0xFFBA1A1A),
-        ),
-      );
-      return;
-    }
-
     setState(() => _isSaving = true);
 
     try {
       final actions = <Map<String, dynamic>>[];
+
+      // Relay actions
       for (var i = 0; i < _actionRows.length; i++) {
         final row = _actionRows[i];
         actions.add({
@@ -417,17 +477,33 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         });
       }
 
+      // Extended actions
+      for (var i = 0; i < _extendedActions.length; i++) {
+        final ext = _extendedActions[i];
+        actions.add({
+          'device_id': _actionDeviceId,
+          'action_command': ext.commandType.command,
+          'action_params': ext.params,
+          'delay_seconds': ext.delaySeconds,
+          'thu_tu': _actionRows.length + i + 1,
+        });
+      }
+
+      // Multiple conditions
+      final conditions = validConditions.map((c) {
+        final numVal = double.tryParse(c.value.trim());
+        return {
+          'field': c.field,
+          'operator': c.operator,
+          'value': numVal ?? c.value,
+        };
+      }).toList();
+
       final ruleData = {
         'ten_rule': _nameController.text,
         'phong_id': widget.roomId,
         'condition_device_id': _conditionDeviceId,
-        'conditions': [
-          {
-            'field': _conditionField,
-            'operator': _conditionOperator,
-            'value': condVal,
-          }
-        ],
+        'conditions': conditions,
         'actions': actions,
         'muc_do_uu_tien': _priority,
         'trang_thai': _isEnabled ? 'enabled' : 'disabled',
@@ -547,96 +623,22 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                             },
                           ),
                           const SizedBox(height: 28),
-                          _buildSectionLabel('DIEU KIEN'),
+                          _buildSectionLabel('DIEU KIEN (AND)'),
                           const SizedBox(height: 10),
-                          DropdownButtonFormField<String>(
-                            value: _conditionDeviceId,
-                            isExpanded: true,
-                            decoration: _inputDecoration(
-                              hintText: 'Chon thiet bi cam bien',
-                              prefixIcon: Icons.sensors,
-                            ),
-                            items: _devices.map((device) {
-                              return DropdownMenuItem<String>(
-                                value: device['device_id'] as String,
-                                child: Text(
-                                  device['name'] ?? device['device_id'],
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (value) {
-                              setState(() {
-                                _conditionDeviceId = value;
-                                _dynamicFields = [];
-                                if (value != null) {
-                                  _loadConditionFields(value);
-                                }
-                              });
-                            },
-                            validator: (value) {
-                              if (value == null) {
-                                return 'Vui long chon thiet bi';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          DropdownButtonFormField<String>(
-                            value: _conditionField,
-                            isExpanded: true,
-                            decoration: _inputDecoration(
-                              hintText: 'Truong du lieu',
-                              prefixIcon: Icons.analytics,
-                            ),
-                            items: _buildConditionFieldItems(),
-                            onChanged: (value) {
-                              setState(() => _conditionField = value!);
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          DropdownButtonFormField<String>(
-                            value: _conditionOperator,
-                            isExpanded: true,
-                            decoration: _compactDecoration(
-                              hintText: 'Toan tu',
-                            ),
-                            items: const [
-                              DropdownMenuItem(value: '>', child: Text('> lon hon')),
-                              DropdownMenuItem(value: '<', child: Text('< nho hon')),
-                              DropdownMenuItem(
-                                  value: '>=', child: Text('>= lon hon bang')),
-                              DropdownMenuItem(
-                                  value: '<=', child: Text('<= nho hon bang')),
-                              DropdownMenuItem(value: '==', child: Text('= bang')),
-                              DropdownMenuItem(value: '!=', child: Text('!= khac')),
-                            ],
-                            onChanged: (value) {
-                              setState(() => _conditionOperator = value!);
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _conditionValueController,
-                            decoration: _inputDecoration(
-                              hintText: 'Gia tri (vd so nguoi, nhiet do)',
-                              prefixIcon: Icons.numbers,
-                            ),
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Nhap gia tri';
-                              }
-                              if (double.tryParse(value.trim()) == null) {
-                                return 'So khong hop le';
-                              }
-                              return null;
-                            },
-                          ),
+                          ..._buildConditionsSection(),
                           const SizedBox(height: 28),
                           _buildSectionLabel('HANH DONG'),
                           const SizedBox(height: 10),
+                          // Command type selector
+                          _buildSectionLabel('LOAI LENH'),
+                          const SizedBox(height: 8),
+                          _buildCommandTypeSelector(),
+                          const SizedBox(height: 14),
+                          // Extended params (for commands that need parameters)
+                          if (_selectedCommandType.requiresParam) ...[
+                            ..._buildExtendedParamsSection(),
+                            const SizedBox(height: 14),
+                          ],
                           DropdownButtonFormField<String>(
                             value: _actionDeviceId,
                             isExpanded: true,
@@ -699,8 +701,10 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                                   fontSize: 13,
                                 ),
                               ),
-                            )
-                          else ...[
+                            ),
+                          // Show relay rows only for relay command
+                          if (_selectedCommandType == ActionCommandType.relay &&
+                              _actionRelays.isNotEmpty) ...[
                             ...List.generate(_actionRows.length, (index) {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
@@ -1024,5 +1028,366 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );
+  }
+
+  List<Widget> _buildConditionsSection() {
+    final widgets = <Widget>[];
+
+    for (var i = 0; i < _conditions.length; i++) {
+      final cond = _conditions[i];
+
+      widgets.add(
+        Container(
+          key: ValueKey('cond_$i'),
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFC0C7CD).withOpacity(0.2),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF006a6a).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Dieu kien ${i + 1}',
+                      style: const TextStyle(
+                        fontFamily: 'Manrope',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                        color: Color(0xFF006a6a),
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (_conditions.length > 1)
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline,
+                          color: Color(0xFFBA1A1A), size: 20),
+                      onPressed: () => _removeCondition(i),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: cond.deviceId,
+                isExpanded: true,
+                decoration: _compactDecoration(hintText: 'Thiet bi cam bien'),
+                items: _devices.map((device) {
+                  return DropdownMenuItem<String>(
+                    value: device['device_id'] as String,
+                    child: Text(
+                      device['name'] ?? device['device_id'],
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    cond.deviceId = value;
+                    _conditionDeviceId = value;
+                    _dynamicFields = [];
+                    if (value != null) {
+                      _loadConditionFields(value);
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: cond.field.isNotEmpty ? cond.field : null,
+                isExpanded: true,
+                decoration: _compactDecoration(hintText: 'Truong du lieu'),
+                items: _buildConditionFieldItems(),
+                onChanged: (value) {
+                  setState(() => cond.field = value ?? '');
+                },
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: DropdownButtonFormField<String>(
+                      value: cond.operator,
+                      isExpanded: true,
+                      decoration: _compactDecoration(hintText: 'Toan tu'),
+                      items: const [
+                        DropdownMenuItem(value: '>', child: Text('>')),
+                        DropdownMenuItem(value: '<', child: Text('<')),
+                        DropdownMenuItem(value: '>=', child: Text('>=')),
+                        DropdownMenuItem(value: '<=', child: Text('<=')),
+                        DropdownMenuItem(value: '==', child: Text('=')),
+                        DropdownMenuItem(value: '!=', child: Text('!=')),
+                      ],
+                      onChanged: (value) {
+                        setState(() => cond.operator = value ?? '>');
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 3,
+                    child: TextFormField(
+                      key: ValueKey('cond_val_$i'),
+                      initialValue: cond.value,
+                      decoration: _compactDecoration(hintText: 'Gia tri'),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (value) => cond.value = value,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    widgets.add(
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: _addCondition,
+          icon: const Icon(Icons.add, color: Color(0xFF006a6a)),
+          label: const Text(
+            'Them dieu kien (AND)',
+            style: TextStyle(color: Color(0xFF006a6a)),
+          ),
+        ),
+      ),
+    );
+
+    return widgets;
+  }
+
+  void _addCondition() {
+    setState(() {
+      _conditions.add(_ConditionDraft(
+        field: 'so_nguoi_trong_phong',
+        operator: '>',
+        value: '1',
+      ));
+    });
+  }
+
+  void _removeCondition(int index) {
+    if (_conditions.length > 1) {
+      setState(() => _conditions.removeAt(index));
+    }
+  }
+
+  Widget _buildCommandTypeSelector() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: ActionCommandType.values.map((type) {
+            final isSelected = _selectedCommandType == type;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedCommandType = type;
+                    _extendedParams.clear();
+                    if (type.requiresParam) {
+                      _extendedParams.addAll(type.defaultParams() ?? {});
+                    }
+                  });
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFF006a6a) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    _getCommandTypeShortName(type),
+                    style: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isSelected ? Colors.white : const Color(0xFF40484C),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  String _getCommandTypeShortName(ActionCommandType type) {
+    switch (type) {
+      case ActionCommandType.relay:
+        return 'Relay';
+      case ActionCommandType.turnOn:
+        return 'Bat';
+      case ActionCommandType.turnOff:
+        return 'Tat';
+      case ActionCommandType.toggle:
+        return 'Dao';
+      case ActionCommandType.setAcTemp:
+        return 'Nhiet do';
+      case ActionCommandType.setMode:
+        return 'Che do';
+      case ActionCommandType.setFanSpeed:
+        return 'Quat';
+      case ActionCommandType.setBrightness:
+        return 'Sang';
+      case ActionCommandType.setHumidity:
+        return 'Do am';
+    }
+  }
+
+  IconData _getCommandTypeIcon(ActionCommandType type) {
+    switch (type) {
+      case ActionCommandType.relay:
+        return Icons.power;
+      case ActionCommandType.turnOn:
+        return Icons.power_settings_new;
+      case ActionCommandType.turnOff:
+        return Icons.power_off;
+      case ActionCommandType.toggle:
+        return Icons.toggle_on;
+      case ActionCommandType.setAcTemp:
+        return Icons.thermostat;
+      case ActionCommandType.setMode:
+        return Icons.mode;
+      case ActionCommandType.setFanSpeed:
+        return Icons.speed;
+      case ActionCommandType.setBrightness:
+        return Icons.brightness_6;
+      case ActionCommandType.setHumidity:
+        return Icons.water_drop;
+    }
+  }
+
+  String _getCommandTypeDescription(ActionCommandType type) {
+    switch (type) {
+      case ActionCommandType.relay:
+        return 'Dieu khien relay bat/tat';
+      case ActionCommandType.turnOn:
+        return 'Bat thi bi';
+      case ActionCommandType.turnOff:
+        return 'Tat thi bi';
+      case ActionCommandType.toggle:
+        return 'Dao trang thai thi bi';
+      case ActionCommandType.setAcTemp:
+        return 'Dat nhiet do may lanh';
+      case ActionCommandType.setMode:
+        return 'Dat che do may lanh';
+      case ActionCommandType.setFanSpeed:
+        return 'Dat toc do quat';
+      case ActionCommandType.setBrightness:
+        return 'Dat do sang';
+      case ActionCommandType.setHumidity:
+        return 'Dat do am';
+    }
+  }
+
+  List<Widget> _buildExtendedParamsSection() {
+    final widgets = <Widget>[];
+
+    switch (_selectedCommandType) {
+      case ActionCommandType.setAcTemp:
+        widgets.add(
+          TextFormField(
+            initialValue: (_extendedParams['temperature'] ?? 25).toString(),
+            decoration: _inputDecoration(
+              hintText: 'Nhiet do (C)',
+              prefixIcon: Icons.thermostat,
+            ),
+            keyboardType: TextInputType.number,
+            onChanged: (v) => _extendedParams['temperature'] = int.tryParse(v) ?? 25,
+          ),
+        );
+        break;
+      case ActionCommandType.setMode:
+        widgets.add(
+          DropdownButtonFormField<String>(
+            value: _extendedParams['mode'] as String? ?? 'cool',
+            decoration: _inputDecoration(
+              hintText: 'Che do',
+              prefixIcon: Icons.mode,
+            ),
+            items: const [
+              DropdownMenuItem(value: 'cool', child: Text('Lam mat')),
+              DropdownMenuItem(value: 'heat', child: Text('Lam nong')),
+              DropdownMenuItem(value: 'fan', child: Text('Quat')),
+              DropdownMenuItem(value: 'auto', child: Text('Tu dong')),
+              DropdownMenuItem(value: 'dry', child: Text('Hong')),
+            ],
+            onChanged: (v) => setState(() => _extendedParams['mode'] = v ?? 'cool'),
+          ),
+        );
+        break;
+      case ActionCommandType.setFanSpeed:
+        widgets.add(
+          DropdownButtonFormField<int>(
+            value: _extendedParams['speed'] as int? ?? 3,
+            decoration: _inputDecoration(
+              hintText: 'Toc do quat',
+              prefixIcon: Icons.speed,
+            ),
+            items: List.generate(5, (i) => i + 1)
+                .map((s) => DropdownMenuItem(value: s, child: Text('Muc $s')))
+                .toList(),
+            onChanged: (v) => setState(() => _extendedParams['speed'] = v ?? 3),
+          ),
+        );
+        break;
+      case ActionCommandType.setBrightness:
+        widgets.add(
+          TextFormField(
+            initialValue: (_extendedParams['brightness'] ?? 80).toString(),
+            decoration: _inputDecoration(
+              hintText: 'Do sang (%)',
+              prefixIcon: Icons.brightness_6,
+            ),
+            keyboardType: TextInputType.number,
+            onChanged: (v) => _extendedParams['brightness'] = int.tryParse(v) ?? 80,
+          ),
+        );
+        break;
+      case ActionCommandType.setHumidity:
+        widgets.add(
+          TextFormField(
+            initialValue: (_extendedParams['humidity'] ?? 60).toString(),
+            decoration: _inputDecoration(
+              hintText: 'Do am (%)',
+              prefixIcon: Icons.water_drop,
+            ),
+            keyboardType: TextInputType.number,
+            onChanged: (v) => _extendedParams['humidity'] = int.tryParse(v) ?? 60,
+          ),
+        );
+        break;
+      default:
+        break;
+    }
+
+    return widgets;
   }
 }

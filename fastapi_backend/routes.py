@@ -135,17 +135,52 @@ def _device_http_api_key_value(device: Optional[dict]) -> str:
     return str(hk).strip()
 
 
-def build_edge_relay_control_body(relay: int, state: str) -> dict:
+def build_edge_relay_control_body(relay: int, state: str, control_type: str = "on_off") -> dict:
     """
-    Body JSON gửi tới edge /api/v1/control:
-    {"control_commands": [{"relay": N, "commands": {"on"|"off": {"relay": N, "state": "ON"|"OFF"}}}]}
+    Body JSON gui toi edge /api/v1/control:
+    {"control_commands": [{"relay": N, "commands": {"on"|"off"|"low"|"high"|"press": { ... }}}]}
+
+    Ho tro cac loai nut:
+    - on_off: ON/OFF (default)
+    - toggle: LOW/MED/HIGH (cong tac gat 3 trang thai)
+    - momentary: PRESS (cong tac nhan tha - tu dong OFF sau 1-2s)
+
+    Khi state khong hop le voi control_type, ep ve OFF.
     """
-    st = (state or "").strip().upper()
-    if st not in ("ON", "OFF"):
-        st = "OFF"
-    cmd_key = "on" if st == "ON" else "off"
+    st = str(state or "").strip().upper()
     r = int(relay)
-    inner = {"relay": r, "state": st}
+    cmd_key = "off"  # default
+    inner = {"relay": r, "state": "OFF"}
+
+    if control_type == "momentary":
+        # Cong tac hanh trinh nhan tha: gui lenh PRESS, thiet bi tu dong OFF sau 1-2s
+        if st == "PRESS":
+            cmd_key = "press"
+            inner = {"relay": r, "command": "press"}
+        else:
+            # Mặc định cho momentary button vẫn là PRESS
+            cmd_key = "press"
+            inner = {"relay": r, "command": "press"}
+    elif control_type == "toggle":
+        # Cong tac gat 3 trang thai: LOW, MED, HIGH
+        if st in ("LOW", "MED", "HIGH"):
+            cmd_key = st.lower()
+            inner = {"relay": r, "level": st}
+        elif st == "ON":
+            cmd_key = "high"
+            inner = {"relay": r, "level": "HIGH"}
+        else:
+            cmd_key = "off"
+            inner = {"relay": r, "level": "OFF"}
+    else:
+        # Cong tac ON/OFF (default)
+        if st == "ON":
+            cmd_key = "on"
+            inner = {"relay": r, "state": "ON"}
+        else:
+            cmd_key = "off"
+            inner = {"relay": r, "state": "OFF"}
+
     return {"control_commands": [{"relay": r, "commands": {cmd_key: inner}}]}
 
 
@@ -1345,6 +1380,8 @@ class ControlLineItem(BaseModel):
     ten_duong: str = ""
     topic: Optional[str] = None
     hien_thi_ttcds: bool = True
+    # Loai nut dieu khien: on_off=Cong tac ON/OFF, toggle=Cong tac gat 3 trang thai, momentary=Cong tac hanh trinh nhan tha
+    control_type: str = "on_off"
 
 class ControlLinesRequest(BaseModel):
     lines: List[ControlLineItem]
@@ -1380,9 +1417,10 @@ def save_control_lines(
         # Insert control lines mới
         for line in request.lines:
             cursor.execute("""
-                INSERT INTO control_lines (thiet_bi_id, relay_number, ten_duong, topic, hien_thi_ttcds)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (thiet_bi_id, line.relay_number, line.ten_duong, line.topic, int(line.hien_thi_ttcds)))
+                INSERT INTO control_lines (thiet_bi_id, relay_number, ten_duong, topic, hien_thi_ttcds, control_type)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (thiet_bi_id, line.relay_number, line.ten_duong, line.topic,
+                  int(line.hien_thi_ttcds), line.control_type))
 
         conn.commit()
 
@@ -1394,12 +1432,12 @@ def save_control_lines(
                     "relay_number": l.relay_number,
                     "ten_duong": l.ten_duong,
                     "topic": l.topic,
-                    "hien_thi_ttcds": l.hien_thi_ttcds
+                    "hien_thi_ttcds": l.hien_thi_ttcds,
+                    "control_type": l.control_type
                 } for l in request.lines
             ]
         }
         _invalidate_api_cache("api:devices:*")
-        return data
     except HTTPException:
         raise
     except Exception as e:
@@ -1429,7 +1467,7 @@ def get_control_lines(
             raise HTTPException(status_code=404, detail="Thiết bị không tồn tại")
 
         cursor.execute("""
-            SELECT relay_number, ten_duong, topic, hien_thi_ttcds FROM control_lines
+            SELECT relay_number, ten_duong, topic, hien_thi_ttcds, control_type FROM control_lines
             WHERE thiet_bi_id = %s ORDER BY relay_number
         """, (device["id"],))
         lines = cursor.fetchall()
@@ -1892,7 +1930,16 @@ def send_control_command(
             try:
                 relay_num = int(payload["relay"])
                 state_str = str(payload["state"])
-                edge_body = build_edge_relay_control_body(relay_num, state_str)
+                # Lay control_type tu bang control_lines
+                control_type = "on_off"
+                cursor.execute(
+                    "SELECT control_type FROM control_lines WHERE thiet_bi_id = %s AND relay_number = %s",
+                    (device["id"], relay_num)
+                )
+                row = cursor.fetchone()
+                if row and row.get("control_type"):
+                    control_type = row["control_type"]
+                edge_body = build_edge_relay_control_body(relay_num, state_str, control_type)
                 timeout_s = float(os.getenv("EDGE_CONTROL_TIMEOUT", "10"))
                 req_headers = {"Content-Type": "application/json"}
                 # Edge có thể yêu cầu X-API-Key (tùy firmware):
@@ -1988,6 +2035,7 @@ def send_control_command(
                 "payload_sent": edge_body,
                 "via": "http",
                 "edge_control_url": edge_url,
+                "control_type": control_type,
             }
 
         # MQTT topic từ device_config
@@ -3195,6 +3243,15 @@ def list_cameras(
         rows = cursor.fetchall()
         cameras = []
         for r in rows:
+            # Build stream_url from components if not set in database
+            final_stream_url = build_stream_url(
+                stream_url=r["stream_url"],
+                ip_address=r["ip_address"],
+                port=r["port"],
+                rtsp_path=r["rtsp_path"],
+                username=r["username"],
+                password_enc=r["password_enc"],
+            )
             cameras.append({
                 "id": r["id"],
                 "phong_id": r["phong_id"],
@@ -3204,7 +3261,7 @@ def list_cameras(
                 "rtsp_path": r["rtsp_path"],
                 "username": r["username"],
                 "has_password": bool(r["password_enc"]),
-                "stream_url": r["stream_url"],
+                "stream_url": final_stream_url,
                 "thu_tu": r["thu_tu"],
                 "is_active": r["is_active"],
                 "created_at": r["created_at"].isoformat() if r["created_at"] else None,
@@ -3409,6 +3466,50 @@ def get_camera_stream_url(
         conn.close()
 
 
+@router.get("/rooms/{room_id}/cameras/{camera_id}/stream-session")
+def get_camera_stream_session(
+    room_id: int,
+    camera_id: int,
+    current_user: str = Depends(get_current_user_or_internal)
+):
+    """
+    Proxy: Lấy AI Analyst session cho camera để stream video với bounding boxes.
+    Trả về session_id để app có thể gọi /sessions/{id}/stream.mjpeg
+    """
+    try:
+        # Lookup existing session
+        resp = requests.get(
+            f"{AI_ANALYST_URL}/sessions/lookup",
+            params={"room_id": room_id, "camera_id": camera_id},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return {
+                "session_id": data.get("session_id"),
+                "status": "running",
+                "stream_url": f"{AI_ANALYST_URL}/sessions/{data.get('session_id')}/stream.mjpeg",
+                "status_url": f"{AI_ANALYST_URL}/sessions/{data.get('session_id')}/status",
+            }
+        elif resp.status_code == 404:
+            # Session chưa có, AI Analyst sẽ tự tạo trong background
+            return {
+                "session_id": None,
+                "status": "starting",
+                "message": "AI session đang được khởi tạo, vui lòng thử lại sau 5 giây",
+            }
+        else:
+            raise HTTPException(
+                status_code=resp.status_code,
+                detail="Không kết nối được AI Analyst"
+            )
+    except requests.RequestException as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Không kết nối được AI Analyst: {str(e)}"
+        )
+
+
 # ============================================================
 # Occupancy endpoints (written by ai_analyst, read by any authenticated user)
 # ============================================================
@@ -3560,6 +3661,356 @@ def get_camera_watch_list(
         }
     finally:
         cursor.close()
+        conn.close()
+
+
+# ============================================================
+# Zone definitions management
+# ============================================================
+class ZoneDefinitionCreate(BaseModel):
+    zone_name: str
+    zone_index: int
+    polygon_points: List[List[float]]  # [[x1,y1],[x2,y2],...]
+    is_entry_zone: bool = False
+
+
+class ZoneDefinitionUpdate(BaseModel):
+    zone_name: Optional[str] = None
+    polygon_points: Optional[List[List[float]]] = None
+    is_entry_zone: Optional[bool] = None
+
+
+@router.post("/rooms/{room_id}/cameras/{camera_id}/zones")
+def save_camera_zones(
+    room_id: int,
+    camera_id: int,
+    zones: List[ZoneDefinitionCreate],
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Lưu polygon zones cho camera (thay thế hoàn toàn zones cũ).
+    """
+    check_room_permission(room_id, current_user, "edit")
+
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id FROM phong_camera WHERE id = %s AND phong_id = %s",
+            (camera_id, room_id),
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Camera not found in this room")
+
+        cursor.execute(
+            "DELETE FROM zone_definitions WHERE camera_id = %s",
+            (camera_id,),
+        )
+
+        for z in zones:
+            cursor.execute(
+                """
+                INSERT INTO zone_definitions
+                  (camera_id, zone_name, zone_index, polygon_points, is_entry_zone)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    camera_id,
+                    z.zone_name,
+                    z.zone_index,
+                    json.dumps(z.polygon_points),
+                    1 if z.is_entry_zone else 0,
+                ),
+            )
+
+        conn.commit()
+
+        # Auto-sync zones to AI Analyst so live tracking starts immediately.
+        # Re-fetch zones from MySQL after commit to get the correct DB-assigned IDs
+        # (avoid cursor.lastrowid which is only the last inserted row).
+        try:
+            ai_url = os.getenv("AI_ANALYST_URL", "http://ai-analyst:8101")
+            import requests as _requests
+            cursor.execute(
+                "SELECT id, zone_name, zone_index, polygon_points, is_entry_zone "
+                "FROM zone_definitions WHERE camera_id = %s ORDER BY zone_index ASC",
+                (camera_id,),
+            )
+            rows = cursor.fetchall()
+            sync_payload = []
+            for r in rows:
+                pts = r[3]
+                if isinstance(pts, str):
+                    pts = json.loads(pts)
+                sync_payload.append({
+                    "id": r[0],
+                    "name": r[1],
+                    "index": r[2],
+                    "points": pts,
+                    "is_entry": bool(r[4]),
+                })
+            lookup = _requests.get(
+                f"{ai_url}/sessions/lookup",
+                params={"room_id": room_id, "camera_id": camera_id},
+                timeout=8,
+            )
+            if lookup.status_code == 200:
+                session_id = lookup.json().get("session_id")
+                if session_id:
+                    _requests.post(
+                        f"{ai_url}/sessions/{session_id}/zones",
+                        json={"zones": sync_payload},
+                        timeout=8,
+                    )
+        except Exception:
+            pass  # Non-critical: zones saved to DB, AI sync can be done manually later
+
+        return {"message": "zones saved", "count": len(zones)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/rooms/{room_id}/cameras/{camera_id}/zones")
+def get_camera_zones(
+    room_id: int,
+    camera_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Lấy danh sách zones của camera.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, camera_id, zone_name, zone_index, polygon_points, is_entry_zone, created_at "
+            "FROM zone_definitions WHERE camera_id = %s ORDER BY zone_index ASC",
+            (camera_id,),
+        )
+        rows = cursor.fetchall()
+        zones = []
+        for r in rows:
+            points = r["polygon_points"]
+            if isinstance(points, str):
+                points = json.loads(points)
+            zones.append({
+                "id": r["id"],
+                "camera_id": r["camera_id"],
+                "zone_name": r["zone_name"],
+                "zone_index": r["zone_index"],
+                "polygon_points": points,
+                "is_entry_zone": bool(r["is_entry_zone"]),
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            })
+        return {"camera_id": camera_id, "zones": zones}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.delete("/rooms/{room_id}/cameras/{camera_id}/zones")
+def delete_all_camera_zones(
+    room_id: int,
+    camera_id: int,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Xóa tất cả zones của camera.
+    """
+    check_room_permission(room_id, current_user, "edit")
+
+    conn = get_mysql()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM zone_definitions WHERE camera_id = %s",
+            (camera_id,),
+        )
+        conn.commit()
+        return {"message": "zones deleted"}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/zone-occupancy/daily")
+def get_daily_zone_occupancy(
+    camera_id: Optional[int] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Thống kê occupancy theo ngày cho zones.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        conditions = []
+        params = []
+        if camera_id is not None:
+            conditions.append("camera_id = %s")
+            params.append(camera_id)
+        if from_date:
+            conditions.append("ngay >= %s")
+            params.append(from_date)
+        if to_date:
+            conditions.append("ngay <= %s")
+            params.append(to_date)
+
+        where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+
+        cursor.execute(
+            f"""
+            SELECT id, camera_id, zone_id, zone_name, ngay,
+                   total_seconds, peak_count, total_entries, avg_count
+            FROM zone_occupancy_daily
+            {where_clause}
+            ORDER BY ngay DESC, zone_index ASC
+            """,
+            tuple(params),
+        )
+        rows = cursor.fetchall()
+        result = []
+        for r in rows:
+            result.append({
+                "id": r["id"],
+                "camera_id": r["camera_id"],
+                "zone_id": r["zone_id"],
+                "zone_name": r["zone_name"],
+                "ngay": r["ngay"].isoformat() if r["ngay"] else None,
+                "total_seconds": r["total_seconds"],
+                "peak_count": r["peak_count"],
+                "total_entries": r["total_entries"],
+                "avg_count": float(r["avg_count"]) if r["avg_count"] else 0.0,
+            })
+        return {"data": result}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# Internal endpoints for AI Analyst integration
+# ============================================================
+@router.get("/internal/ai/zones/{camera_id}")
+def get_zone_definitions_internal(
+    camera_id: int,
+    current_user: str = Depends(get_current_user_or_internal)
+):
+    """
+    Lấy zone definitions từ MySQL — gọi bởi ai_analyst khi sync zones.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, zone_name, zone_index, polygon_points, is_entry_zone "
+            "FROM zone_definitions WHERE camera_id = %s ORDER BY zone_index ASC",
+            (camera_id,),
+        )
+        rows = cursor.fetchall()
+        zones = []
+        for r in rows:
+            points = r["polygon_points"]
+            if isinstance(points, str):
+                points = json.loads(points)
+            zones.append({
+                "id": r["id"],
+                "name": r["zone_name"],
+                "index": r["zone_index"],
+                "points": points,
+                "is_entry": bool(r["is_entry_zone"]),
+            })
+        return {"camera_id": camera_id, "zones": zones}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/internal/ai/zones/{camera_id}/sync")
+def sync_zones_to_ai(
+    camera_id: int,
+    current_user: str = Depends(get_current_user_or_internal)
+):
+    """
+    Lấy zones từ MySQL và gửi sang ai_analyst để bắt đầu tracking.
+    Luồng:
+    1. Lấy zones từ MySQL zone_definitions
+    2. Tìm session đang chạy cho camera này
+    3. Gọi ai_analyst POST /sessions/{session_id}/zones
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT phong_id FROM phong_camera WHERE id = %s AND is_active = 1",
+            (camera_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Camera not found or inactive")
+        room_id = row["phong_id"]
+    finally:
+        cursor.close()
+        # conn stays open for cursor2
+
+    ai_url = os.getenv("AI_ANALYST_URL", "http://ai-analyst:8101")
+
+    try:
+        lookup = requests.get(
+            f"{ai_url}/sessions/lookup",
+            params={"room_id": room_id, "camera_id": camera_id},
+            timeout=10,
+        )
+        if lookup.status_code != 200:
+            return {"message": "no_active_session", "camera_id": camera_id}
+        session_data = lookup.json()
+        session_id = session_data["session_id"]
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=502, detail=f"AI Analyst unreachable: {e}")
+
+    cursor2 = conn.cursor(dictionary=True)
+    try:
+        cursor2.execute(
+            "SELECT id, zone_name, zone_index, polygon_points, is_entry_zone "
+            "FROM zone_definitions WHERE camera_id = %s ORDER BY zone_index ASC",
+            (camera_id,),
+        )
+        rows = cursor2.fetchall()
+        zones = []
+        for r in rows:
+            points = r["polygon_points"]
+            if isinstance(points, str):
+                points = json.loads(points)
+            zones.append({
+                "id": r["id"],
+                "name": r["zone_name"],
+                "index": r["zone_index"],
+                "points": points,
+                "is_entry": bool(r["is_entry_zone"]),
+            })
+
+        if not zones:
+            conn.close()
+            return {"message": "no_zones_defined", "camera_id": camera_id}
+
+        sync_resp = requests.post(
+            f"{ai_url}/sessions/{session_id}/zones",
+            json={"zones": zones},
+            timeout=10,
+        )
+        if sync_resp.status_code != 200:
+            conn.close()
+            raise HTTPException(
+                status_code=502,
+                detail=f"AI Analyst zone sync failed: {sync_resp.status_code}",
+            )
+        return {"message": "zones_synced", "session_id": session_id, "zone_count": len(zones)}
+    finally:
+        cursor2.close()
         conn.close()
 
 

@@ -72,6 +72,117 @@ const detectDeviceType = (deviceId) => {
   return 'sensor'; // Mặc định
 };
 
+// Control type options
+const CONTROL_TYPES = [
+  { value: 'on_off', label: 'Cong tac ON/OFF', icon: '⚡' },
+  { value: 'toggle', label: 'Cong tac gat 3 trang thai', icon: '🔘' },
+  { value: 'momentary', label: 'Cong tac hanh trinh nhan tha', icon: '🔔' },
+];
+
+// RelayConfigSection component for configuring relay control lines during device setup
+const RelayConfigSection = ({ deviceId, device, updateDevice }) => {
+  const relays = device.relays || [];
+
+  const addRelay = () => {
+    const nextNum = relays.length > 0
+      ? Math.max(...relays.map(r => r.relay_number)) + 1
+      : 1;
+    const newRelay = {
+      relay_number: nextNum,
+      ten_duong: `Relay ${nextNum}`,
+      topic: '',
+      hien_thi_ttcds: true,
+      control_type: 'on_off',
+    };
+    updateDevice(deviceId, 'relays', [...relays, newRelay]);
+  };
+
+  const updateRelay = (index, field, value) => {
+    const updated = [...relays];
+    updated[index] = { ...updated[index], [field]: value };
+    updateDevice(deviceId, 'relays', updated);
+  };
+
+  const removeRelay = (index) => {
+    updateDevice(deviceId, 'relays', relays.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="relay-config-section" style={{ marginTop: '16px', padding: '12px', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <div className="config-label" style={{ marginBottom: 0 }}>Cau hinh Relay</div>
+        <button type="button" className="add-key-btn" onClick={addRelay} style={{ fontSize: '12px', padding: '4px 12px' }}>
+          + Them Relay
+        </button>
+      </div>
+
+      {relays.length === 0 ? (
+        <p style={{ fontSize: '12px', color: '#64748b', margin: '8px 0' }}>
+          Chua co relay nao. Nhan "Them Relay" de tao moi.
+        </p>
+      ) : (
+        <div className="relays-list">
+          {relays.map((relay, idx) => (
+            <div key={idx} className="relay-config-item" style={{ background: 'white', padding: '10px', borderRadius: '6px', marginBottom: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontWeight: 600, fontSize: '13px', minWidth: '60px' }}>Relay {relay.relay_number}</span>
+                <select
+                  value={relay.control_type || 'on_off'}
+                  onChange={(e) => updateRelay(idx, 'control_type', e.target.value)}
+                  style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+                >
+                  {CONTROL_TYPES.map(ct => (
+                    <option key={ct.value} value={ct.value}>{ct.icon} {ct.label}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => removeRelay(idx)}
+                  style={{ background: '#fee2e2', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', color: '#dc2626', fontSize: '12px' }}
+                >
+                  Xoa
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  placeholder="Ten duong (VD: Den tran)"
+                  value={relay.ten_duong || ''}
+                  onChange={(e) => updateRelay(idx, 'ten_duong', e.target.value)}
+                  style={{ flex: 2, padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+                />
+                <input
+                  type="text"
+                  placeholder="MQTT topic (tuy chon)"
+                  value={relay.topic || ''}
+                  onChange={(e) => updateRelay(idx, 'topic', e.target.value)}
+                  style={{ flex: 2, padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '12px' }}
+                />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                  <input
+                    type="checkbox"
+                    checked={relay.hien_thi_ttcds !== false}
+                    onChange={(e) => updateRelay(idx, 'hien_thi_ttcds', e.target.checked)}
+                  />
+                  Hien thi TTCDS
+                </label>
+              </div>
+
+              {/* Preview of control type */}
+              <div style={{ marginTop: '8px', fontSize: '11px', color: '#64748b' }}>
+                Loai nut: <strong>{CONTROL_TYPES.find(ct => ct.value === (relay.control_type || 'on_off'))?.label || 'Cong tac ON/OFF'}</strong>
+                {(relay.control_type || 'on_off') === 'toggle' && ' | Trang thai: OFF, LOW, MED, HIGH'}
+                {(relay.control_type || 'on_off') === 'momentary' && ' | Nhan de kich hoat, tu dong tat sau 1-2s'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const DeviceSetupWizard = ({ token, onComplete }) => {
   const [step, setStep] = useState(1);
   const [discoveredDevices, setDiscoveredDevices] = useState([]);
@@ -441,6 +552,11 @@ const DeviceSetupWizard = ({ token, onComplete }) => {
                 + Thêm key
               </button>
             </div>
+
+            {/* Cau hinh Relay cho actuator/light */}
+            {(device.loai_thiet_bi === 'actuator' || device.loai_thiet_bi === 'light') && (
+              <RelayConfigSection deviceId={deviceId} device={device} updateDevice={updateDevice} />
+            )}
           </div>
         );
       })}
