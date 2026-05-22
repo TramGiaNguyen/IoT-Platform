@@ -119,22 +119,6 @@ class RoomCamera {
     );
   }
 
-  RoomCamera({
-    required this.id,
-    required this.phongId,
-    required this.ten,
-    this.ipAddress,
-    this.port = 554,
-    this.rtspPath,
-    this.username,
-    this.hasPassword = false,
-    this.streamUrl,
-    this.thuTu = 0,
-    this.isActive = true,
-    this.createdAt,
-    this.updatedAt,
-  });
-
   factory RoomCamera.fromJson(Map<String, dynamic> json) {
     DateTime? parseDateTime(dynamic value) {
       if (value == null) return null;

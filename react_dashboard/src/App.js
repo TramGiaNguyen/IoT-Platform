@@ -392,6 +392,11 @@ function AppContent({
               Quan ly Dashboard
             </button>
           )}
+          {isAdmin && (
+            <button className={activeTab === 'users' ? 'active' : ''} onClick={openUsers}>
+              Quan ly nguoi dung
+            </button>
+          )}
           {(isAdmin || userRole === 'teacher') && (
             <button className={activeTab === 'classes' ? 'active' : ''} onClick={() => {
               window.location.hash = '#/classes';
