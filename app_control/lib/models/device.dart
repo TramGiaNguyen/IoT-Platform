@@ -106,8 +106,6 @@ class Device {
   }
 }
 
-import 'control_type.dart';
-
 class Control {
   final int relay;
   final String name;

@@ -289,15 +289,14 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _checkLoginStatus() async {
     await Future.delayed(const Duration(milliseconds: 1200));
-    
-    final isLoggedIn = await _apiService.isLoggedIn();
-    
+
+    // Always require re-authentication on app restart
+    await _apiService.logout();
+
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => isLoggedIn
-              ? const RoomListScreen()
-              : const LoginScreen(),
+          builder: (_) => const LoginScreen(),
         ),
       );
     }
