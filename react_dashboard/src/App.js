@@ -13,7 +13,6 @@ import UserManagement from './components/UserManagement';
 import ClassManagement from './components/ClassManagement';
 import DashboardManagement from './components/DashboardManagement';
 import DashboardViewer from './components/DashboardViewer/DashboardViewer';
-import TTCDSDashboard from './components/TTCDSDashboard';
 import RoomDetail from './components/RoomDetail';
 import { canAccessPage } from './config/pages';
 import { GlobalCacheProvider, useGlobalCache } from './context/GlobalCache';
@@ -261,12 +260,6 @@ function AppContent({
     setSelectedDeviceId(null);
   };
 
-  const openTTCDS = () => {
-    window.location.hash = '#/ttcds';
-    setCurrentView('ttcds');
-    setSelectedDeviceId(null);
-  };
-
   const canAccess = () => true;
 
   // Hash routing
@@ -299,9 +292,6 @@ function AppContent({
         setSelectedDeviceId(null);
       } else if (hash.startsWith('#/dashboards-manage') || hash === '#dashboards-manage') {
         setCurrentView('dashboards-manage');
-        setSelectedDeviceId(null);
-      } else if (hash.startsWith('#/ttcds') || hash === '#ttcds') {
-        setCurrentView('ttcds');
         setSelectedDeviceId(null);
       } else if (hash.startsWith('#/dashboards/')) {
         setCurrentView('dashboard-viewer');
@@ -362,14 +352,6 @@ function AppContent({
   } else if (currentView === 'dashboard-viewer' && selectedDeviceId) {
     content = <DashboardViewer dashboardId={parseInt(selectedDeviceId)} token={token} onBack={handleBackToDashboard} />;
     activeTab = 'dashboards-manage';
-  } else if (currentView === 'ttcds') {
-    if (isAdmin) {
-      content = <TTCDSDashboard token={token} />;
-      activeTab = 'ttcds';
-    } else {
-      content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onOpenRooms={openRooms} />;
-      activeTab = 'dashboard';
-    }
   } else {
     content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onOpenRooms={openRooms} />;
     activeTab = 'dashboard';
@@ -408,16 +390,6 @@ function AppContent({
           {canAccess('dashboards') && (
             <button className={activeTab === 'dashboards-manage' ? 'active' : ''} onClick={openDashboardsManage}>
               Quan ly Dashboard
-            </button>
-          )}
-          {isAdmin && (
-            <button className={activeTab === 'ttcds' ? 'active' : ''} onClick={openTTCDS}>
-              Trung tam chuyen doi so
-            </button>
-          )}
-          {isAdmin && (
-            <button className={activeTab === 'users' ? 'active' : ''} onClick={openUsers}>
-              Quan ly nguoi dung
             </button>
           )}
           {(isAdmin || userRole === 'teacher') && (
