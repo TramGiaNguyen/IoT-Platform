@@ -8,7 +8,6 @@ export const PAGES = [
     { id: 'alerts', label: 'Quản lý cảnh báo', path: 'alerts' },
     { id: 'device-profiles', label: 'Device Profiles', path: 'device-profiles' },
     { id: 'dashboards', label: 'Quản lý Dashboard', path: 'dashboards-manage' },
-    { id: 'ttcds', label: 'Trung tâm chuyển đổi số', path: 'ttcds' },
 ];
 
 // Pages only visible to admin (not shown in permission checkboxes)
