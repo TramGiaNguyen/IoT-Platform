@@ -1,4 +1,9 @@
-﻿USE iot_data;
+USE iot_data;
+
+-- =========================================================
+-- Migration base: creates lop_hoc, owner FKs, performance indexes
+-- Idempotent: all operations check IF NOT EXISTS / IF column exists
+-- =========================================================
 
 -- 1. Create lop_hoc
 CREATE TABLE IF NOT EXISTS `lop_hoc` (
@@ -7,33 +12,80 @@ CREATE TABLE IF NOT EXISTS `lop_hoc` (
     `giao_vien_id` INT NOT NULL,
     `ngay_tao` DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    CONSTRAINT `fk_giao_vien` FOREIGN KEY (`giao_vien_id`) REFERENCES `nguoi_dung`(`id`) ON DELETE CASCADE
+    CONSTRAINT `lop_hoc_giao_vien_fk` FOREIGN KEY (`giao_vien_id`) REFERENCES `nguoi_dung`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 2. Alter nguoi_dung
--- We wrap in try block conceptually, but MySQL might error if column exists. That's fine.
-ALTER TABLE `nguoi_dung` ADD COLUMN `lop_hoc_id` INT DEFAULT NULL;
-ALTER TABLE `nguoi_dung` ADD CONSTRAINT `fk_user_lop` FOREIGN KEY (`lop_hoc_id`) REFERENCES `lop_hoc`(`id`) ON DELETE SET NULL;
+-- 2. Alter nguoi_dung — add lop_hoc_id if not exists
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nguoi_dung' AND COLUMN_NAME = 'lop_hoc_id');
+SET @sql = IF(@col_exists = 0,
+    'ALTER TABLE `nguoi_dung` ADD COLUMN `lop_hoc_id` INT DEFAULT NULL',
+    'SELECT "Column lop_hoc_id already exists" AS message');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- 3. Alter thiet_bi
-ALTER TABLE `thiet_bi` ADD COLUMN `nguoi_so_huu_id` INT DEFAULT NULL;
-ALTER TABLE `thiet_bi` ADD CONSTRAINT `fk_thiet_bi_owner` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung`(`id`) ON DELETE CASCADE;
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'nguoi_dung' AND CONSTRAINT_NAME = 'nguoi_dung_lop_hoc_fk');
+SET @sql2 = IF(@fk_exists = 0,
+    'ALTER TABLE `nguoi_dung` ADD CONSTRAINT `nguoi_dung_lop_hoc_fk` FOREIGN KEY (`lop_hoc_id`) REFERENCES `lop_hoc`(`id`) ON DELETE SET NULL',
+    'SELECT "FK nguoi_dung_lop_hoc_fk already exists" AS message');
+PREPARE stmt2 FROM @sql2; EXECUTE stmt2; DEALLOCATE PREPARE stmt2;
 
--- 4. Alter rules
-ALTER TABLE `rules` ADD COLUMN `nguoi_so_huu_id` INT DEFAULT NULL;
-ALTER TABLE `rules` ADD CONSTRAINT `fk_rules_owner` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung`(`id`) ON DELETE CASCADE;
+-- 3. Alter thiet_bi — add nguoi_so_huu_id if not exists
+SET @col_exists2 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'thiet_bi' AND COLUMN_NAME = 'nguoi_so_huu_id');
+SET @sql3 = IF(@col_exists2 = 0,
+    'ALTER TABLE `thiet_bi` ADD COLUMN `nguoi_so_huu_id` INT DEFAULT NULL',
+    'SELECT "Column nguoi_so_huu_id already exists in thiet_bi" AS message');
+PREPARE stmt3 FROM @sql3; EXECUTE stmt3; DEALLOCATE PREPARE stmt3;
 
--- 5. Alter scheduled_rules
-ALTER TABLE `scheduled_rules` ADD COLUMN `nguoi_so_huu_id` INT DEFAULT NULL;
-ALTER TABLE `scheduled_rules` ADD CONSTRAINT `fk_scheduled_rules_owner` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung`(`id`) ON DELETE CASCADE;
+SET @fk_exists2 = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'thiet_bi' AND CONSTRAINT_NAME = 'thiet_bi_nguoi_so_huu_fk');
+SET @sql4 = IF(@fk_exists2 = 0,
+    'ALTER TABLE `thiet_bi` ADD CONSTRAINT `thiet_bi_nguoi_so_huu_fk` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung`(`id`) ON DELETE CASCADE',
+    'SELECT "FK thiet_bi_nguoi_so_huu_fk already exists" AS message');
+PREPARE stmt4 FROM @sql4; EXECUTE stmt4; DEALLOCATE PREPARE stmt4;
 
--- 6. Assign existing items to the admin user
-UPDATE `thiet_bi` SET `nguoi_so_huu_id` = (SELECT `id` FROM `nguoi_dung` WHERE `vai_tro` = 'admin' LIMIT 1);
-UPDATE `rules` SET `nguoi_so_huu_id` = (SELECT `id` FROM `nguoi_dung` WHERE `vai_tro` = 'admin' LIMIT 1);
-UPDATE `scheduled_rules` SET `nguoi_so_huu_id` = (SELECT `id` FROM `nguoi_dung` WHERE `vai_tro` = 'admin' LIMIT 1);
+-- 4. Alter rules — add nguoi_so_huu_id if not exists
+SET @col_exists3 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'rules' AND COLUMN_NAME = 'nguoi_so_huu_id');
+SET @sql5 = IF(@col_exists3 = 0,
+    'ALTER TABLE `rules` ADD COLUMN `nguoi_so_huu_id` INT DEFAULT NULL',
+    'SELECT "Column nguoi_so_huu_id already exists in rules" AS message');
+PREPARE stmt5 FROM @sql5; EXECUTE stmt5; DEALLOCATE PREPARE stmt5;
 
--- Force NOT NULL now that data is patched (optional but good practice, though we can leave it nullable just in case)
+SET @fk_exists3 = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'rules' AND CONSTRAINT_NAME = 'rules_nguoi_so_huu_fk');
+SET @sql6 = IF(@fk_exists3 = 0,
+    'ALTER TABLE `rules` ADD CONSTRAINT `rules_nguoi_so_huu_fk` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung`(`id`) ON DELETE CASCADE',
+    'SELECT "FK rules_nguoi_so_huu_fk already exists" AS message');
+PREPARE stmt6 FROM @sql6; EXECUTE stmt6; DEALLOCATE PREPARE stmt6;
 
--- 7. Index tối ưu trang chi tiết thiết bị (GET /devices/{id}/latest)
--- Chạy một lần; nếu báo duplicate key name thì bỏ qua (đã có index).
-ALTER TABLE `du_lieu_thiet_bi` ADD INDEX `idx_thiet_bi_khoa_time` (`thiet_bi_id`, `khoa`, `thoi_gian`);
+-- 5. Alter scheduled_rules — add nguoi_so_huu_id if not exists
+SET @col_exists4 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'scheduled_rules' AND COLUMN_NAME = 'nguoi_so_huu_id');
+SET @sql7 = IF(@col_exists4 = 0,
+    'ALTER TABLE `scheduled_rules` ADD COLUMN `nguoi_so_huu_id` INT DEFAULT NULL',
+    'SELECT "Column nguoi_so_huu_id already exists in scheduled_rules" AS message');
+PREPARE stmt7 FROM @sql7; EXECUTE stmt7; DEALLOCATE PREPARE stmt7;
+
+SET @fk_exists4 = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'scheduled_rules' AND CONSTRAINT_NAME = 'scheduled_rules_nguoi_so_huu_fk');
+SET @sql8 = IF(@fk_exists4 = 0,
+    'ALTER TABLE `scheduled_rules` ADD CONSTRAINT `scheduled_rules_nguoi_so_huu_fk` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung`(`id`) ON DELETE CASCADE',
+    'SELECT "FK scheduled_rules_nguoi_so_huu_fk already exists" AS message');
+PREPARE stmt8 FROM @sql8; EXECUTE stmt8; DEALLOCATE PREPARE stmt8;
+
+-- 6. Assign existing items to admin user
+UPDATE `thiet_bi` SET `nguoi_so_huu_id` = (SELECT `id` FROM `nguoi_dung` WHERE `vai_tro` = 'admin' LIMIT 1) WHERE `nguoi_so_huu_id` IS NULL;
+UPDATE `rules` SET `nguoi_so_huu_id` = (SELECT `id` FROM `nguoi_dung` WHERE `vai_tro` = 'admin' LIMIT 1) WHERE `nguoi_so_huu_id` IS NULL;
+UPDATE `scheduled_rules` SET `nguoi_so_huu_id` = (SELECT `id` FROM `nguoi_dung` WHERE `vai_tro` = 'admin' LIMIT 1) WHERE `nguoi_so_huu_id` IS NULL;
+
+-- 7. Index tối ưu trang chi tiết thiết bị
+SET @idx_exists = (SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'du_lieu_thiet_bi' AND INDEX_NAME = 'idx_thiet_bi_khoa_time');
+SET @sql9 = IF(@idx_exists = 0,
+    'ALTER TABLE `du_lieu_thiet_bi` ADD INDEX `idx_thiet_bi_khoa_time` (`thiet_bi_id`, `khoa`, `thoi_gian`)',
+    'SELECT "Index idx_thiet_bi_khoa_time already exists" AS message');
+PREPARE stmt9 FROM @sql9; EXECUTE stmt9; DEALLOCATE PREPARE stmt9;
+
+SELECT 'Migration migration.sql completed' AS status;
