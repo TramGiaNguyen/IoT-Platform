@@ -488,16 +488,37 @@ def insert_command(rule_id, action, payload):
 
 
 # -------------------------------------------------
-# MQTT Publisher
+# MQTT Publisher with retry logic
 # -------------------------------------------------
-mqtt_client = mqtt.Client()
-# Set authentication credentials
 mqtt_username = os.getenv("MQTT_USERNAME", "bdu_admin")
 mqtt_password = os.getenv("MQTT_PASSWORD", "admin_secret")
+
+mqtt_client = mqtt.Client()
 mqtt_client.username_pw_set(mqtt_username, mqtt_password)
-mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
-mqtt_client.loop_start()
-logging.info(f"[MQTT] Connected to {MQTT_BROKER}:{MQTT_PORT} as {mqtt_username}")
+
+# Retry MQTT connection
+mqtt_max_retries = 20
+mqtt_retry_delay = 5  # seconds
+mqtt_connected = False
+
+for i in range(mqtt_max_retries):
+    try:
+        logging.info(f"[MQTT] Attempting connection to {MQTT_BROKER}:{MQTT_PORT} (attempt {i+1}/{mqtt_max_retries})...")
+        mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        mqtt_client.loop_start()
+        logging.info(f"[MQTT] Connected to {MQTT_BROKER}:{MQTT_PORT} as {mqtt_username}")
+        mqtt_connected = True
+        break
+    except Exception as e:
+        if i < mqtt_max_retries - 1:
+            logging.warning(f"[MQTT] Connection failed, retrying in {mqtt_retry_delay}s... Error: {e}")
+            time.sleep(mqtt_retry_delay)
+        else:
+            logging.error(f"[MQTT] Failed to connect after {mqtt_max_retries} attempts: {e}")
+            raise
+
+if not mqtt_connected:
+    raise Exception("MQTT connection not established")
 
 
 def publish_command(cmd):
