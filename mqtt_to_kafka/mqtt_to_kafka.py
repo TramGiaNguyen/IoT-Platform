@@ -139,9 +139,10 @@ def on_disconnect(client, userdata, *args, **kwargs):
     rc = args[1] if len(args) > 1 else (args[0] if args else None)
     print(f"⚠️ MQTT disconnected with result code {rc}", flush=True)
 
-# MQTT setup
+# MQTT setup with retry logic
 print(f"🔌 Connecting to MQTT broker: {MQTT_BROKER}:{MQTT_PORT}", flush=True)
 sys.stdout.flush()
+
 # Sử dụng CallbackAPIVersion.VERSION2 để tránh deprecated warning
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv311)
 client.on_connect = on_connect
@@ -153,22 +154,47 @@ if MQTT_USERNAME and MQTT_PASSWORD:
     print(f"🔐 Using MQTT authentication (username: {MQTT_USERNAME})", flush=True)
     client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
+# Retry MQTT connection
+mqtt_max_retries = 20
+mqtt_retry_delay = 5  # seconds
+mqtt_connected = False
+
+for i in range(mqtt_max_retries):
+    try:
+        print(f"🔗 Attempting MQTT connection (attempt {i+1}/{mqtt_max_retries})...", flush=True)
+        sys.stdout.flush()
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        print(f"✅ MQTT connection initiated, starting loop...", flush=True)
+        sys.stdout.flush()
+        mqtt_connected = True
+        break
+    except Exception as e:
+        if i < mqtt_max_retries - 1:
+            print(f"⏳ MQTT connection failed, retrying in {mqtt_retry_delay}s... Error: {e}", flush=True)
+            sys.stdout.flush()
+            time.sleep(mqtt_retry_delay)
+        else:
+            print(f"❌ Failed to connect to MQTT after {mqtt_max_retries} attempts: {e}", flush=True)
+            sys.stdout.flush()
+            import traceback
+            traceback.print_exc()
+            raise
+
+if not mqtt_connected:
+    raise Exception("MQTT connection not established")
+
+# Sử dụng loop_start() thay vì loop_forever() để không block
+client.loop_start()
+
+# Keep the script running
+print("🚀 MQTT to Kafka bridge running...", flush=True)
+sys.stdout.flush()
+
 try:
-    print(f"🔗 Calling client.connect()...", flush=True)
-    sys.stdout.flush()
-    client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    print(f"✅ MQTT connection initiated, starting loop...", flush=True)
-    sys.stdout.flush()
-    # Sử dụng loop_start() thay vì loop_forever() để không block
-    client.loop_start()
-    
-    # Keep the script running
-    print("🚀 MQTT to Kafka bridge running...", flush=True)
-    sys.stdout.flush()
     while True:
         time.sleep(1)
-except Exception as e:
-    print(f"❌ Failed to connect to MQTT: {e}", flush=True)
-    sys.stdout.flush()
-    import traceback
-    traceback.print_exc()
+except KeyboardInterrupt:
+    print("🛑 Shutting down gracefully...", flush=True)
+    client.loop_stop()
+    client.disconnect()
+    producer.close()

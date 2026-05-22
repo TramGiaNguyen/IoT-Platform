@@ -21,6 +21,12 @@ services:
         condition: service_healthy
     volumes:
       - mqtt-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/1883' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
@@ -163,7 +169,7 @@ services:
       - MYSQL_DATABASE=iot_data
     depends_on:
       mqtt:
-        condition: service_started
+        condition: service_healthy
       kafka:
         condition: service_healthy
       mysql:
@@ -248,8 +254,10 @@ services:
       - "8100:8000"
     depends_on:
       mqtt:
-        condition: service_started
+        condition: service_healthy
       mongodb:
+        condition: service_healthy
+      mysql:
         condition: service_healthy
     environment:
       - TZ=Asia/Ho_Chi_Minh
@@ -263,7 +271,8 @@ services:
       - MQTT_USERNAME=device_simulator
       - MQTT_PASSWORD=simulator_secret
     depends_on:
-      - mqtt
+      mqtt:
+        condition: service_healthy
     restart: unless-stopped
 
   coap-adapter:
@@ -304,7 +313,9 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
     depends_on:
       mqtt:
-        condition: service_started
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
       mysql:
         condition: service_healthy
       device-control:
