@@ -1,10 +1,11 @@
 -- Migration: Add camera and occupancy support for rooms
--- Run this AFTER the base schema (data.sql) is loaded
+-- Idempotent: safe to run multiple times
+-- phong_camera: already created in data.sql
+-- phong_occupancy: already created in data.sql
 
--- ============================================================
--- Table: phong_camera
--- Stores camera configuration per room (multiple cameras)
--- ============================================================
+USE iot_data;
+
+-- Ensure phong_camera exists (data.sql creates it, but IF NOT EXISTS makes this safe)
 CREATE TABLE IF NOT EXISTS `phong_camera` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `phong_id` INT NOT NULL,
@@ -22,18 +23,15 @@ CREATE TABLE IF NOT EXISTS `phong_camera` (
   CONSTRAINT `fk_camera_phong` FOREIGN KEY (`phong_id`) REFERENCES `phong` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- Table: phong_occupancy
--- Stores real-time and historical people count per room/camera
--- ============================================================
+-- Ensure phong_occupancy exists (data.sql creates it)
 CREATE TABLE IF NOT EXISTS `phong_occupancy` (
   `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
   `phong_id` INT NOT NULL,
-  `phong_camera_id` INT DEFAULT NULL COMMENT 'Camera that provided the count (NULL = aggregated)',
-  `so_nguoi` INT NOT NULL DEFAULT 0 COMMENT 'Number of people detected',
-  `count_type` ENUM('camera', 'room_total') NOT NULL DEFAULT 'camera' COMMENT 'camera-level or room-level aggregated',
+  `phong_camera_id` INT DEFAULT NULL,
+  `so_nguoi` INT NOT NULL DEFAULT 0,
+  `count_type` ENUM('camera', 'room_total') NOT NULL DEFAULT 'camera',
   `cap_nhat_luc` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `nguon` VARCHAR(50) DEFAULT 'ai_analyst' COMMENT 'Source of the count: ai_analyst, manual, ...',
+  `nguon` VARCHAR(50) DEFAULT 'ai_analyst',
   UNIQUE KEY `uk_occupancy_key` (`phong_id`, `phong_camera_id`, `count_type`),
   KEY `idx_occupancy_phong` (`phong_id`),
   KEY `idx_occupancy_time` (`cap_nhat_luc`),
@@ -41,8 +39,4 @@ CREATE TABLE IF NOT EXISTS `phong_occupancy` (
   CONSTRAINT `fk_occ_camera` FOREIGN KEY (`phong_camera_id`) REFERENCES `phong_camera` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ============================================================
--- NOTE: MySQL 5.7 does not support CREATE TRIGGER IF NOT EXISTS.
--- Aggregation (camera -> room_total) is handled in FastAPI
--- when POST /internal/ai/occupancy is called.
--- ============================================================
+SELECT 'Migration add_camera_and_occupancy completed' AS status;
