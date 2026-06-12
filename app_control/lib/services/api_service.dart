@@ -16,7 +16,7 @@ class ApiService {
 
   // Login
   Future<Map<String, dynamic>> login(String username, String password) async {
-    final uri = Uri.parse('$baseUrl/auth/login');
+    final uri = Uri.parse('$baseUrl/login');
     try {
       final response = await http
           .post(
@@ -35,21 +35,45 @@ class ApiService {
 
         // Lưu token vào secure storage
         await storage.write(key: 'auth_token', value: _token);
-        await storage.write(
-          key: 'user_info',
-          value: jsonEncode(data['user_info']),
-        );
+        await storage.write(key: 'user_info', value: jsonEncode({
+          'vai_tro': data['vai_tro'],
+          'allowed_pages': data['allowed_pages'],
+        }));
 
         return data;
       }
 
+      if (response.statusCode == 401) {
+        try {
+          final error = jsonDecode(response.body);
+          final msg = error['detail']?.toString();
+          if (msg != null && msg.isNotEmpty) {
+            throw Exception(msg);
+          }
+        } catch (_) {}
+        throw Exception('Sai tên đăng nhập hoặc mật khẩu');
+      }
+
+      if (response.statusCode == 422) {
+        try {
+          final error = jsonDecode(response.body);
+          final msgs = error['detail'];
+          if (msgs is List && msgs.isNotEmpty) {
+            throw Exception(msgs.first.toString());
+          }
+          if (msgs is String && msgs.isNotEmpty) {
+            throw Exception(msgs);
+          }
+        } catch (_) {}
+        throw Exception('Dữ liệu không hợp lệ (HTTP 422)');
+      }
+
       try {
         final error = jsonDecode(response.body);
-        throw Exception(error['detail'] ?? 'Đăng nhập thất bại');
-      } catch (_) {
-        throw Exception(
-          'Đăng nhập thất bại (HTTP ${response.statusCode}): ${response.body}',
-        );
+        throw Exception(error['detail'] ?? 'Đăng nhập thất bại (HTTP ${response.statusCode})');
+      } catch (e) {
+        if (e.toString().startsWith('Exception: ')) rethrow;
+        throw Exception('Đăng nhập thất bại (HTTP ${response.statusCode})');
       }
     } on SocketException catch (e) {
       throw Exception(

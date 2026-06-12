@@ -461,3 +461,11 @@ export const deleteClass = (classId, token) =>
   axios.delete(`${API_BASE}/classes/${classId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+
+// =========================================================
+// Auth APIs
+// =========================================================
+export const fetchMe = (token) =>
+  axios.get(`${API_BASE}/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });

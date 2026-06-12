@@ -1,5 +1,22 @@
 import 'control_type.dart';
 
+enum SyncStatus {
+  synced,
+  pending,
+  failed;
+
+  static SyncStatus fromString(String? value) {
+    switch (value?.toLowerCase()) {
+      case 'pending':
+        return SyncStatus.pending;
+      case 'failed':
+        return SyncStatus.failed;
+      default:
+        return SyncStatus.synced;
+    }
+  }
+}
+
 class Device {
   final String deviceId;
   final String name;
@@ -109,9 +126,17 @@ class Device {
 class Control {
   final int relay;
   final String name;
-  final String state;
+  final String state; // reportedState -- gia tri tu telemetry gateway
   final bool controllable;
   final ControlType controlType;
+  /// Gia tri dang cho xac nhan (VD: "ON" sau khi user bat nut)
+  final String? targetValue;
+  /// Trang thai dong bo hoa
+  final SyncStatus syncStatus;
+  /// Thoi diem nut duoc bam (dung de tinh timeout)
+  final DateTime? pendingAt;
+  /// So giay cho phep cho pending (mac dinh 10s)
+  final int pendingTimeoutSecs;
 
   Control({
     required this.relay,
@@ -119,20 +144,64 @@ class Control {
     required this.state,
     this.controllable = true,
     this.controlType = ControlType.onOff,
+    this.targetValue,
+    this.syncStatus = SyncStatus.synced,
+    this.pendingAt,
+    this.pendingTimeoutSecs = 10,
   });
 
   factory Control.fromJson(Map<String, dynamic> json) {
+    DateTime? parsePendingAt(dynamic value) {
+      if (value == null) return null;
+      if (value is String) {
+        try {
+          return DateTime.parse(value);
+        } catch (_) {
+          return null;
+        }
+      }
+      if (value is int || value is double) {
+        try {
+          return DateTime.fromMillisecondsSinceEpoch((value as num).toInt());
+        } catch (_) {
+          return null;
+        }
+      }
+      return null;
+    }
+
     return Control(
       relay: json['relay'] as int,
       name: json['name'] as String,
       state: json['state'] as String,
       controllable: json['controllable'] as bool? ?? true,
       controlType: ControlType.fromString(json['control_type'] as String?),
+      targetValue: json['target_value'] as String?,
+      syncStatus: SyncStatus.fromString(json['sync_status'] as String?),
+      pendingAt: parsePendingAt(json['pending_at']),
+      pendingTimeoutSecs: json['pending_timeout_secs'] as int? ?? 10,
     );
   }
 
-  bool get isOn => state.toUpperCase() == 'ON';
-  bool get isPress => state.toUpperCase() == 'PRESS';
+  /// Co pending command hay khong
+  bool get isPending => pendingAt != null && targetValue != null;
+
+  /// Gia tri thuc te (reportedState) -- dung cho logic isOn
+  String get actualState => state;
+
+  /// Gia tri de hien thi tren UI
+  String get displayState {
+    if (isPending) return '$targetValue pending';
+    return stateDisplay;
+  }
+
+  /// Co bi timeout chua
+  bool get isTimedOut =>
+      isPending &&
+      DateTime.now().difference(pendingAt!).inSeconds >= pendingTimeoutSecs;
+
+  bool get isOn => actualState.toUpperCase() == 'ON';
+  bool get isPress => actualState.toUpperCase() == 'PRESS';
 
   String get stateDisplay {
     switch (controlType) {
@@ -146,12 +215,32 @@ class Control {
     }
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'relay': relay,
+      'name': name,
+      'state': state,
+      'controllable': controllable,
+      'control_type': controlType.name,
+      'target_value': targetValue,
+      'sync_status': syncStatus.name,
+      'pending_at': pendingAt?.millisecondsSinceEpoch,
+      'pending_timeout_secs': pendingTimeoutSecs,
+    };
+  }
+
   Control copyWith({
     int? relay,
     String? name,
     String? state,
     bool? controllable,
     ControlType? controlType,
+    String? targetValue,
+    SyncStatus? syncStatus,
+    DateTime? pendingAt,
+    int? pendingTimeoutSecs,
+    // Dung de xoa pending: truyen explicit null
+    bool clearPending = false,
   }) {
     return Control(
       relay: relay ?? this.relay,
@@ -159,6 +248,10 @@ class Control {
       state: state ?? this.state,
       controllable: controllable ?? this.controllable,
       controlType: controlType ?? this.controlType,
+      targetValue: clearPending ? null : (targetValue ?? this.targetValue),
+      syncStatus: clearPending ? SyncStatus.synced : (syncStatus ?? this.syncStatus),
+      pendingAt: clearPending ? null : (pendingAt ?? this.pendingAt),
+      pendingTimeoutSecs: pendingTimeoutSecs ?? this.pendingTimeoutSecs,
     );
   }
 }

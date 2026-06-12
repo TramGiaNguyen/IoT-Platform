@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/device.dart';
 import '../models/control_type.dart';
@@ -7,6 +8,8 @@ class RelayControlWidget extends StatefulWidget {
   final String deviceId;
   final Function(String deviceId, int relay, String state) onControl;
   final Function(int relay, ControlType newType)? onChangeControlType;
+  /// Callback khi pending timeout (het thoi gian cho ma chua co confirm)
+  final Function(String deviceId, int relay)? onPendingTimeout;
 
   const RelayControlWidget({
     Key? key,
@@ -14,6 +17,7 @@ class RelayControlWidget extends StatefulWidget {
     required this.deviceId,
     required this.onControl,
     this.onChangeControlType,
+    this.onPendingTimeout,
   }) : super(key: key);
 
   @override
@@ -22,6 +26,44 @@ class RelayControlWidget extends StatefulWidget {
 
 class _RelayControlWidgetState extends State<RelayControlWidget> {
   bool _isLoading = false;
+  Timer? _pendingTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startPendingTimerIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant RelayControlWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Neu pending state thay doi -> restart timer
+    if (widget.control.isPending != oldWidget.control.isPending ||
+        widget.control.pendingAt != oldWidget.control.pendingAt) {
+      _pendingTimer?.cancel();
+      _pendingTimer = null;
+      _startPendingTimerIfNeeded();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pendingTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startPendingTimerIfNeeded() {
+    if (!widget.control.isPending) return;
+    _pendingTimer?.cancel();
+    _pendingTimer = Timer(
+      Duration(seconds: widget.control.pendingTimeoutSecs),
+      () {
+        if (mounted && widget.control.isPending) {
+          widget.onPendingTimeout?.call(widget.deviceId, widget.control.relay);
+        }
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,18 +80,28 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
 
   // ON/OFF Toggle (default)
   Widget _buildOnOffToggle() {
-    final isOn = widget.control.isOn;
+    final isOn = widget.control.actualState.toUpperCase() == 'ON';
+    final syncStatus = widget.control.syncStatus;
     final relayColor = _getColorForRelay(widget.control.name);
+    final pendingColor = const Color(0xFFF59E0B);
+    final failedColor = const Color(0xFFBA1A1A);
+
+    final isPending = syncStatus == SyncStatus.pending;
+    final isFailed = syncStatus == SyncStatus.failed;
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: isOn
-              ? const Color(0xFF006a6a).withOpacity(0.3)
-              : const Color(0xFFC0C7CD).withOpacity(0.15),
-          width: 1,
+          color: isFailed
+              ? failedColor.withOpacity(0.6)
+              : (isPending
+                  ? pendingColor.withOpacity(0.6)
+                  : (isOn
+                      ? const Color(0xFF006a6a).withOpacity(0.3)
+                      : const Color(0xFFC0C7CD).withOpacity(0.15))),
+          width: (isPending || isFailed) ? 2 : 1,
         ),
         boxShadow: const [
           BoxShadow(
@@ -63,7 +115,7 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(24),
         child: InkWell(
-          onTap: widget.control.controllable && !_isLoading ? _handleTap : null,
+          onTap: widget.control.controllable && !_isLoading && !isPending ? _handleTap : null,
           onLongPress: _showChangeTypeMenu,
           borderRadius: BorderRadius.circular(24),
           child: Padding(
@@ -79,9 +131,15 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Icon(
-                    _getIconForRelay(widget.control.name),
+                    isFailed
+                        ? Icons.error_outline
+                        : _getIconForRelay(widget.control.name),
                     size: 32,
-                    color: isOn ? relayColor : const Color(0xFF40484C),
+                    color: isFailed
+                        ? failedColor
+                        : (isPending
+                            ? pendingColor
+                            : (isOn ? relayColor : const Color(0xFF40484C))),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -101,35 +159,64 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: isOn
-                        ? const Color(0xFF90EFEF).withOpacity(0.3)
-                        : const Color(0xFFE0E3E5),
+                    color: isFailed
+                        ? failedColor.withOpacity(0.1)
+                        : (isPending
+                            ? pendingColor.withOpacity(0.15)
+                            : (isOn
+                                ? const Color(0xFF90EFEF).withOpacity(0.3)
+                                : const Color(0xFFE0E3E5))),
                     borderRadius: BorderRadius.circular(9999),
+                    border: (isPending || isFailed)
+                        ? Border.all(
+                            color: (isFailed ? failedColor : pendingColor)
+                                .withOpacity(0.5),
+                            width: 1)
+                        : null,
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: isOn
-                              ? const Color(0xFF006a6a)
-                              : const Color(0xFF71787D),
-                          shape: BoxShape.circle,
+                      if (isPending) ...[
+                        SizedBox(
+                          width: 8,
+                          height: 8,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            color: pendingColor,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
+                        const SizedBox(width: 6),
+                      ] else if (isFailed) ...[
+                        Icon(Icons.warning_amber, size: 10, color: failedColor),
+                        const SizedBox(width: 4),
+                      ] else ...[
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: isOn
+                                ? const Color(0xFF006a6a)
+                                : const Color(0xFF71787D),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
                       Text(
-                        widget.control.stateDisplay,
+                        _getSyncBadgeLabel(),
                         style: TextStyle(
                           fontFamily: 'Inter',
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 0.3,
-                          color: isOn
-                              ? const Color(0xFF006e6e)
-                              : const Color(0xFF40484C),
+                          color: isFailed
+                              ? failedColor
+                              : (isPending
+                                  ? pendingColor
+                                  : (isOn
+                                      ? const Color(0xFF006e6e)
+                                      : const Color(0xFF40484C))),
                         ),
                       ),
                     ],
@@ -142,19 +229,31 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
                     height: 36,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                          colors: isOn
-                              ? [const Color(0xFF006a6a), const Color(0xFF004D56)]
-                              : [const Color(0xFF003345), const Color(0xFF004B63)],
-                        ),
+                        gradient: isFailed
+                            ? LinearGradient(
+                                colors: [failedColor, failedColor.withOpacity(0.8)],
+                              )
+                            : (isPending
+                                ? LinearGradient(
+                                    colors: [pendingColor, pendingColor.withOpacity(0.8)],
+                                  )
+                                : LinearGradient(
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                    colors: isOn
+                                        ? [const Color(0xFF006a6a), const Color(0xFF004D56)]
+                                        : [const Color(0xFF003345), const Color(0xFF004B63)],
+                                  )),
                         borderRadius: BorderRadius.circular(9999),
                         boxShadow: [
                           BoxShadow(
-                            color: (isOn
-                                    ? const Color(0xFF006a6a)
-                                    : const Color(0xFF003345))
+                            color: (isFailed
+                                    ? failedColor
+                                    : (isPending
+                                        ? pendingColor
+                                        : (isOn
+                                            ? const Color(0xFF006a6a)
+                                            : const Color(0xFF003345))))
                                 .withOpacity(0.25),
                             blurRadius: 12,
                             offset: const Offset(0, 4),
@@ -162,7 +261,7 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
                         ],
                       ),
                       child: ElevatedButton(
-                        onPressed: !_isLoading ? _handleTap : null,
+                        onPressed: !_isLoading && !isPending && !isFailed ? _handleTap : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           foregroundColor: Colors.white,
@@ -187,7 +286,7 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
                             : FittedBox(
                                 fit: BoxFit.scaleDown,
                                 child: Text(
-                                  isOn ? 'TAT DIEN' : 'BAT DIEN',
+                                  _getButtonLabel(),
                                   maxLines: 1,
                                   style: const TextStyle(
                                     fontFamily: 'Manrope',
@@ -222,20 +321,30 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
 
   // Three-way toggle (LOW, MED, HIGH)
   Widget _buildThreeWayToggle() {
-    final state = widget.control.state;
+    final state = widget.control.actualState;
+    final syncStatus = widget.control.syncStatus;
+    final pendingTarget = widget.control.targetValue;
     final relayColor = _getColorForRelay(widget.control.name);
+    final pendingColor = const Color(0xFFF59E0B);
+    final failedColor = const Color(0xFFBA1A1A);
     final states = ['LOW', 'MED', 'HIGH'];
     final stateColors = {
       'LOW': const Color(0xFFF59E0B),   // Amber
       'MED': const Color(0xFF0EA5E9),   // Blue
-      'HIGH': const Color(0xFF22C55E),   // Green
+      'HIGH': const Color(0xFF22C55E),  // Green
     };
+    final isPending = syncStatus == SyncStatus.pending;
+    final isFailed = syncStatus == SyncStatus.failed;
+    final effectiveColor = isFailed ? failedColor : (isPending ? pendingColor : relayColor);
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: relayColor.withOpacity(0.3), width: 1),
+        border: Border.all(
+          color: effectiveColor.withOpacity(isPending || isFailed ? 0.6 : 0.3),
+          width: isPending || isFailed ? 2 : 1,
+        ),
         boxShadow: const [BoxShadow(color: Color(0x0F1C1E10), blurRadius: 32, offset: Offset(0, 8))],
       ),
       child: Material(
@@ -251,19 +360,51 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: relayColor.withOpacity(0.1), borderRadius: BorderRadius.circular(16)),
-                  child: Icon(_getIconForRelay(widget.control.name), size: 32, color: relayColor),
+                  decoration: BoxDecoration(
+                    color: effectiveColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    isFailed ? Icons.error_outline : _getIconForRelay(widget.control.name),
+                    size: 32,
+                    color: effectiveColor,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(widget.control.name, style: const TextStyle(fontFamily: 'Manrope', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF003345)), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: relayColor.withOpacity(0.2), borderRadius: BorderRadius.circular(9999)),
-                  child: Text(state.isEmpty ? 'OFF' : state, style: TextStyle(fontFamily: 'Inter', fontSize: 11, fontWeight: FontWeight.w600, color: relayColor)),
+                  decoration: BoxDecoration(
+                    color: effectiveColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(9999),
+                    border: (isPending || isFailed) ? Border.all(color: effectiveColor.withOpacity(0.4), width: 1) : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isPending) ...[
+                        SizedBox(
+                          width: 8,
+                          height: 8,
+                          child: CircularProgressIndicator(strokeWidth: 1.5, color: pendingColor),
+                        ),
+                        const SizedBox(width: 4),
+                      ] else if (isFailed) ...[
+                        Icon(Icons.warning_amber, size: 10, color: failedColor),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(
+                        isFailed
+                            ? 'Loi'
+                            : (isPending ? 'Dang $pendingTarget...' : (state.isEmpty ? 'OFF' : state)),
+                        style: TextStyle(fontFamily: 'Inter', fontSize: 11, fontWeight: FontWeight.w600, color: effectiveColor),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 8),
-                ...states.map((s) => _buildThreeWayButton(s, state, stateColors[s]!, relayColor)),
+                ...states.map((s) => _buildThreeWayButton(s, state, stateColors[s]!, relayColor, isPending, isFailed)),
               ],
             ),
           ),
@@ -272,22 +413,31 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
     );
   }
 
-  Widget _buildThreeWayButton(String level, String currentState, Color levelColor, Color baseColor) {
+  Widget _buildThreeWayButton(String level, String currentState, Color levelColor, Color baseColor, bool isPending, bool isFailed) {
     final isActive = currentState == level;
+    // Chi highlight active level neu khong pending/failed
+    final isHighlighted = !isPending && !isFailed && isActive;
     return GestureDetector(
-      onTap: widget.control.controllable && !_isLoading ? () => _handleThreeWayTap(level) : null,
+      onTap: widget.control.controllable && !_isLoading && !isPending && !isFailed ? () => _handleThreeWayTap(level) : null,
       child: Container(
         width: double.infinity,
         height: 32,
         margin: const EdgeInsets.only(bottom: 4),
         decoration: BoxDecoration(
-          gradient: isActive ? LinearGradient(colors: [levelColor, levelColor.withOpacity(0.8)]) : null,
-          color: isActive ? null : const Color(0xFFF1F5F9),
+          gradient: isHighlighted ? LinearGradient(colors: [levelColor, levelColor.withOpacity(0.8)]) : null,
+          color: isHighlighted ? null : const Color(0xFFF1F5F9),
           borderRadius: BorderRadius.circular(9999),
-          border: Border.all(color: isActive ? levelColor : const Color(0xFFE2E8F0), width: 1),
+          border: Border.all(color: isHighlighted ? levelColor : const Color(0xFFE2E8F0), width: 1),
         ),
         child: Center(
-          child: Text(isActive ? 'DANG $level' : level, style: TextStyle(fontFamily: 'Manrope', fontSize: 11, fontWeight: FontWeight.w700, color: isActive ? Colors.white : const Color(0xFF64748B))),
+          child: Text(
+            isFailed
+                ? 'LOI'
+                : (isPending
+                    ? 'DOI...'
+                    : (isActive ? 'DANG $level' : level)),
+            style: TextStyle(fontFamily: 'Manrope', fontSize: 11, fontWeight: FontWeight.w700, color: isHighlighted ? Colors.white : const Color(0xFF64748B)),
+          ),
         ),
       ),
     );
@@ -298,11 +448,7 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
     setState(() => _isLoading = true);
     try {
       await widget.onControl(widget.deviceId, widget.control.relay, level);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Da chuyen $level ${widget.control.name}'), backgroundColor: const Color(0xFF006a6a), duration: const Duration(seconds: 1)),
-        );
-      }
+      // Snackbars xu ly o parent (confirm/error)
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -317,13 +463,22 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
   // Momentary button
   Widget _buildMomentaryButton() {
     final relayColor = _getColorForRelay(widget.control.name);
-    final isPressed = widget.control.isPress;
+    final isPressed = widget.control.actualState.toUpperCase() == 'PRESS';
+    final syncStatus = widget.control.syncStatus;
+    final pendingColor = const Color(0xFFF59E0B);
+    final failedColor = const Color(0xFFBA1A1A);
+    final isPending = syncStatus == SyncStatus.pending;
+    final isFailed = syncStatus == SyncStatus.failed;
+    final effectiveColor = isFailed ? failedColor : (isPending ? pendingColor : (isPressed ? relayColor : const Color(0xFF40484C)));
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: relayColor.withOpacity(0.3), width: 1),
+        border: Border.all(
+          color: effectiveColor.withOpacity(isPending || isFailed ? 0.6 : 0.3),
+          width: isPending || isFailed ? 2 : 1,
+        ),
         boxShadow: const [BoxShadow(color: Color(0x0F1C1E10), blurRadius: 32, offset: Offset(0, 8))],
       ),
       child: Material(
@@ -332,7 +487,7 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
         child: GestureDetector(
           onLongPress: _showChangeTypeMenu,
           child: InkWell(
-            onTap: widget.control.controllable && !_isLoading ? _handleMomentaryTap : null,
+            onTap: widget.control.controllable && !_isLoading && !isPending && !isFailed ? _handleMomentaryTap : null,
             borderRadius: BorderRadius.circular(24),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
@@ -342,16 +497,34 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: relayColor.withOpacity(0.1), borderRadius: BorderRadius.circular(16)),
-                  child: Icon(isPressed ? Icons.notifications_active : Icons.notifications_outlined, size: 32, color: isPressed ? relayColor : const Color(0xFF40484C)),
+                  decoration: BoxDecoration(
+                    color: effectiveColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    isFailed
+                        ? Icons.error_outline
+                        : (isPending ? Icons.hourglass_empty : (isPressed ? Icons.notifications_active : Icons.notifications_outlined)),
+                    size: 32,
+                    color: effectiveColor,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(widget.control.name, style: const TextStyle(fontFamily: 'Manrope', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF003345)), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: isPressed ? relayColor.withOpacity(0.2) : const Color(0xFFE0E3E5), borderRadius: BorderRadius.circular(9999)),
-                  child: Text(widget.control.stateDisplay, style: TextStyle(fontFamily: 'Inter', fontSize: 11, fontWeight: FontWeight.w600, color: isPressed ? relayColor : const Color(0xFF40484C))),
+                  decoration: BoxDecoration(
+                    color: effectiveColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(9999),
+                    border: (isPending || isFailed) ? Border.all(color: effectiveColor.withOpacity(0.4), width: 1) : null,
+                  ),
+                  child: Text(
+                    isFailed
+                        ? 'Loi'
+                        : (isPending ? '${widget.control.targetValue} doi...' : widget.control.stateDisplay),
+                    style: TextStyle(fontFamily: 'Inter', fontSize: 11, fontWeight: FontWeight.w600, color: effectiveColor),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 SizedBox(
@@ -359,16 +532,24 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
                   height: 36,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: isPressed ? [relayColor, relayColor.withOpacity(0.8)] : [const Color(0xFF003345), const Color(0xFF004B63)]),
+                      gradient: isFailed
+                          ? LinearGradient(colors: [failedColor, failedColor.withOpacity(0.8)])
+                          : (isPending
+                              ? LinearGradient(colors: [pendingColor, pendingColor.withOpacity(0.8)])
+                              : LinearGradient(colors: isPressed ? [relayColor, relayColor.withOpacity(0.8)] : [const Color(0xFF003345), const Color(0xFF004B63)])),
                       borderRadius: BorderRadius.circular(9999),
-                      boxShadow: [BoxShadow(color: (isPressed ? relayColor : const Color(0xFF003345)).withOpacity(0.25), blurRadius: 12, offset: const Offset(0, 4))],
+                      boxShadow: [BoxShadow(color: effectiveColor.withOpacity(0.25), blurRadius: 12, offset: const Offset(0, 4))],
                     ),
                     child: ElevatedButton(
-                      onPressed: !_isLoading ? _handleMomentaryTap : null,
+                      onPressed: !_isLoading && !isPending && !isFailed ? _handleMomentaryTap : null,
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.transparent, foregroundColor: Colors.white, shadowColor: Colors.transparent, padding: EdgeInsets.zero, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999))),
                       child: _isLoading
                           ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const FittedBox(fit: BoxFit.scaleDown, child: Text('NHAN', style: TextStyle(fontFamily: 'Manrope', fontSize: 12, fontWeight: FontWeight.w700))),
+                          : FittedBox(fit: BoxFit.scaleDown, child: Text(
+                              isFailed
+                                  ? 'LOI'
+                                  : (isPending ? 'DOI...' : 'NHAN'),
+                              style: const TextStyle(fontFamily: 'Manrope', fontSize: 12, fontWeight: FontWeight.w700))),
                     ),
                   ),
                 ),
@@ -386,11 +567,7 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
     setState(() => _isLoading = true);
     try {
       await widget.onControl(widget.deviceId, widget.control.relay, 'PRESS');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Da kich hoat ${widget.control.name}'), backgroundColor: const Color(0xFF006a6a), duration: const Duration(seconds: 1)),
-        );
-      }
+      // Snackbars xu ly o parent (confirm/error)
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -408,20 +585,13 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
     setState(() => _isLoading = true);
 
     try {
-      final newState = widget.control.isOn ? 'OFF' : 'ON';
+      final newState = widget.control.actualState.toUpperCase() == 'ON' ? 'OFF' : 'ON';
+      // Snackbars se duoc parent (room_detail_screen) xu ly:
+      // - Confirm: khi WebSocket xac nhan
+      // - Error: khi API that bai hoac timeout
       await widget.onControl(widget.deviceId, widget.control.relay, newState);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Da ${newState == 'ON' ? 'bat' : 'tat'} ${widget.control.name}',
-            ),
-            backgroundColor: const Color(0xFF006a6a),
-            duration: const Duration(seconds: 1),
-          ),
-        );
-      }
+      // KHONG reset _isLoading o day -- parent se xu ly optimistic update
+      // va WebSocket se confirm hoac rollback
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -604,5 +774,32 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
       return const Color(0xFF14B8A6); // Teal
     }
     return const Color(0xFF006a6a); // Default secondary
+  }
+
+  String _getSyncBadgeLabel() {
+    switch (widget.control.syncStatus) {
+      case SyncStatus.pending:
+        if (widget.control.targetValue?.toUpperCase() == 'ON') return 'Dang bat...';
+        if (widget.control.targetValue?.toUpperCase() == 'OFF') return 'Dang tat...';
+        if (widget.control.targetValue != null) return 'Dang doi...';
+        return 'Dang doi...';
+      case SyncStatus.failed:
+        return 'Loi';
+      case SyncStatus.synced:
+        return widget.control.stateDisplay;
+    }
+  }
+
+  String _getButtonLabel() {
+    switch (widget.control.syncStatus) {
+      case SyncStatus.pending:
+        if (widget.control.targetValue?.toUpperCase() == 'ON') return 'DANG BAT';
+        if (widget.control.targetValue?.toUpperCase() == 'OFF') return 'DANG TAT';
+        return 'DOI...';
+      case SyncStatus.failed:
+        return 'LOI';
+      case SyncStatus.synced:
+        return widget.control.isOn ? 'TAT DIEN' : 'BAT DIEN';
+    }
   }
 }
