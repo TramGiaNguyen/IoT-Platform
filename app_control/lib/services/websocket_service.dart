@@ -4,7 +4,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class WebSocketService {
-  static const String baseUrl = 'ws://192.168.190.101:8001';
+  static const String baseUrl = 'ws://192.168.69.69:8001';
   
   WebSocketChannel? _channel;
   final _storage = const FlutterSecureStorage();

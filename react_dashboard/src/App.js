@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { fetchDevices, fetchDashboards, refreshToken } from './services';
+import { fetchDevices, fetchDashboards, refreshToken, fetchMe } from './services';
 import Login from './components/Login';
 import ActivityTracker from './components/ActivityTracker';
 import DeviceSetupWizard from './components/DeviceSetupWizard';
@@ -42,13 +42,21 @@ const getTokenTTL = (token) => {
   return payload.exp - Math.floor(Date.now() / 1000);
 };
 
+const isTokenValid = (token) => {
+  const payload = decodeJWT(token);
+  if (!payload || !payload.exp) return false;
+  return payload.exp * 1000 > Date.now();
+};
+
 const REFRESH_BEFORE_SECS = 10 * 60; // refresh when < 10 minutes left
 const PROACTIVE_CHECK_INTERVAL_MS = 60 * 1000; // check every 60s
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('token') || '');
   const [devices, setDevices] = useState([]);
-  const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('token'));
+  const savedToken = localStorage.getItem('token');
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!savedToken && isTokenValid(savedToken));
+  const [authChecked, setAuthChecked] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
   const [userRole, setUserRole] = useState(() => localStorage.getItem('userRole') || '');
@@ -95,7 +103,7 @@ function App() {
 
   // ── Proactive check every 60s (independent of user activity) ─────────────
   useEffect(() => {
-    if (!token || !isLoggedIn) return;
+    if (!authChecked || !token || !isLoggedIn) return;
     const id = setInterval(refreshTokenSilently, PROACTIVE_CHECK_INTERVAL_MS);
     return () => clearInterval(id);
   }, [token, isLoggedIn, refreshTokenSilently]);
@@ -157,6 +165,7 @@ function App() {
   // Load on startup if already logged in — dashboards loaded here; devices/rooms/rules handled by GlobalCache
   // Đăng ký Service Worker ở startup
   useEffect(() => {
+    if (!authChecked) return;
     if (token && isLoggedIn) {
       loadCustomDashboards(token);
     }
@@ -165,7 +174,43 @@ function App() {
         console.warn('[App] SW registration failed:', err);
       });
     }
+  }, [authChecked]);
+
+  // Verify token with backend on every page load / reload / access
+  useEffect(() => {
+    const verifyToken = async () => {
+      const t = localStorage.getItem('token');
+      if (!t) {
+        setAuthChecked(true);
+        return;
+      }
+      if (!isTokenValid(t)) {
+        handleLogout();
+        setAuthChecked(true);
+        return;
+      }
+      try {
+        const res = await fetchMe(t);
+        setIsLoggedIn(true);
+        setAuthChecked(true);
+      } catch (err) {
+        handleLogout();
+        setAuthChecked(true);
+      }
+    };
+    verifyToken();
   }, []);
+
+  if (!authChecked) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#1a1a2e', color: '#fff' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '24px', marginBottom: '12px' }}>BDU IoT Platform</div>
+          <div style={{ color: '#888' }}>Dang kiem tra thong tin...</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isLoggedIn) {
     return <Login setToken={handleLoginSuccess} />;

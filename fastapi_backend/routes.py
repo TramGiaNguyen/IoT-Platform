@@ -529,6 +529,32 @@ def refresh_token(
     raise HTTPException(status_code=401, detail="Invalid refresh credentials")
 
 
+@router.get("/auth/me")
+def get_current_user_info(current_user: str = Depends(get_current_user)):
+    """
+    Trả về thông tin user hiện tại dựa trên JWT token.
+    Dùng để verify token còn hợp lệ hay không khi frontend load lại trang.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, email, ho_ten, vai_tro FROM nguoi_dung WHERE email = %s",
+            (current_user,)
+        )
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        return {
+            "email": user["email"],
+            "ho_ten": user.get("ho_ten"),
+            "vai_tro": user["vai_tro"],
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @router.post("/users/{user_id}/impersonate", response_model=Token)
 def impersonate_user(
     user_id: int,

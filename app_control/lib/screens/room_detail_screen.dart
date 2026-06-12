@@ -73,21 +73,21 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   void _handleWebSocketEvent(Map<String, dynamic> event) {
     final deviceId = event['device_id'] as String?;
     if (deviceId == null || _roomData == null) return;
-    
+
     final deviceIndex = _roomData!.devices.indexWhere(
       (d) => d.deviceId == deviceId,
     );
-    
+
     if (deviceIndex == -1) return;
-    
+
     setState(() {
       final device = _roomData!.devices[deviceIndex];
-      
+
       event.forEach((key, value) {
         if (key == 'device_id' || key == 'timestamp' || key == '_internal_id') {
           return;
         }
-        
+
         if (key.startsWith('relay_') && key.endsWith('_state')) {
           final relayNum = int.tryParse(key.split('_')[1]);
           if (relayNum != null) {
@@ -96,13 +96,34 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
             );
             if (controlIndex != -1) {
               final control = device.controls[controlIndex];
-              device.controls[controlIndex] = Control(
-                relay: control.relay,
-                name: control.name,
-                state: value.toString().toUpperCase(),
-                controllable: control.controllable,
-                controlType: control.controlType,
-              );
+              final newReportedState = value.toString().toUpperCase();
+
+              if (control.isPending && newReportedState == control.targetValue) {
+                // TELEMETRY KHOP TARGET -> CONFIRM, xoa pending
+                device.controls[controlIndex] = control.copyWith(
+                  state: newReportedState,
+                  syncStatus: SyncStatus.synced,
+                  clearPending: true,
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Da ${newReportedState == "ON" ? "bat" : "tat"} ${control.name}'),
+                    backgroundColor: const Color(0xFF006a6a),
+                    duration: const Duration(seconds: 1),
+                  ),
+                );
+              } else if (control.isPending && newReportedState != control.targetValue) {
+                // TELEMETRY CHUA KHOP -> chi cap nhat reportedState, giu pending
+                device.controls[controlIndex] = control.copyWith(
+                  state: newReportedState,
+                );
+                // KHONG hien thi snackbar, khong xoa pending
+              } else {
+                // BINH THUONG: khong co pending -> cap nhat nhu cu
+                device.controls[controlIndex] = device.controls[controlIndex].copyWith(
+                  state: newReportedState,
+                );
+              }
             }
           }
         } else {
@@ -211,6 +232,26 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   }
 
   Future<void> _controlRelay(String deviceId, int relay, String state) async {
+    // 1. OPTIMISTIC UPDATE: cap nhat UI ngay voi pending state
+    setState(() {
+      final deviceIdx = _roomData!.devices.indexWhere((d) => d.deviceId == deviceId);
+      if (deviceIdx != -1) {
+        final device = _roomData!.devices[deviceIdx];
+        final ctrlIdx = device.controls.indexWhere((c) => c.relay == relay);
+        if (ctrlIdx != -1) {
+          final ctrl = device.controls[ctrlIdx];
+          // state giu nguyen (reportedState), chi them pending info
+          device.controls[ctrlIdx] = ctrl.copyWith(
+            targetValue: state,
+            syncStatus: SyncStatus.pending,
+            pendingAt: DateTime.now(),
+            pendingTimeoutSecs: 10,
+          );
+        }
+      }
+    });
+
+    // 2. Gui lenh dieu khien
     try {
       await _apiService.controlRoomRelay(
         roomId: widget.room.id,
@@ -218,12 +259,41 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         relay: relay,
         state: state,
       );
-
-      await Future.delayed(const Duration(seconds: 2));
-      await _loadRoomData(silent: true);
+      // KHONG goi _loadRoomData() nua -- cho WebSocket confirm hoac timeout
     } catch (e) {
+      // Loi -> rollback ngay
+      _rollbackPending(deviceId, relay, timedOut: false);
       rethrow;
     }
+  }
+
+  void _rollbackPending(String deviceId, int relay, {bool timedOut = false}) {
+    setState(() {
+      final deviceIdx = _roomData!.devices.indexWhere((d) => d.deviceId == deviceId);
+      if (deviceIdx != -1) {
+        final device = _roomData!.devices[deviceIdx];
+        final ctrlIdx = device.controls.indexWhere((c) => c.relay == relay);
+        if (ctrlIdx != -1) {
+          final ctrl = device.controls[ctrlIdx];
+          // Xoa pending, giu nguyen reportedState
+          device.controls[ctrlIdx] = ctrl.copyWith(clearPending: true);
+        }
+      }
+    });
+
+    if (timedOut) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Thiet bi khong phan hoi. Vui long thu lai.'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  void _handlePendingTimeout(String deviceId, int relay) {
+    _rollbackPending(deviceId, relay, timedOut: true);
   }
 
   void _changeControlType(Device device, int relay, ControlType type) {
@@ -790,6 +860,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 deviceId: device.deviceId,
                 onControl: _controlRelay,
                 onChangeControlType: (relay, type) => _changeControlType(device, relay, type),
+                onPendingTimeout: _handlePendingTimeout,
               );
             },
           ),
