@@ -8,8 +8,10 @@ import '../models/room_data.dart';
 import '../models/camera.dart';
 
 class ApiService {
-  // Thay YOUR_SERVER_IP bằng IP thực tế của server
-  static const String baseUrl = 'http://192.168.69.69:8001';
+  // Backend FastAPI chạy ở port 8000 trong docker-compose (xem docker-compose.yml
+  // "fastapi-backend: 8000:8000"). Port 8001 là rule-engine, 8100 là ai-analyst,
+  // không phải backend chính và không có /login.
+  static const String baseUrl = 'http://192.168.69.69:8000';
   
   final storage = const FlutterSecureStorage();
   String? _token;
