@@ -5,12 +5,13 @@ import atexit
 from datetime import datetime
 from typing import List
 
-from kafka import KafkaConsumer
+from confluent_kafka import Consumer, KafkaError, KafkaException
 
 
 # Kafka configuration – cần khớp với mqtt_to_kafka & spark_jobs
 KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
 KAFKA_TOPIC = "iot-events"
+KAFKA_GROUP_ID = "fastapi-backend-consumer"
 
 
 # Bộ nhớ tạm đơn giản lưu một số event gần nhất đọc từ Kafka
@@ -112,30 +113,69 @@ def get_latest_events() -> List[dict]:
 
 def consume_kafka_forever() -> None:
     """
-    Vòng lặp Kafka consumer chạy nền.
+    Vòng lặp Kafka consumer chạy nền (dùng confluent-kafka).
 
     - Lắng nghe topic KAFKA_TOPIC.
     - Mỗi message nhận được sẽ parse JSON và đưa vào latest_events.
+    - Có backoff 5s giữa các lần retry để tránh CPU 100% khi broker gặp sự cố.
     """
-    while True:
-        try:
-            consumer = KafkaConsumer(
-                KAFKA_TOPIC,
-                bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-                value_deserializer=lambda v: json.loads(v.decode("utf-8")),
-                auto_offset_reset="latest",
-                enable_auto_commit=True,
-                group_id="fastapi-backend-consumer",
-            )
+    backoff_seconds = 5
+    consumer_conf = {
+        "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
+        "group.id": KAFKA_GROUP_ID,
+        "auto.offset.reset": "latest",
+        "enable.auto.commit": True,
+        "client.id": "fastapi-backend-consumer",
+    }
 
-            for msg in consumer:
-                if msg.value:
-                    _add_event(msg.value)
+    while True:
+        consumer = None
+        try:
+            consumer = Consumer(consumer_conf)
+            consumer.subscribe([KAFKA_TOPIC])
+
+            while True:
+                msg = consumer.poll(timeout=1.0)
+                if msg is None:
+                    # Cứ 5s kiểm tra flush last_seen một lần
+                    _maybe_flush_last_seen()
+                    continue
+                err = msg.error()
+                if err is not None:
+                    if err.code() == KafkaError._PARTITION_EOF:
+                        continue
+                    raise KafkaException(err)
+                value = msg.value()
+                if not value:
+                    continue
+                try:
+                    event = json.loads(value.decode("utf-8"))
+                except Exception as parse_err:
+                    print(f"[FASTAPI-KAFKA] Skip unparseable message: {parse_err}")
+                    continue
+                _add_event(event)
+                _maybe_flush_last_seen()
         except Exception as exc:
-            # Flush pending last_seen updates trước khi retry
             _flush_last_seen_updates()
-            # Trong môi trường demo/log đơn giản in ra console rồi retry
-            print(f"[FASTAPI-KAFKA] Error consuming Kafka: {exc}. Retrying...")
+            print(
+                f"[FASTAPI-KAFKA] Error consuming Kafka: {exc}. "
+                f"Retrying in {backoff_seconds}s..."
+            )
+        finally:
+            # Đảm bảo đóng consumer để tránh leak file descriptor / connection
+            if consumer is not None:
+                try:
+                    consumer.close()
+                except Exception:
+                    pass
+        # Tránh tight loop khi broker lỗi liên tục (CPU 100%)
+        _time_module.sleep(backoff_seconds)
+
+
+def _maybe_flush_last_seen() -> None:
+    """Flush nếu đã đến flush interval – tránh chạy trong lock event."""
+    if _time_module.time() - _last_flush_ts >= _FLUSH_INTERVAL_SEC:
+        _flush_last_seen_updates()
 
 
 def start_kafka_consumer_background() -> None:

@@ -50,6 +50,13 @@ def _startup_kafka_consumer():
     thực hiện luồng KAFKA → FASTAPI theo kiến trúc mong muốn.
     """
     start_kafka_consumer_background()
+    # Bật thêm shared discovery consumer cho /devices/discover và /detect-keys
+    # (trước đây 2 endpoint này tự tạo KafkaConsumer mỗi request → connection leak)
+    try:
+        from kafka_discovery import start_discovery_consumer_background
+        start_discovery_consumer_background()
+    except Exception as e:
+        print(f"[KAFKA-DISCOVERY] Failed to start background consumer: {e}")
 
 
 # ============================================================

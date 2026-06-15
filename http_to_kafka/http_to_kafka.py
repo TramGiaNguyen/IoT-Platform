@@ -5,8 +5,8 @@ import json
 import time
 import sys
 import os
-from kafka import KafkaProducer
-from kafka.errors import NoBrokersAvailable
+from confluent_kafka import Producer
+from confluent_kafka.admin import AdminClient
 
 # Force unbuffered output
 sys.stdout.reconfigure(line_buffering=True)
@@ -17,27 +17,35 @@ app = Flask(__name__)
 KAFKA_BROKER = os.getenv('KAFKA_BROKER', 'kafka:9092')
 KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'iot-events')
 
-# Kafka producer với retry logic
+# Kafka producer với retry logic (confluent-kafka)
 producer = None
 max_retries = 10
 retry_delay = 5  # seconds
 
+def _delivery_callback(err, msg):
+    if err is not None:
+        raise RuntimeError(f"Kafka delivery failed: {err}")
+
+producer_conf = {
+    'bootstrap.servers': KAFKA_BROKER,
+    'acks': 'all',
+    'request.timeout.ms': 30000,
+    'message.timeout.ms': 30000,
+    'retries': 3,
+    'client.id': 'http-to-kafka-producer',
+}
+
 for i in range(max_retries):
     try:
-        producer = KafkaProducer(
-            bootstrap_servers=KAFKA_BROKER,
-            value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-            api_version=(0, 10, 1),
-            request_timeout_ms=30000,
-            retries=3,
-            acks='all'
-        )
-        print(f"✅ Kafka producer connected successfully", flush=True)
+        admin = AdminClient({'bootstrap.servers': KAFKA_BROKER})
+        md = admin.list_topics(timeout=10)
+        producer = Producer(producer_conf)
+        print(f"✅ Kafka producer connected successfully (brokers: {len(md.brokers)})", flush=True)
         sys.stdout.flush()
         break
-    except NoBrokersAvailable:
+    except Exception as e:
         if i < max_retries - 1:
-            print(f"⏳ Waiting for Kafka broker... (attempt {i+1}/{max_retries})")
+            print(f"⏳ Waiting for Kafka broker... (attempt {i+1}/{max_retries}): {e}")
             time.sleep(retry_delay)
         else:
             print(f"❌ Failed to connect to Kafka after {max_retries} attempts")
@@ -88,11 +96,21 @@ def ingest_data():
         print(f"📥 HTTP received from {device_id}: {json.dumps(payload)[:200]}", flush=True)
         sys.stdout.flush()
         
-        # Push to Kafka
+        # Push to Kafka (confluent-kafka - non-blocking produce + flush)
         try:
-            future = producer.send(KAFKA_TOPIC, value=payload)
-            record_metadata = future.get(timeout=30)
-            print(f"📤 Sent to Kafka topic '{KAFKA_TOPIC}' partition {record_metadata.partition} offset {record_metadata.offset}", flush=True)
+            payload_bytes = json.dumps(payload).encode('utf-8')
+            producer.produce(
+                topic=KAFKA_TOPIC,
+                value=payload_bytes,
+                on_delivery=_delivery_callback,
+            )
+            producer.poll(0)
+            # flush with timeout returns number of outstanding messages
+            remaining = producer.flush(timeout=30)
+            if remaining > 0:
+                raise RuntimeError(f"{remaining} message(s) still pending after flush")
+
+            print(f"📤 Sent to Kafka topic '{KAFKA_TOPIC}'", flush=True)
             sys.stdout.flush()
             
             return jsonify({

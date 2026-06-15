@@ -1,7 +1,7 @@
 # requirements.txt
 paho-mqtt
 requests
-kafka-python
+confluent-kafka==2.5.3
 mysql-connector-python
 apscheduler
 croniter

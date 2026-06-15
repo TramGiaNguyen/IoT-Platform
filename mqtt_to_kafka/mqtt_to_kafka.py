@@ -6,8 +6,8 @@ from profile_transformer import apply_profile
 import sys
 import os
 import paho.mqtt.client as mqtt
-from kafka import KafkaProducer
-from kafka.errors import NoBrokersAvailable
+from confluent_kafka import Producer
+from confluent_kafka.admin import AdminClient
 
 # Force unbuffered output
 sys.stdout.reconfigure(line_buffering=True)
@@ -29,27 +29,40 @@ MQTT_TOPICS = [
 KAFKA_BROKER = 'kafka:9092'
 KAFKA_TOPIC = 'iot-events'
 
-# Kafka producer với retry logic
+# Kafka producer với retry logic (confluent-kafka)
 producer = None
 max_retries = 10
 retry_delay = 5  # seconds
 
+def _delivery_callback(err, msg):
+    if err is not None:
+        print(f"⚠️ Kafka delivery failed: {err}", flush=True)
+        sys.stdout.flush()
+    else:
+        print(f"📤 Sent to Kafka topic '{msg.topic()}' partition {msg.partition()} offset {msg.offset()}", flush=True)
+        sys.stdout.flush()
+
+producer_conf = {
+    'bootstrap.servers': KAFKA_BROKER,
+    'acks': 'all',
+    'request.timeout.ms': 30000,
+    'message.timeout.ms': 30000,
+    'retries': 3,
+    'client.id': 'mqtt-to-kafka-producer',
+}
+
 for i in range(max_retries):
     try:
-        producer = KafkaProducer(
-            bootstrap_servers=KAFKA_BROKER,
-            value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-            api_version=(0, 10, 1),  # Specify API version để tránh auto-detect issues
-            request_timeout_ms=30000,  # 30s timeout
-            retries=3,  # Retry 3 lần nếu fail
-            acks='all'  # Đợi tất cả replicas confirm
-        )
-        print(f"✅ Kafka producer connected successfully", flush=True)
+        # Verify broker availability via AdminClient first
+        admin = AdminClient({'bootstrap.servers': KAFKA_BROKER})
+        md = admin.list_topics(timeout=10)
+        producer = Producer(producer_conf)
+        print(f"✅ Kafka producer connected successfully (brokers: {len(md.brokers)})", flush=True)
         sys.stdout.flush()
         break
-    except NoBrokersAvailable:
+    except Exception as e:
         if i < max_retries - 1:
-            print(f"⏳ Waiting for Kafka broker... (attempt {i+1}/{max_retries})")
+            print(f"⏳ Waiting for Kafka broker... (attempt {i+1}/{max_retries}): {e}", flush=True)
             time.sleep(retry_delay)
         else:
             print(f"❌ Failed to connect to Kafka after {max_retries} attempts")
@@ -111,13 +124,21 @@ def on_message(client, userdata, msg):
         print(f"📥 MQTT received on {msg.topic}: {payload}", flush=True)
         sys.stdout.flush()
 
-        # Push to Kafka với retry và timeout dài hơn
+        # Push to Kafka với confluent-kafka (non-blocking produce + poll loop)
         try:
-            future = producer.send(KAFKA_TOPIC, value=payload)
-            # Tăng timeout lên 30s và retry nếu cần
-            record_metadata = future.get(timeout=30)
-            print(f"📤 Sent to Kafka topic '{KAFKA_TOPIC}' partition {record_metadata.partition} offset {record_metadata.offset}", flush=True)
-            sys.stdout.flush()
+            payload_bytes = json.dumps(payload).encode('utf-8')
+            producer.produce(
+                topic=KAFKA_TOPIC,
+                value=payload_bytes,
+                on_delivery=_delivery_callback,
+            )
+            # Trigger delivery callbacks
+            producer.poll(0)
+            # Wait for outstanding messages (with timeout)
+            remaining = producer.flush(timeout=30)
+            if remaining > 0:
+                print(f"⚠️ {remaining} Kafka message(s) still pending after flush", flush=True)
+                sys.stdout.flush()
         except Exception as kafka_err:
             # Nếu Kafka timeout, log nhưng không crash - sẽ retry ở lần sau
             print(f"⚠️ Kafka send timeout/error (will retry): {kafka_err}", flush=True)

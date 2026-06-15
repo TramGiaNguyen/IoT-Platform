@@ -18,13 +18,21 @@ _kafka_producer = None
 def get_producer():
     global _kafka_producer
     if _kafka_producer is None:
-        from kafka import KafkaProducer
-        _kafka_producer = KafkaProducer(
-            bootstrap_servers=KAFKA_BOOTSTRAP,
-            value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-            acks="all",
-        )
+        from confluent_kafka import Producer
+        _kafka_producer = Producer({
+            "bootstrap.servers": KAFKA_BOOTSTRAP,
+            "acks": "all",
+            "request.timeout.ms": 30000,
+            "message.timeout.ms": 30000,
+            "retries": 3,
+            "client.id": "coap-adapter-producer",
+        })
     return _kafka_producer
+
+
+def _delivery_callback(err, msg):
+    if err is not None:
+        print(f"[COAP-KAFKA] Delivery failed: {err}", flush=True)
 
 
 async def main():
@@ -47,8 +55,13 @@ async def main():
                 data["timestamp"] = time.time()
             try:
                 producer = get_producer()
-                producer.send(KAFKA_TOPIC, value=data)
-                producer.flush()
+                producer.produce(
+                    KAFKA_TOPIC,
+                    value=json.dumps(data).encode("utf-8"),
+                    on_delivery=_delivery_callback,
+                )
+                producer.poll(0)
+                producer.flush(timeout=5)
                 return Message(code=Code.CREATED, payload=b"OK")
             except Exception as e:
                 return Message(code=Code.INTERNAL_SERVER_ERROR, payload=str(e).encode())

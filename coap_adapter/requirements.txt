@@ -1,2 +1,2 @@
 aiocoap
-kafka-python
+confluent-kafka==2.5.3

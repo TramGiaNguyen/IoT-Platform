@@ -3,7 +3,7 @@ fastapi
 uvicorn
 pymongo
 mysql-connector-python
-kafka-python
+confluent-kafka==2.5.3
 python-dotenv
 websockets
 requests

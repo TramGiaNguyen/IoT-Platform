@@ -6,7 +6,7 @@ passlib
 pymongo
 mysql-connector-python
 python-multipart
-kafka-python
+confluent-kafka==2.5.3
 websockets
 paho-mqtt
 requests

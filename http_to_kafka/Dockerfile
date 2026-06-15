@@ -5,7 +5,7 @@ WORKDIR /app
 # Install dependencies
 RUN pip install --no-cache-dir \
     flask==3.0.0 \
-    kafka-python==2.0.2
+    confluent-kafka==2.5.3
 
 # Copy application code
 COPY http_to_kafka.py .

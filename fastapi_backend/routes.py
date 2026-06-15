@@ -275,17 +275,24 @@ def get_kafka_producer():
     global _kafka_producer
     if _kafka_producer is None:
         try:
-            from kafka import KafkaProducer as _KP
-            _kafka_producer = _KP(
-                bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
-                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-                acks='all',
-                retries=3,
-            )
+            from confluent_kafka import Producer
+            _kafka_producer = Producer({
+                "bootstrap.servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
+                "acks": "all",
+                "request.timeout.ms": 30000,
+                "message.timeout.ms": 30000,
+                "retries": 3,
+                "client.id": "fastapi-backend-producer",
+            })
         except Exception as e:
             print(f"[KAFKA-PRODUCER] Failed to init: {e}")
             return None
     return _kafka_producer
+
+
+def _kafka_producer_delivery_callback(err, msg):
+    if err is not None:
+        print(f"[KAFKA-PRODUCER] Delivery failed: {err}")
 
 
 # Pydantic models cho device registration
@@ -797,9 +804,13 @@ def list_devices(
 @router.get("/devices/discover")
 def discover_devices(current_user: str = Depends(get_current_user)):
     """
-    Quét Kafka topic 'iot-events' trong 10 giây để tìm các device_id mới.
-    Trả về danh sách thiết bị chưa đăng ký kèm sample data và detected fields.
-    
+    Lấy danh sách thiết bị đã phát hiện từ cache Kafka shared.
+
+    Trước đây endpoint này tự tạo KafkaConsumer mới trong mỗi request,
+    scan trong 10s. Giờ đọc trực tiếp từ cache được populate bởi background
+    consumer trong kafka_discovery module — phản hồi tức thì, không leak
+    Kafka connection.
+
     Response format:
     {
         "discovered_devices": [
@@ -814,11 +825,9 @@ def discover_devices(current_user: str = Depends(get_current_user)):
         "count": 1
     }
     """
-    import time
-    from kafka import KafkaConsumer
-    import json
-    
-    # Lấy danh sách device_id đã đăng ký
+    from kafka_discovery import get_discovered_devices
+
+    # Lấy danh sách device_id đã đăng ký để lọc ra thiết bị mới
     conn = get_mysql()
     cursor = conn.cursor()
     try:
@@ -827,85 +836,14 @@ def discover_devices(current_user: str = Depends(get_current_user)):
     finally:
         cursor.close()
         conn.close()
-    
-    # Dict để lưu thông tin chi tiết của mỗi device
-    # device_id -> {fields: set, sample: dict, count: int}
-    discovered_info = {}
-    start_time = time.time()
-    scan_duration = 10  # giây
-    
-    try:
-        consumer = KafkaConsumer(
-            "iot-events",
-            bootstrap_servers="kafka:9092",
-            value_deserializer=lambda v: json.loads(v.decode("utf-8")),
-            auto_offset_reset="earliest",  # đọc cả history để không miss
-            consumer_timeout_ms=scan_duration * 1000,
-            group_id=f"discover-{int(time.time())}",  # Unique group để không bị cache
-        )
-        
-        for msg in consumer:
-            if msg.value and "device_id" in msg.value:
-                device_id = msg.value["device_id"]
-                if device_id not in registered_devices:
-                    # Khởi tạo nếu chưa có
-                    if device_id not in discovered_info:
-                        discovered_info[device_id] = {
-                            "fields": set(),
-                            "sample": {},
-                            "count": 0
-                        }
-                    
-                    info = discovered_info[device_id]
-                    info["count"] += 1
-                    
-                    # Thu thập các fields dữ liệu (bỏ qua metadata fields)
-                    skip_fields = {"device_id", "timestamp", "type", "_id"}
-                    for key, value in msg.value.items():
-                        if key not in skip_fields and value is not None:
-                            info["fields"].add(key)
-                            # Lưu sample data (giá trị mới nhất)
-                            info["sample"][key] = value
-            
-            if time.time() - start_time >= scan_duration:
-                break
-    except Exception as e:
-        print(f"[DISCOVER] Error scanning Kafka: {e}")
-    
-    # Hàm đoán loại thiết bị từ fields
-    def guess_device_type(fields: set) -> str:
-        fields_lower = {f.lower() for f in fields}
-        if "temperature" in fields_lower or "humidity" in fields_lower:
-            return "sensor"
-        if "state" in fields_lower and "setpoint" in fields_lower:
-            return "air_conditioner"
-        if "state" in fields_lower and "brightness" in fields_lower:
-            return "light"
-        if "power" in fields_lower or "voltage" in fields_lower or "current" in fields_lower:
-            return "power_meter"
-        if "motion" in fields_lower or "occupancy" in fields_lower:
-            return "motion_sensor"
-        if "door" in fields_lower or "open" in fields_lower:
-            return "door_sensor"
-        return "unknown"
-    
-    # Format response
-    result = []
-    for device_id, info in discovered_info.items():
-        result.append({
-            "device_id": device_id,
-            "detected_fields": sorted(list(info["fields"])),
-            "sample_data": info["sample"],
-            "suggested_type": guess_device_type(info["fields"]),
-            "message_count": info["count"]
-        })
-    
-    # Sắp xếp theo số lượng message giảm dần (thiết bị active nhất lên đầu)
-    result.sort(key=lambda x: x["message_count"], reverse=True)
-    
+
+    # Lấy tất cả thiết bị đã phát hiện từ cache shared (instant, không tạo Kafka connection)
+    all_discovered = get_discovered_devices()
+    result = [d for d in all_discovered if d["device_id"] not in registered_devices]
+
     return {
         "discovered_devices": result,
-        "count": len(result)
+        "count": len(result),
     }
 
 
@@ -1250,69 +1188,53 @@ def detect_device_keys(
     """
     Lắng nghe Kafka trong N giây để detect data keys từ messages thực tế.
     Tự động thêm vào bảng khoa_du_lieu nếu phát hiện keys mới.
+
+    Trước đây tạo KafkaConsumer mới cho mỗi request và listen `listen_seconds`.
+    Giờ đọc từ cache shared (đã được background consumer populate), phản hồi
+    tức thì, không leak Kafka connection.
     """
-    from kafka import KafkaConsumer
-    from datetime import datetime
-    
+    from kafka_discovery import get_recent_device_events
+
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
-    
+
     try:
         # Kiểm tra thiết bị tồn tại
         cursor.execute("SELECT id FROM thiet_bi WHERE ma_thiet_bi = %s AND is_active = 1", (device_id,))
         device = cursor.fetchone()
         if not device:
             raise HTTPException(status_code=404, detail="Thiết bị không tồn tại")
-        
+
         thiet_bi_id = device["id"]
-        
+
         # Lấy existing keys
         cursor.execute("SELECT khoa FROM khoa_du_lieu WHERE thiet_bi_id = %s", (thiet_bi_id,))
         existing_keys = {row["khoa"] for row in cursor.fetchall()}
-        
-        # Listen to Kafka for device messages
+
+        # Lấy events từ cache shared (không tạo Kafka connection)
+        # Lấy tối đa max(50, listen_seconds) event gần nhất
+        limit = max(50, listen_seconds * 5)
+        cached_events = get_recent_device_events(device_id, limit=limit)
+
         detected_keys = {}
         sample_data = {}
         message_count = 0
-        
-        try:
-            consumer = KafkaConsumer(
-                "iot-events",
-                bootstrap_servers="kafka:9092",
-                auto_offset_reset="latest",
-                enable_auto_commit=False,
-                consumer_timeout_ms=listen_seconds * 1000,
-                value_deserializer=lambda m: json.loads(m.decode('utf-8'))
-            )
-            
-            start_time = time.time()
-            while time.time() - start_time < listen_seconds:
-                for message in consumer:
-                    data = message.value
-                    msg_device_id = data.get("device_id")
-                    
-                    if msg_device_id == device_id:
-                        message_count += 1
-                        # Extract keys from payload
-                        for key, value in data.items():
-                            if key not in ["device_id", "timestamp", "type", "topic"]:
-                                if key not in detected_keys:
-                                    detected_keys[key] = {
-                                        "sample_value": value,
-                                        "python_type": type(value).__name__,
-                                        "don_vi": guess_unit(key, value),
-                                        "count": 0
-                                    }
-                                detected_keys[key]["count"] += 1
-                                sample_data[key] = value
-                    
-                    if time.time() - start_time >= listen_seconds:
-                        break
-            
-            consumer.close()
-        except Exception as kafka_err:
-            print(f"[DETECT-KEYS] Kafka error: {kafka_err}")
-        
+
+        for data in cached_events:
+            message_count += 1
+            # Extract keys from payload
+            for key, value in data.items():
+                if key not in ["device_id", "timestamp", "type", "topic"]:
+                    if key not in detected_keys:
+                        detected_keys[key] = {
+                            "sample_value": value,
+                            "python_type": type(value).__name__,
+                            "don_vi": guess_unit(key, value),
+                            "count": 0
+                        }
+                    detected_keys[key]["count"] += 1
+                    sample_data[key] = value
+
         # Add new keys to database
         new_keys_added = []
         for key, info in detected_keys.items():
@@ -1331,11 +1253,11 @@ def detect_device_keys(
                     "don_vi": info["don_vi"],
                     "sample_value": info["sample_value"]
                 })
-        
+
         conn.commit()
-        
+
         return {
-            "message": f"Đã lắng nghe {listen_seconds}s và phát hiện {len(detected_keys)} keys",
+            "message": f"Đã lấy {message_count} message(s) từ Kafka cache và phát hiện {len(detected_keys)} keys",
             "device_id": device_id,
             "message_count": message_count,
             "detected_keys": list(detected_keys.keys()),
@@ -2269,12 +2191,10 @@ def ingest_device_data(
 ):
     """
     HTTP endpoint để thiết bị gửi data (thay thế MQTT cho các thiết bị không hỗ trợ).
-    
+
     - Xác thực bằng X-API-Key header
-    - Push data vào Kafka topic iot-events
+    - Push data vào Kafka topic iot-events (confluent-kafka singleton producer)
     """
-    from kafka import KafkaProducer
-    
     if not x_api_key:
         raise HTTPException(status_code=401, detail="Missing X-API-Key header")
     
@@ -2307,12 +2227,20 @@ def ingest_device_data(
             "timestamp": request.timestamp or time.time()
         }
         
-        # Push to Kafka – dùng singleton producer
+        # Push to Kafka – dùng singleton producer (confluent-kafka)
         producer = get_kafka_producer()
         if producer:
             try:
-                producer.send("iot-events", value=payload)
-                producer.flush(timeout=5)
+                payload_bytes = json.dumps(payload).encode("utf-8")
+                producer.produce(
+                    topic="iot-events",
+                    value=payload_bytes,
+                    on_delivery=_kafka_producer_delivery_callback,
+                )
+                producer.poll(0)
+                remaining = producer.flush(timeout=5)
+                if remaining > 0:
+                    print(f"[INGEST] {remaining} Kafka message(s) still pending after flush")
             except Exception as kafka_err:
                 print(f"[INGEST] Kafka error: {kafka_err}")
         

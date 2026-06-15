@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 
-from kafka import KafkaConsumer
+from confluent_kafka import Consumer, KafkaError, KafkaException
 import mysql.connector
 import paho.mqtt.client as mqtt
 from croniter import croniter
@@ -670,24 +670,33 @@ should_stop = False
 
 def kafka_consumer_loop():
     global last_event_time
+    consumer_conf = {
+        "bootstrap.servers": KAFKA_BOOTSTRAP,
+        "group.id": KAFKA_GROUP_ID,
+        "auto.offset.reset": "latest",
+        "enable.auto.commit": True,
+        "client.id": "rule-engine-consumer",
+    }
     while not should_stop:
         consumer = None
         try:
-            consumer = KafkaConsumer(
-                KAFKA_TOPIC,
-                bootstrap_servers=KAFKA_BOOTSTRAP,
-                group_id=KAFKA_GROUP_ID,
-                value_deserializer=lambda v: json.loads(v.decode("utf-8")),
-                enable_auto_commit=True,
-                auto_offset_reset="latest",
-                consumer_timeout_ms=60000,  # 60s timeout to check for reconnect
-            )
+            consumer = Consumer(consumer_conf)
+            consumer.subscribe([KAFKA_TOPIC])
             logging.info(f"[KAFKA] Connected and subscribed to {KAFKA_TOPIC}")
-            for message in consumer:
-                if should_stop:
-                    break
+            while not should_stop:
+                msg = consumer.poll(timeout=1.0)
+                if msg is None:
+                    continue
+                err = msg.error()
+                if err is not None:
+                    if err.code() == KafkaError._PARTITION_EOF:
+                        continue
+                    raise KafkaException(err)
+                value = msg.value()
+                if not value:
+                    continue
                 try:
-                    event = message.value
+                    event = json.loads(value.decode("utf-8"))
                     last_event_time = time.time()
                     evaluate_event(event)
                 except Exception as e:
@@ -698,7 +707,7 @@ def kafka_consumer_loop():
             if consumer:
                 try:
                     consumer.close()
-                except:
+                except Exception:
                     pass
         if not should_stop:
             logging.info("[KAFKA] Reconnecting in 10s...")

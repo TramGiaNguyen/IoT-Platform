@@ -4,7 +4,7 @@ FROM apache/spark-py:latest
 USER root
 
 # Cài đặt Python dependencies
-RUN pip install --no-cache-dir pymongo mysql-connector-python kafka-python
+RUN pip install --no-cache-dir pymongo mysql-connector-python
 
 WORKDIR /app
 
