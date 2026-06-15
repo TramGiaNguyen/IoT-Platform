@@ -317,24 +317,30 @@ class ApiService {
     }
   }
 
-  // Get AI Analyst stream session for a camera
-  Future<Map<String, dynamic>> getCameraStreamSession(int roomId, int cameraId) async {
+  // Get raw camera stream URL (RTSP or MJPEG) configured in room detail.
+  // App no longer reads from AI Analyst stream-session — it uses the
+  // stream_url field that the user entered when setting up the camera
+  // on the web dashboard.
+  Future<String?> getCameraStreamUrl(int roomId, int cameraId) async {
     if (_token == null) await loadToken();
 
     final response = await http.get(
-      Uri.parse('$baseUrl/rooms/$roomId/cameras/$cameraId/stream-session'),
+      Uri.parse('$baseUrl/rooms/$roomId/cameras/$cameraId/stream-url'),
       headers: {
         'Authorization': 'Bearer $_token',
       },
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final url = data['stream_url'] as String?;
+      if (url == null || url.isEmpty) return null;
+      return url;
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      return {'session_id': null, 'status': 'error'};
+      return null;
     }
   }
 

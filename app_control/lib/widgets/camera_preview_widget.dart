@@ -4,17 +4,13 @@ import 'package:flutter_mjpeg/flutter_mjpeg.dart';
 class CameraPreviewWidget extends StatelessWidget {
   final String? streamUrl;
   final String cameraName;
-  final int? occupancy;
   final VoidCallback? onTap;
-  final bool isMjpegStream;
 
   const CameraPreviewWidget({
     Key? key,
     this.streamUrl,
     required this.cameraName,
-    this.occupancy,
     this.onTap,
-    this.isMjpegStream = true,
   }) : super(key: key);
 
   @override
@@ -38,7 +34,6 @@ class CameraPreviewWidget extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Stream layer
               if (hasValidStream)
                 _buildMjpegStream()
               else
@@ -85,42 +80,6 @@ class CameraPreviewWidget extends StatelessWidget {
                   ),
                 ),
               ),
-
-              // Bottom overlay: occupancy badge
-              if (occupancy != null && occupancy! >= 0)
-                Positioned(
-                  bottom: 10,
-                  right: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: occupancy! > 0
-                          ? const Color(0xFFA855F7)
-                          : const Color(0xFF40484C),
-                      borderRadius: BorderRadius.circular(9999),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.person,
-                          color: Colors.white,
-                          size: 14,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '$occupancy',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            fontFamily: 'Manrope',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
             ],
           ),
         ),
@@ -135,6 +94,59 @@ class CameraPreviewWidget extends StatelessWidget {
       isLive: true,
       fit: BoxFit.cover,
       timeout: const Duration(seconds: 15),
+      error: (context, error, stack) => _buildStreamError(error?.toString()),
+      loading: (context) => const Center(
+        child: CircularProgressIndicator(
+          color: Colors.white,
+          strokeWidth: 2,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStreamError(String? error) {
+    return Container(
+      color: const Color(0xFF1A1A2E),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.signal_wifi_off,
+                color: Color(0xFFBA1A1A),
+                size: 32,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Khong the ket noi camera',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontFamily: 'Manrope',
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  error,
+                  style: const TextStyle(
+                    color: Color(0xFF71787D),
+                    fontSize: 10,
+                    fontFamily: 'Inter',
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 

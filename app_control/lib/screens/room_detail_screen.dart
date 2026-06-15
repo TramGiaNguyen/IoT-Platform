@@ -179,44 +179,23 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       final cameras = await _apiService.getRoomCameras(widget.room.id);
       final activeCameras = cameras.where((c) => c.isActive).toList();
 
-      // Load zones and AI Analyst stream URL for each camera
+      // App no longer reads AI Analyst stream. Each camera's streamUrl
+      // comes from the GET /rooms/{id}/cameras response, which is the
+      // raw URL (MJPEG / RTSP proxy) configured in the web dashboard.
+      // We still fetch zones so the user can view them later if needed,
+      // but the MJPEG widget just plays streamUrl directly.
       final camerasWithStream = <RoomCamera>[];
       for (var camera in activeCameras) {
         try {
-          // Fetch zones from API
           List<ZoneDefinition> zones = [];
           try {
             zones = await _apiService.getCameraZones(widget.room.id, camera.id);
           } catch (_) {
             // Camera might not have zones yet
           }
-
-          final streamInfo = await _apiService.getCameraStreamSession(
-            widget.room.id,
-            camera.id,
-          );
-          if (streamInfo['session_id'] != null) {
-            camerasWithStream.add(RoomCamera(
-              id: camera.id,
-              phongId: camera.phongId,
-              ten: camera.ten,
-              ipAddress: camera.ipAddress,
-              port: camera.port,
-              rtspPath: camera.rtspPath,
-              username: camera.username,
-              hasPassword: camera.hasPassword,
-              streamUrl: streamInfo['stream_url'],
-              thuTu: camera.thuTu,
-              isActive: camera.isActive,
-              createdAt: camera.createdAt,
-              updatedAt: camera.updatedAt,
-              zones: zones,
-            ));
-          } else {
-            camerasWithStream.add(camera.copyWithZoneList(zones));
-          }
+          camerasWithStream.add(camera.copyWithZoneList(zones));
         } catch (e) {
-          debugPrint('Load stream for camera ${camera.id} failed: $e');
+          debugPrint('Load zones for camera ${camera.id} failed: $e');
           camerasWithStream.add(camera);
         }
       }
@@ -362,7 +341,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           child: CameraPreviewWidget(
             cameraName: camera.ten,
             streamUrl: camera.streamUrl,
-            occupancy: _shownOccupancy,
             onTap: () => _showCameraFullscreen(camera),
           ),
         )),
@@ -667,7 +645,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           child: CameraPreviewWidget(
             cameraName: camera.ten,
             streamUrl: camera.streamUrl,
-            occupancy: _shownOccupancy,
             onTap: () => _showCameraFullscreen(camera),
           ),
         )),
