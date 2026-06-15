@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -16,12 +17,16 @@ class CameraPreviewWidget extends StatelessWidget {
   final String? streamUrl;
   final String cameraName;
   final VoidCallback? onTap;
+  final BoxFit fit;
+  final bool showHeader;
 
   const CameraPreviewWidget({
     Key? key,
     this.streamUrl,
     required this.cameraName,
     this.onTap,
+    this.fit = BoxFit.cover,
+    this.showHeader = true,
   }) : super(key: key);
 
   @override
@@ -46,51 +51,51 @@ class CameraPreviewWidget extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               if (hasValidStream)
-                _MediaKitCameraView(streamUrl: streamUrl!)
+                _MediaKitCameraView(streamUrl: streamUrl!, fit: fit)
               else
                 _buildPlaceholder(),
 
-              // Top overlay: camera name
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withOpacity(0.7),
-                        Colors.transparent,
+              if (showHeader)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.7),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.videocam,
+                          color: Colors.white70,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            cameraName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Manrope',
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.videocam,
-                        color: Colors.white70,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          cameraName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            fontFamily: 'Manrope',
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -128,7 +133,8 @@ class CameraPreviewWidget extends StatelessWidget {
 
 class _MediaKitCameraView extends StatefulWidget {
   final String streamUrl;
-  const _MediaKitCameraView({required this.streamUrl});
+  final BoxFit fit;
+  const _MediaKitCameraView({required this.streamUrl, this.fit = BoxFit.contain});
 
   @override
   State<_MediaKitCameraView> createState() => _MediaKitCameraViewState();
@@ -180,10 +186,24 @@ class _MediaKitCameraViewState extends State<_MediaKitCameraView> {
 
   @override
   Widget build(BuildContext context) {
-    return Video(
-      controller: _controller,
-      fit: BoxFit.cover,
-      controls: NoVideoControls,
+    // FittedBox(contain) keeps the video's native aspect ratio and
+    // letterboxes the empty space with black. This is the correct
+    // behaviour for IP cameras (typically 16:9) - BoxFit.cover would
+    // crop the sides when the host widget is taller than 16:9.
+    return ColoredBox(
+      color: Colors.black,
+      child: FittedBox(
+        fit: widget.fit,
+        child: SizedBox(
+          width: 1920,
+          height: 1080,
+          child: Video(
+            controller: _controller,
+            fit: BoxFit.fill,
+            controls: NoVideoControls,
+          ),
+        ),
+      ),
     );
   }
 }

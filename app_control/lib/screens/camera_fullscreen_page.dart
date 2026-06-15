@@ -5,9 +5,8 @@ import '../widgets/camera_preview_widget.dart';
 /// Trang xem camera toàn màn hình.
 ///
 /// Khi mở sẽ ép thiết bị xoay ngang (landscape) để hiển thị đúng tỉ lệ
-/// của camera IP (thường là 16:9). User có thể bấm rotate để chuyển qua
-/// lại giữa portrait/landscape nếu camera dọc. Khi thoát trang sẽ trả
-/// lại orientation mà app đang dùng ở phần còn lại.
+/// 16:9 của camera IP. Page tự giữ orientation lock suốt thời gian
+/// xem và trả lại portrait khi đóng.
 class CameraFullscreenPage extends StatefulWidget {
   final String cameraName;
   final String? streamUrl;
@@ -24,50 +23,48 @@ class CameraFullscreenPage extends StatefulWidget {
   State<CameraFullscreenPage> createState() => _CameraFullscreenPageState();
 }
 
-class _CameraFullscreenPageState extends State<CameraFullscreenPage> {
-  bool _isLandscape = true;
+class _CameraFullscreenPageState extends State<CameraFullscreenPage>
+    with WidgetsBindingObserver {
+  static const _lockLandscape = [
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ];
+  static const _lockPortrait = [
+    DeviceOrientation.portraitUp,
+  ];
 
   @override
   void initState() {
     super.initState();
-    // Cho phép xoay cả 2 chiều + landscapeLeft/landscapeRight để có trải
-    // nghiệm xem camera tốt nhất. Khi user xoay ngược lại thì thiết bị
-    // sẽ tự xử lý (đảo ảnh theo orientation sensor).
+    WidgetsBinding.instance.addObserver(this);
+    // Ẩn system UI trước cho mượt
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.immersiveSticky,
       overlays: [],
     );
-    SystemChrome.setPreferredOrientations(const [
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-      DeviceOrientation.portraitUp,
-    ]);
+    // Đợi frame đầu tiên render xong mới gọi orientation lock - tránh
+    // tình trạng Android activity chưa ở trạng thái "ready to rotate"
+    // dẫn đến phải bấm 2 lần mới xoay.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      SystemChrome.setPreferredOrientations(_lockLandscape);
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Khi user background app, OS có thể override orientation. Khi quay
+    // lại, ép lock lại landscape để tránh phải bấm rotate thêm lần nữa.
+    if (state == AppLifecycleState.resumed && mounted) {
+      SystemChrome.setPreferredOrientations(_lockLandscape);
+    }
   }
 
   @override
   void dispose() {
-    // Trả lại orientation mặc định của app (portrait) khi đóng trang
-    SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.edgeToEdge,
-    );
-    SystemChrome.setPreferredOrientations(const [
-      DeviceOrientation.portraitUp,
-    ]);
+    WidgetsBinding.instance.removeObserver(this);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations(_lockPortrait);
     super.dispose();
-  }
-
-  void _toggleOrientation() {
-    setState(() {
-      _isLandscape = !_isLandscape;
-    });
-    SystemChrome.setPreferredOrientations(
-      _isLandscape
-          ? const [
-              DeviceOrientation.landscapeLeft,
-              DeviceOrientation.landscapeRight,
-            ]
-          : const [DeviceOrientation.portraitUp],
-    );
   }
 
   @override
@@ -75,84 +72,70 @@ class _CameraFullscreenPageState extends State<CameraFullscreenPage> {
     final url = widget.streamUrl ?? widget.fallbackStreamUrl;
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // Video: fill toàn bộ, cover để giữ tỉ lệ
-            Positioned.fill(
-              child: CameraPreviewWidget(
-                cameraName: widget.cameraName,
-                streamUrl: url,
-              ),
+      body: Stack(
+        children: [
+          // Video phủ toàn bộ màn hình, dùng contain để giữ tỉ lệ 16:9
+          // của camera IP thay vì cắt (cover) khi fullscreen dọc.
+          Positioned.fill(
+            child: CameraPreviewWidget(
+              cameraName: widget.cameraName,
+              streamUrl: url,
+              showHeader: false,
             ),
+          ),
 
-            // Top-left close
-            Positioned(
-              top: 8,
-              left: 8,
-              child: _CircleButton(
-                icon: Icons.close,
-                tooltip: 'Dong',
-                onTap: () => Navigator.of(context).pop(),
-              ),
+          // Nút close (góc trên-trái theo orientation hiện tại)
+          Positioned(
+            top: 12,
+            left: 12,
+            child: _CircleButton(
+              icon: Icons.close,
+              onTap: () => Navigator.of(context).pop(),
             ),
+          ),
 
-            // Top-right rotate
-            Positioned(
-              top: 8,
-              right: 8,
-              child: _CircleButton(
-                icon: _isLandscape
-                    ? Icons.screen_lock_portrait
-                    : Icons.screen_lock_landscape,
-                tooltip: _isLandscape ? 'Xoay doc' : 'Xoay ngang',
-                onTap: _toggleOrientation,
-              ),
-            ),
-
-            // Bottom camera name
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 16,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.55),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.videocam,
-                        color: Colors.white70,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          widget.cameraName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            fontFamily: 'Manrope',
-                          ),
-                          overflow: TextOverflow.ellipsis,
+          // Tên camera ở giữa-dưới
+          Positioned(
+            left: 24,
+            right: 24,
+            bottom: 16,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.videocam,
+                      color: Colors.white70,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        widget.cameraName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Manrope',
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -160,14 +143,9 @@ class _CameraFullscreenPageState extends State<CameraFullscreenPage> {
 
 class _CircleButton extends StatelessWidget {
   final IconData icon;
-  final String tooltip;
   final VoidCallback onTap;
 
-  const _CircleButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
+  const _CircleButton({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -177,13 +155,10 @@ class _CircleButton extends StatelessWidget {
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
-        child: Tooltip(
-          message: tooltip,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(icon, color: Colors.white, size: 22),
-          ),
+        child: const SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(Icons.close, color: Colors.white, size: 22),
         ),
       ),
     );
