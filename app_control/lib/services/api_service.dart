@@ -8,17 +8,21 @@ import '../models/room_data.dart';
 import '../models/camera.dart';
 
 class ApiService {
-  // Backend FastAPI chạy ở port 8000 trong docker-compose (xem docker-compose.yml
-  // "fastapi-backend: 8000:8000"). Port 8001 là rule-engine, 8100 là ai-analyst,
-  // không phải backend chính và không có /login.
-  static const String baseUrl = 'http://192.168.69.69:8000';
+  // Mobile app goes through backend_app_control (port 8001) first; that
+  // service proxies to fastapi-backend (port 8000). Endpoints below match
+  // the ones exposed by backend_app_control/main.py (auth/login, rooms,
+  // devices, rules, etc.). Do NOT point the app directly at port 8000.
+  static const String baseUrl = 'http://192.168.69.69:8001';
   
   final storage = const FlutterSecureStorage();
   String? _token;
 
   // Login
+  // Hits POST /auth/login on backend_app_control, which forwards credentials
+  // to fastapi-backend /token. The response is wrapped: the access_token is
+  // at the top level, and role/allowed_pages are inside `user_info`.
   Future<Map<String, dynamic>> login(String username, String password) async {
-    final uri = Uri.parse('$baseUrl/login');
+    final uri = Uri.parse('$baseUrl/auth/login');
     try {
       final response = await http
           .post(
@@ -35,12 +39,23 @@ class ApiService {
         final data = jsonDecode(response.body);
         _token = data['access_token'];
 
-        // Lưu token vào secure storage
+        // backend_app_control wraps user fields in `user_info`:
+        // { access_token, token_type, user_info: { username, role, allowed_pages } }
+        // Normalize to the flat shape the rest of the app expects.
+        final userInfo = (data['user_info'] is Map)
+            ? Map<String, dynamic>.from(data['user_info'] as Map)
+            : <String, dynamic>{};
+        final vaiTro = userInfo['role'] ?? userInfo['vai_tro'];
+        final allowedPages = userInfo['allowed_pages'] ?? data['allowed_pages'];
+
         await storage.write(key: 'auth_token', value: _token);
-        await storage.write(key: 'user_info', value: jsonEncode({
-          'vai_tro': data['vai_tro'],
-          'allowed_pages': data['allowed_pages'],
-        }));
+        await storage.write(
+          key: 'user_info',
+          value: jsonEncode({
+            'vai_tro': vaiTro,
+            'allowed_pages': allowedPages,
+          }),
+        );
 
         return data;
       }
@@ -54,6 +69,10 @@ class ApiService {
           }
         } catch (_) {}
         throw Exception('Sai tên đăng nhập hoặc mật khẩu');
+      }
+
+      if (response.statusCode == 404) {
+        throw Exception('Endpoint đăng nhập không tồn tại (HTTP 404). Kiểm tra baseUrl: $baseUrl');
       }
 
       if (response.statusCode == 422) {
