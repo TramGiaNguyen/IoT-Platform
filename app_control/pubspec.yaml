@@ -19,8 +19,18 @@ dependencies:
   # Secure storage for token
   flutter_secure_storage: ^9.0.0
 
-  # MJPEG stream viewer for IP cameras
-  flutter_mjpeg: ^2.0.4
+  # Universal video player (RTSP, RTMP, HLS, DASH, MJPEG, file) on
+  # Android/iOS/macOS/Windows/Linux with hardware acceleration.
+  # Replaces flutter_mjpeg (which only handled MJPEG) so the mobile app
+  # can play the raw RTSP stream configured in the web dashboard's
+  # camera setup (e.g. Hikvision: rtsp://user:pass@ip:554/Streaming/...).
+  media_kit: ^1.2.0
+  media_kit_video: ^1.0.0
+  media_kit_libs_android_video: ^1.0.0
+  media_kit_libs_ios_video: ^1.0.0
+  media_kit_libs_macos_video: ^1.0.0
+  media_kit_libs_windows_video: ^1.0.0
+  media_kit_libs_linux: ^1.0.0
 
   # UI
   cupertino_icons: ^1.0.2

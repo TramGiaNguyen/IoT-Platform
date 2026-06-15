@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/room_list_screen.dart';
@@ -48,6 +49,9 @@ class AppTheme {
 }
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Required for package:media_kit (initialises native libmpv/ffmpeg bindings).
+  MediaKit.ensureInitialized();
   runApp(const MyApp());
 }
 
