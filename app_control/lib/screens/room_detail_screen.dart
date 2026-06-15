@@ -12,6 +12,7 @@ import '../widgets/relay_control_widget.dart';
 import '../widgets/camera_preview_widget.dart';
 import '../widgets/camera_setup_sheet.dart';
 import 'rules_screen.dart';
+import 'camera_fullscreen_page.dart';
 
 class RoomDetailScreen extends StatefulWidget {
   final Room room;
@@ -653,30 +654,18 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   }
 
   void _showCameraFullscreen(RoomCamera camera) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.black,
-        insetPadding: const EdgeInsets.all(8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppBar(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              title: Text(camera.ten),
-              leading: IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-            Expanded(
-              child: CameraPreviewWidget(
-                cameraName: camera.ten,
-                streamUrl: camera.streamUrl,
-              ),
-            ),
-          ],
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: true,
+        barrierColor: Colors.black,
+        transitionDuration: const Duration(milliseconds: 200),
+        pageBuilder: (_, __, ___) => CameraFullscreenPage(
+          cameraName: camera.ten,
+          streamUrl: camera.streamUrl,
+        ),
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+          opacity: anim,
+          child: child,
         ),
       ),
     );
