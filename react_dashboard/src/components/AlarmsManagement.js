@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { fetchAlerts, fetchDevices, acknowledgeAlert, resolveAlert } from '../services';
+import { fetchAlerts, fetchDevices, fetchRooms, fetchClasses, acknowledgeAlert, resolveAlert } from '../services';
 
 const PAGE_SIZE = 15;
 
@@ -50,6 +50,10 @@ export default function AlarmsManagement({ token, onBack }) {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterDevice, setFilterDevice] = useState('');
+  const [filterRoom, setFilterRoom] = useState('');
+  const [filterClass, setFilterClass] = useState('');
+  const [rooms, setRooms] = useState([]);
+  const [classes, setClasses] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalAlerts, setTotalAlerts] = useState(0);
   const [newCount, setNewCount] = useState(0);
@@ -66,7 +70,15 @@ export default function AlarmsManagement({ token, onBack }) {
       if (filterStatus) params.trang_thai = filterStatus;
       if (filterDevice) params.device_id = filterDevice;
       const res = await fetchAlerts(token, params);
-      setAlerts(res.data.alerts || []);
+      let rows = res.data.alerts || [];
+      // Client-side filter theo phong/lop_hoc (server da scope theo role)
+      if (filterRoom) {
+        rows = rows.filter((a) => String(a.phong_id) === String(filterRoom));
+      }
+      if (filterClass) {
+        rows = rows.filter((a) => String(a.lop_hoc_id) === String(filterClass));
+      }
+      setAlerts(rows);
       setTotalAlerts(
         typeof res.data.total === 'number' ? res.data.total : (res.data.alerts || []).length
       );
@@ -83,7 +95,7 @@ export default function AlarmsManagement({ token, onBack }) {
     } finally {
       setLoading(false);
     }
-  }, [token, filterStatus, filterDevice, currentPage]);
+  }, [token, filterStatus, filterDevice, filterRoom, filterClass, currentPage]);
 
   const loadDevices = useCallback(async () => {
     try {
@@ -91,6 +103,24 @@ export default function AlarmsManagement({ token, onBack }) {
       setDevices(res.data.devices || []);
     } catch (e) {
       console.error('Load devices failed', e);
+    }
+  }, [token]);
+
+  const loadRooms = useCallback(async () => {
+    try {
+      const res = await fetchRooms(token);
+      setRooms(res.data.rooms || res.data || []);
+    } catch (e) {
+      console.error('Load rooms failed', e);
+    }
+  }, [token]);
+
+  const loadClasses = useCallback(async () => {
+    try {
+      const res = await fetchClasses(token);
+      setClasses(res.data.classes || res.data || []);
+    } catch (e) {
+      console.error('Load classes failed', e);
     }
   }, [token]);
 
@@ -105,8 +135,13 @@ export default function AlarmsManagement({ token, onBack }) {
   }, [loadDevices]);
 
   useEffect(() => {
+    loadRooms();
+    loadClasses();
+  }, [loadRooms, loadClasses]);
+
+  useEffect(() => {
     setCurrentPage(1);
-  }, [filterStatus, filterDevice]);
+  }, [filterStatus, filterDevice, filterRoom, filterClass]);
 
   useEffect(() => {
     const tp = Math.max(1, Math.ceil(totalAlerts / PAGE_SIZE));
@@ -176,6 +211,31 @@ export default function AlarmsManagement({ token, onBack }) {
           <option value="new">Mới</option>
           <option value="acknowledged">Đã xác nhận</option>
           <option value="resolved">Đã xử lý</option>
+        </select>
+        <select
+          value={filterRoom}
+          onChange={(e) => setFilterRoom(e.target.value)}
+          className="filter-select"
+        >
+          <option value="">Tất cả phòng</option>
+          {rooms.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.loai_phong === 'nhom' ? `[${r.ten_nhom || 'Nhóm'}] ` : ''}
+              {r.ten_phong || `Phòng #${r.id}`}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterClass}
+          onChange={(e) => setFilterClass(e.target.value)}
+          className="filter-select"
+        >
+          <option value="">Tất cả lớp</option>
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.ten_lop || `Lớp #${c.id}`}
+            </option>
+          ))}
         </select>
         <select
           value={filterDevice}
@@ -331,6 +391,21 @@ export default function AlarmsManagement({ token, onBack }) {
                 <dd>{detailModal.ten_thiet_bi || detailModal.device_id || '—'}</dd>
                 <dt>Mã thiết bị</dt>
                 <dd>{detailModal.device_id || '—'}</dd>
+                {detailModal.ten_phong && (
+                  <>
+                    <dt>Phòng</dt>
+                    <dd>
+                      {detailModal.loai_phong === 'nhom' ? `[Nhóm] ` : ''}
+                      {detailModal.ten_phong}
+                    </dd>
+                  </>
+                )}
+                {detailModal.ten_lop && (
+                  <>
+                    <dt>Lớp</dt>
+                    <dd>{detailModal.ten_lop}</dd>
+                  </>
+                )}
                 {detailModal.rule_id != null && (
                   <>
                     <dt>Rule ID</dt>

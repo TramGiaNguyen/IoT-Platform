@@ -14,6 +14,11 @@ _MYSQL_CONFIG = {
     "database": os.getenv("MYSQL_DATABASE", "iot_data"),
 }
 
+# Phase 4: doc pool_size tu env (mac dinh 50/worker).
+# Khi tang workers, tong connection = workers * pool_size.
+# VD: 4 workers * 50 = 200 → can MySQL max_connections >= 200.
+MYSQL_POOL_SIZE = int(os.getenv("MYSQL_POOL_SIZE", "50"))
+
 _mysql_pool = None
 
 def _get_pool():
@@ -21,7 +26,7 @@ def _get_pool():
     if _mysql_pool is None:
         _mysql_pool = mysql.connector.pooling.MySQLConnectionPool(
             pool_name="iot_pool",
-            pool_size=25,
+            pool_size=MYSQL_POOL_SIZE,
             pool_reset_session=True,
             **_MYSQL_CONFIG
         )

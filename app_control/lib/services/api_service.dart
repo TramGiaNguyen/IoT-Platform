@@ -233,11 +233,19 @@ class ApiService {
   // ========== NEW ROOM-BASED APIs ==========
 
   // Get list of rooms user has access to
-  Future<List<Room>> getRooms() async {
+  // context: 'ca_nhan' | 'nhom' | null (all)
+  Future<List<Room>> getRooms({String? context}) async {
     if (_token == null) await loadToken();
 
+    final queryParams = <String, String>{};
+    if (context != null && context.isNotEmpty) {
+      queryParams['context'] = context;
+    }
+
+    final uri = Uri.parse('$baseUrl/rooms').replace(queryParameters: queryParams.isEmpty ? null : queryParams);
+
     final response = await http.get(
-      Uri.parse('$baseUrl/rooms'),
+      uri,
       headers: {
         'Authorization': 'Bearer $_token',
       },
@@ -246,17 +254,81 @@ class ApiService {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       final roomsList = <Room>[];
-      
+
       for (var roomJson in data['rooms'] as List) {
         roomsList.add(Room.fromJson(roomJson as Map<String, dynamic>));
       }
-      
+
       return roomsList;
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
       throw Exception('Không lấy được danh sách phòng');
+    }
+  }
+
+  // ========== Class student management (group workplace) ==========
+
+  /// Lấy danh sách sinh viên trong lớp (max 5)
+  Future<Map<String, dynamic>> listClassStudents(int classId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/classes/$classId/students'),
+      headers: {'Authorization': 'Bearer $_token'},
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không lấy được danh sách sinh viên lớp');
+    }
+  }
+
+  /// Thêm sinh viên vào lớp
+  Future<Map<String, dynamic>> addStudentToClass(int classId, int studentId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/classes/$classId/students'),
+      headers: {
+        'Authorization': 'Bearer $_token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'student_id': studentId}),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      final err = jsonDecode(response.body);
+      throw Exception(err['detail'] ?? 'Không thêm được sinh viên');
+    }
+  }
+
+  /// Xóa sinh viên khỏi lớp
+  Future<Map<String, dynamic>> removeStudentFromClass(int classId, int studentId) async {
+    if (_token == null) await loadToken();
+
+    final response = await http.delete(
+      Uri.parse('$baseUrl/classes/$classId/students/$studentId'),
+      headers: {'Authorization': 'Bearer $_token'},
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } else if (response.statusCode == 401) {
+      await logout();
+      throw Exception('Phiên đăng nhập hết hạn');
+    } else {
+      throw Exception('Không xóa được sinh viên khỏi lớp');
     }
   }
 

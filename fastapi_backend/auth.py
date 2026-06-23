@@ -35,7 +35,7 @@ def authenticate_user(username: str, password: str):
     try:
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            "SELECT id, ten, email, mat_khau_hash, vai_tro FROM nguoi_dung WHERE ten = %s LIMIT 1",
+            "SELECT id, ten, email, mat_khau_hash, vai_tro, phai_doi_mat_khau FROM nguoi_dung WHERE ten = %s LIMIT 1",
             (username,),
         )
         user = cursor.fetchone()
@@ -68,6 +68,7 @@ def authenticate_user(username: str, password: str):
             "email": user["email"],
             "vai_tro": user["vai_tro"],
             "allowed_pages": allowed_pages,
+            "phai_doi_mat_khau": bool(user.get("phai_doi_mat_khau", 0)),
         }
     finally:
         cursor.close()

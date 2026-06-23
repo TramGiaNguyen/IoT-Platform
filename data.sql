@@ -64,7 +64,10 @@ CREATE TABLE `quyen_trang` (
 CREATE TABLE `phong` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `ten_phong` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ten_nhom` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Ten nhom lam viec (chi dung cho loai_phong=nhom), VD: Nhom 1, Nhom Arduino',
   `mo_ta` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `loai_phong` ENUM('ca_nhan','nhom') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ca_nhan' COMMENT 'ca_nhan=phong rieng, nhom=phong nhom cua lop (1 lop co the co nhieu nhom)',
+  `lop_hoc_id` INT DEFAULT NULL COMMENT 'FK toi lop_hoc (chi dung cho loai_phong=nhom)',
   `vi_tri` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `nguoi_quan_ly_id` INT DEFAULT NULL,
   `nguoi_so_huu_id` INT DEFAULT NULL COMMENT 'Owner của room (admin/teacher/student)',
@@ -73,8 +76,11 @@ CREATE TABLE `phong` (
   PRIMARY KEY (`id`),
   KEY `nguoi_quan_ly_id` (`nguoi_quan_ly_id`),
   KEY `idx_nguoi_so_huu` (`nguoi_so_huu_id`),
+  KEY `idx_phong_lop_hoc` (`lop_hoc_id`),
+  KEY `idx_phong_lop_hoc_nhom` (`lop_hoc_id`, `loai_phong`),
   CONSTRAINT `phong_ibfk_1` FOREIGN KEY (`nguoi_quan_ly_id`) REFERENCES `nguoi_dung` (`id`),
-  CONSTRAINT `phong_nguoi_so_huu_fk` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE SET NULL
+  CONSTRAINT `phong_nguoi_so_huu_fk` FOREIGN KEY (`nguoi_so_huu_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `phong_lop_hoc_fk` FOREIGN KEY (`lop_hoc_id`) REFERENCES `lop_hoc` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================
@@ -482,6 +488,25 @@ CREATE TABLE IF NOT EXISTS `phong_occupancy` (
   KEY `idx_occupancy_time` (`cap_nhat_luc`),
   CONSTRAINT `fk_occ_phong` FOREIGN KEY (`phong_id`) REFERENCES `phong` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_occ_camera` FOREIGN KEY (`phong_camera_id`) REFERENCES `phong_camera` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================
+-- Bảng phong_nhom_thanh_vien (thành viên phòng nhóm trong lớp)
+-- Mỗi lớp có thể có NHIỀU nhóm (mỗi nhóm = 1 phòng loai_phong='nhom'), mỗi nhóm tối đa 5 SV.
+-- Bảng này track thành viên sinh viên trong từng nhóm. 1 SV chỉ thuộc 1 nhóm trong cùng lớp (ràng buộc ở tầng app).
+-- =========================================================
+CREATE TABLE IF NOT EXISTS `phong_nhom_thanh_vien` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `phong_id` INT NOT NULL,
+  `user_id` INT NOT NULL,
+  `vai_tro_trong_nhom` ENUM('giao_vien','sinh_vien') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'sinh_vien',
+  `ngay_tham_gia` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_phong_user` (`phong_id`, `user_id`),
+  KEY `idx_user` (`user_id`),
+  KEY `idx_phong` (`phong_id`),
+  CONSTRAINT `phong_nhom_tv_phong_fk` FOREIGN KEY (`phong_id`) REFERENCES `phong` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `phong_nhom_tv_user_fk` FOREIGN KEY (`user_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================

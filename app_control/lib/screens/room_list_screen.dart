@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../services/websocket_service.dart';
 import '../models/room.dart';
@@ -27,15 +28,41 @@ class _RoomListScreenState extends State<RoomListScreen> {
   final _searchController = TextEditingController();
   Map<String, dynamic>? _userInfo;
 
+  // Workspace context: 'ca_nhan' | 'nhom'
+  String _workspaceContext = 'ca_nhan';
+  static const _kWorkspaceKey = 'workspaceContext';
+
   @override
   void initState() {
     super.initState();
+    _loadWorkspaceContext();
     _loadUserInfo();
     _loadRooms();
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) => _loadRooms(silent: true),
     );
+  }
+
+  Future<void> _loadWorkspaceContext() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_kWorkspaceKey) ?? 'ca_nhan';
+    if (mounted) {
+      setState(() {
+        _workspaceContext = saved;
+      });
+    }
+  }
+
+  Future<void> _setWorkspaceContext(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kWorkspaceKey, value);
+    if (mounted) {
+      setState(() {
+        _workspaceContext = value;
+      });
+      _loadRooms();
+    }
   }
 
   @override
@@ -73,7 +100,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
     }
 
     try {
-      final rooms = await _apiService.getRooms();
+      final rooms = await _apiService.getRooms(context: _workspaceContext);
       if (mounted) {
         setState(() {
           _rooms = rooms;
@@ -152,10 +179,10 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   Row(
                     children: [
                       const SizedBox(width: 8),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          'Phong cua toi',
-                          style: TextStyle(
+                          _workspaceContext == 'nhom' ? 'Phòng nhóm' : 'Phòng của tôi',
+                          style: const TextStyle(
                             fontFamily: 'Manrope',
                             fontSize: 22,
                             fontWeight: FontWeight.w700,
@@ -226,7 +253,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                               children: [
                                 Icon(Icons.logout, size: 20, color: Color(0xFFBA1A1A)),
                                 SizedBox(width: 8),
-                                Text('Dang xuat', style: TextStyle(color: Color(0xFFBA1A1A))),
+                                Text('Đăng xuất', style: TextStyle(color: Color(0xFFBA1A1A))),
                               ],
                             ),
                           ),
@@ -234,6 +261,63 @@ class _RoomListScreenState extends State<RoomListScreen> {
                       ),
                     ],
                   ),
+                  // Tab switcher Cá nhân / Nhóm (chỉ hiện khi user có group_room_id)
+                  if (_userInfo != null && _userInfo!['group_room_id'] != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => _setWorkspaceContext('ca_nhan'),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: _workspaceContext == 'ca_nhan'
+                                      ? const Color(0xFF006a6a)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  'Cá nhân',
+                                  style: TextStyle(
+                                    color: _workspaceContext == 'ca_nhan'
+                                        ? Colors.white
+                                        : const Color(0xFF003345),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => _setWorkspaceContext('nhom'),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: _workspaceContext == 'nhom'
+                                      ? const Color(0xFF006a6a)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  'Nhóm',
+                                  style: TextStyle(
+                                    color: _workspaceContext == 'nhom'
+                                        ? Colors.white
+                                        : const Color(0xFF003345),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),

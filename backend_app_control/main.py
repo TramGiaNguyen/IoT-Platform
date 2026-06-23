@@ -1,9 +1,9 @@
-from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict
 from urllib.parse import quote
 import httpx
 import os
@@ -370,20 +370,26 @@ class RoomControlRequest(BaseModel):
 
 @app.get("/rooms")
 async def get_rooms(
+    context: Optional[str] = Query(None, description="ca_nhan | nhom | all"),
     token: Optional[str] = None,
     token_data: dict = Depends(verify_app_token_optional)
 ):
     """
     Lấy danh sách rooms theo quyền hạn user
-    
+
     Room = Không gian vật lý chứa thiết bị IoT
     VD: "Phòng Lab 1", "Phòng Server", "Nhà kho"
-    
+
     Quyền truy cập:
     - Admin: Tất cả rooms
     - Teacher: Rooms của mình + Rooms của học viên trong lớp
     - Student: Chỉ rooms của mình
-    
+
+    Query `context`:
+    - 'ca_nhan': chỉ phòng cá nhân
+    - 'nhom': chỉ phòng nhóm (group workplace)
+    - 'all' hoặc None: cả hai
+
     Có thể truyền token qua:
     - Header: Authorization: Bearer <token>
     - Query param: ?token=<token>
@@ -392,10 +398,14 @@ async def get_rooms(
 
     async with httpx.AsyncClient(timeout=15) as client:
         try:
+            params = {}
+            if context:
+                params["context"] = context
             # Gọi API platform để lấy rooms
             response = await client.get(
                 f"{IOT_PLATFORM_URL}/rooms",
-                headers={"Authorization": f"Bearer {platform_token}"}
+                headers={"Authorization": f"Bearer {platform_token}"},
+                params=params,
             )
 
             if response.status_code != 200:
@@ -405,15 +415,255 @@ async def get_rooms(
                 )
 
             data = response.json()
-            # Debug: in ra so_nguoi của phòng đầu tiên (nếu có)
-            rooms_list = data.get("rooms", [])
-            if rooms_list:
-                first = rooms_list[0]
-                print(f"[DEBUG /rooms] room_id={first.get('id')} "
-                      f"so_nguoi={first.get('so_nguoi')} occupancy={first.get('occupancy')} "
-                      f"keys={list(first.keys())}")
             return data
 
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+# ============================================================
+# Class student management (group workplace) - proxy tới FastAPI
+# ============================================================
+@app.get("/classes/{class_id}/students")
+async def list_class_students(
+    class_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Danh sách sinh viên trong lớp (max 5) - proxy tới FastAPI."""
+    platform_token = token_data["platform_token"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            response = await client.get(
+                f"{IOT_PLATFORM_URL}/classes/{class_id}/students",
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.post("/classes/{class_id}/students")
+async def add_student_to_class(
+    class_id: int,
+    body: Dict,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Thêm sinh viên vào lớp - proxy tới FastAPI."""
+    platform_token = token_data["platform_token"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            response = await client.post(
+                f"{IOT_PLATFORM_URL}/classes/{class_id}/students",
+                headers={"Authorization": f"Bearer {platform_token}"},
+                json=body,
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.delete("/classes/{class_id}/students/{student_id}")
+async def remove_student_from_class(
+    class_id: int,
+    student_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Xóa sinh viên khỏi lớp - proxy tới FastAPI."""
+    platform_token = token_data["platform_token"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            response = await client.delete(
+                f"{IOT_PLATFORM_URL}/classes/{class_id}/students/{student_id}",
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.get("/classes/{class_id}/available-students")
+async def list_available_students(
+    class_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Danh sách student chưa ở lớp nào - proxy tới FastAPI."""
+    platform_token = token_data["platform_token"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            response = await client.get(
+                f"{IOT_PLATFORM_URL}/classes/{class_id}/available-students",
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+# ============================================================
+# Group management (nhóm trong lớp) - proxy tới FastAPI
+# ============================================================
+@app.get("/classes/{class_id}/groups")
+async def list_class_groups(
+    class_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Liệt kê các nhóm trong lớp - proxy tới FastAPI."""
+    platform_token = token_data["platform_token"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            response = await client.get(
+                f"{IOT_PLATFORM_URL}/classes/{class_id}/groups",
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.post("/classes/{class_id}/groups")
+async def create_class_group(
+    class_id: int,
+    body: Dict,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Tạo nhóm mới trong lớp - proxy tới FastAPI."""
+    platform_token = token_data["platform_token"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            response = await client.post(
+                f"{IOT_PLATFORM_URL}/classes/{class_id}/groups",
+                headers={"Authorization": f"Bearer {platform_token}"},
+                json=body,
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.patch("/groups/{group_id}")
+async def update_group(
+    group_id: int,
+    body: Dict,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Cập nhật tên/mô tả nhóm - proxy tới FastAPI."""
+    platform_token = token_data["platform_token"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            response = await client.patch(
+                f"{IOT_PLATFORM_URL}/groups/{group_id}",
+                headers={"Authorization": f"Bearer {platform_token}"},
+                json=body,
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.delete("/groups/{group_id}")
+async def delete_group(
+    group_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Xóa nhóm - proxy tới FastAPI."""
+    platform_token = token_data["platform_token"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            response = await client.delete(
+                f"{IOT_PLATFORM_URL}/groups/{group_id}",
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.get("/groups/{group_id}/members")
+async def list_group_members(
+    group_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Liệt kê thành viên trong nhóm - proxy tới FastAPI."""
+    platform_token = token_data["platform_token"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            response = await client.get(
+                f"{IOT_PLATFORM_URL}/groups/{group_id}/members",
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.post("/groups/{group_id}/members")
+async def add_group_member(
+    group_id: int,
+    body: Dict,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Thêm sinh viên vào nhóm - proxy tới FastAPI."""
+    platform_token = token_data["platform_token"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            response = await client.post(
+                f"{IOT_PLATFORM_URL}/groups/{group_id}/members",
+                headers={"Authorization": f"Bearer {platform_token}"},
+                json=body,
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
+
+
+@app.delete("/groups/{group_id}/members/{user_id}")
+async def remove_group_member(
+    group_id: int,
+    user_id: int,
+    token: Optional[str] = None,
+    token_data: dict = Depends(verify_app_token_optional)
+):
+    """Gỡ sinh viên khỏi nhóm - proxy tới FastAPI."""
+    platform_token = token_data["platform_token"]
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            response = await client.delete(
+                f"{IOT_PLATFORM_URL}/groups/{group_id}/members/{user_id}",
+                headers={"Authorization": f"Bearer {platform_token}"}
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            return response.json()
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 

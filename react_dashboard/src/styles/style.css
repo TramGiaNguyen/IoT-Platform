@@ -13,6 +13,69 @@ body {
   height: 100vh;
 }
 
+/* ============================================
+   Workspace switcher (Cá nhân / Nhóm)
+   ============================================ */
+.workspace-switcher {
+  display: flex;
+  margin: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.workspace-tab {
+  flex: 1;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+}
+
+.workspace-tab.active {
+  background: #22d3ee;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.workspace-tab:hover:not(.active) {
+  color: #e5e7eb;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ============================================
+   Group room badge
+   ============================================ */
+.room-badge-group {
+  display: inline-block;
+  background: linear-gradient(135deg, #22d3ee 0%, #0891b2 100%);
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.room-badge-personal {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.1);
+  color: #9ca3af;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-left: 6px;
+}
+
 .container {
   padding: 20px;
   font-family: Arial, sans-serif;
@@ -1889,4 +1952,313 @@ body {
   margin-bottom: 16px;
   font-size: 14px;
   color: #e2e8f0;
+}
+
+/* ============================
+   Filter Bar & Pagination
+   ============================ */
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-bar input[type="text"],
+.filter-bar select {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #1f2a44;
+  background: #111a2f;
+  color: #e2e8f0;
+  font-size: 14px;
+}
+
+.filter-bar input[type="text"] {
+  min-width: 200px;
+  flex: 1;
+}
+
+.filter-bar select {
+  min-width: 140px;
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(9, 12, 24, 0.95));
+  border: 1px solid #1f2a44;
+  border-radius: 12px;
+  color: #94a3b8;
+  font-size: 14px;
+  flex-wrap: wrap;
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagination-controls button {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #1f2a44;
+  background: #111a2f;
+  color: #e2e8f0;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.pagination-controls button:hover:not(:disabled) {
+  border-color: #22d3ee;
+  color: #22d3ee;
+}
+
+.pagination-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pagination-controls .page-numbers {
+  display: flex;
+  gap: 4px;
+}
+
+.pagination-controls .page-num {
+  min-width: 36px;
+  text-align: center;
+}
+
+.pagination-controls .page-num.active {
+  background: linear-gradient(135deg, #0ea5e9, #22d3ee);
+  color: #0b1224;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+/* ============================
+   Bulk Import Modal
+   ============================ */
+.bulk-import-dropzone {
+  border: 2px dashed #1f2a44;
+  border-radius: 12px;
+  padding: 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #0f172a;
+  margin-bottom: 12px;
+}
+
+.bulk-import-dropzone:hover {
+  border-color: #22d3ee;
+  background: rgba(34, 211, 238, 0.05);
+}
+
+.bulk-import-dropzone.drag-over {
+  border-color: #22d3ee;
+  background: rgba(34, 211, 238, 0.1);
+}
+
+.bulk-import-dropzone p {
+  margin: 8px 0 4px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.bulk-import-dropzone .file-hint {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.bulk-import-result {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.bulk-import-result.success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #86efac;
+}
+
+.bulk-import-result.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+
+/* ============================
+   Password Change Overlay
+   ============================ */
+.password-change-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(4px);
+}
+
+.password-change-modal {
+  background: linear-gradient(145deg, #0f172a, #1e293b);
+  border: 1px solid #1f2a44;
+  border-radius: 20px;
+  padding: 36px;
+  width: min(480px, 92vw);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.password-change-modal h2 {
+  margin: 0 0 8px;
+  color: #22d3ee;
+  font-size: 22px;
+}
+
+.password-change-modal p {
+  margin: 0 0 20px;
+  color: #94a3b8;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.password-change-modal label {
+  display: block;
+  color: #cbd5e1;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.password-change-modal input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid #1f2a44;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 15px;
+  box-sizing: border-box;
+  margin-bottom: 14px;
+}
+
+.password-change-modal input:focus {
+  outline: none;
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
+}
+
+.password-change-modal .form-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.password-change-modal .form-actions button {
+  padding: 10px 20px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.password-change-modal .form-actions button:first-child {
+  background: linear-gradient(135deg, #0ea5e9, #22d3ee);
+  color: #0b1224;
+}
+
+.password-change-modal .form-actions button:first-child:hover {
+  box-shadow: 0 0 20px rgba(34, 211, 238, 0.4);
+  transform: translateY(-1px);
+}
+
+.password-change-modal .form-actions button:first-child:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.password-change-modal .form-actions button:last-child {
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid #1f2a44;
+}
+
+.password-change-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+/* ============================
+   Class Detail Panel
+   ============================ */
+.class-detail-panel {
+  max-width: 900px;
+  width: 95vw;
+}
+
+.class-detail-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #1f2a44;
+  padding-bottom: 0;
+}
+
+.class-detail-tabs button {
+  padding: 8px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: -1px;
+  transition: all 0.2s;
+}
+
+.class-detail-tabs button.active {
+  border-bottom-color: #6366f1;
+  color: #6366f1;
+  font-weight: 600;
+}
+
+.class-detail-tabs button:hover:not(.active) {
+  color: #e2e8f0;
+}
+
+.class-card-clickable {
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+
+.class-card-clickable:hover {
+  transform: translateY(-2px);
+  border-color: rgba(99, 102, 241, 0.5);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }

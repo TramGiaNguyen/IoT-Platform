@@ -4,6 +4,7 @@ import { login } from '../services';
 const Login = ({ setToken }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -13,9 +14,15 @@ const Login = ({ setToken }) => {
     setLoading(true);
     try {
       const res = await login(username, password);
-      console.log('[Login] Response:', res.data);
-      // Pass token, refresh_token, vai_tro, and allowed_pages to parent
-      setToken(res.data.access_token, res.data.refresh_token, res.data.vai_tro, res.data.allowed_pages);
+      const data = res.data;
+      setToken(
+        data.access_token,
+        data.refresh_token,
+        data.vai_tro,
+        data.allowed_pages,
+        data.phai_doi_mat_khau,
+        data.user_id || null,
+      );
     } catch (err) {
       setError('Sai tài khoản hoặc mật khẩu');
     } finally {
@@ -49,13 +56,28 @@ const Login = ({ setToken }) => {
             />
 
             <label>Mật khẩu</label>
-            <input
-              placeholder="Mật khẩu"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                placeholder="Mật khẩu"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                maxLength={18}
+                style={{ paddingRight: '36px', width: '100%' }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                style={{
+                  position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', padding: '2px',
+                }}
+                title={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+              >
+                {showPassword ? '🙈' : '👁'}
+              </button>
+            </div>
 
             {error && <div className="login-error">{error}</div>}
 

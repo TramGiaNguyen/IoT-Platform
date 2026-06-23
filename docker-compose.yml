@@ -95,6 +95,12 @@ services:
       MYSQL_DATABASE: iot_data
       MYSQL_USER: iot
       MYSQL_PASSWORD: iot123
+    # Phase 4: tang max_connections + innodb_buffer_pool_size qua cmdline flags
+    # (tranh van de world-writable file permission tren Windows bind mount)
+    # max_connections=400: 4 workers * 30 pool = 120 + buffer (rule_engine, ai_analyst, admin, headroom)
+    command:
+      - --max-connections=400
+      - --innodb-buffer-pool-size=512M
     restart: always
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
@@ -133,6 +139,8 @@ services:
         condition: service_healthy
       mysql:
         condition: service_healthy
+      kafka-event-consumer:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
@@ -152,9 +160,47 @@ services:
       - EDGE_CONTROL_USE_DEVICE_HTTP_KEY=1
       # Hoặc key cố định cho mọi thiết bị: EDGE_CONTROL_API_KEY=ak_...
       # Chẩn đoán: docs/EDGE_CONTROL_DEBUG.md, scripts/verify-edge-control.ps1
+      # Phase 4: workers count + MySQL pool size
+      # mysql-connector-python gioi han pool_size <= 32.
+      # 4 workers * 30 = 120 connections, < MySQL max_connections=300. OK.
+      - UVICORN_WORKERS=4
+      - MYSQL_POOL_SIZE=30
     volumes:
       - .:/workspace
-    command: sh -c "python /workspace/update_password_hash.py || true && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    # Dung entrypoint script de parse UVICORN_WORKERS (mac dinh 4 trong prod).
+    # Dat UVICORN_WORKERS=1 + them flag reload de dev single-worker reload code.
+    command: ["/app/entrypoint.sh"]
+
+  # Phase 4: tach Kafka consumer ra service rieng de tranh duplicate consume
+  # khi FastAPI chay multi-worker. Service nay:
+  # - Consume `iot-events` (1 instance, group ID stable)
+  # - Batch UPDATE thiet_bi.last_seen + trang_thai='online'
+  # - Publish event len Redis Pub/Sub `ws:events` (moi FastAPI worker se forward
+  #   den WS client cua worker do)
+  # - Cache 100 event moi nhat vao Redis list `ws:latest_events` (cho initial state)
+  kafka-event-consumer:
+    build:
+      context: ./kafka_event_consumer
+    container_name: kafka_event_consumer
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC=iot-events
+      - KAFKA_GROUP_ID=fastapi-event-bridge
+      - MYSQL_HOST=mysql
+      - MYSQL_USER=iot
+      - MYSQL_PASSWORD=iot123
+      - MYSQL_DATABASE=iot_data
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
 
   mqtt-to-kafka:
     build:

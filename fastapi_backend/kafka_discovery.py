@@ -8,6 +8,10 @@ KafkaConsumer mới trong mỗi HTTP request, gây:
 
 Module này duy trì một background thread consume Kafka liên tục và
 phục vụ dữ liệu từ in-memory cache thread-safe.
+
+TODO (Phase 5): Tach service rieng tuong tu kafka_event_consumer. Hien tai trong
+multi-worker, moi worker se tao 1 thread consumer (4 lan duplicate). Acceptable
+tam thoi vi discovery topic it event va chi dung cho 2 endpoint doc tu cache.
 """
 import json
 import os

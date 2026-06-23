@@ -66,9 +66,10 @@ export const registerDevice = (deviceData, token) =>
     headers: { Authorization: `Bearer ${token}` },
   });
 
-export const fetchRooms = (token) =>
+export const fetchRooms = (token, context = null) =>
   axios.get(`${API_BASE}/rooms`, {
     headers: { Authorization: `Bearer ${token}` },
+    params: context ? { context } : {},
   });
 
 export const createRoom = (data, token) =>
@@ -186,15 +187,38 @@ export const controlAcCommand = (command, token) =>
   );
 
 // User Management
-export const fetchUsers = (token) =>
+export const fetchUsers = (token, params = {}) =>
   axios.get(`${API_BASE}/users`, {
     headers: { Authorization: `Bearer ${token}` },
+    params: { page: 1, page_size: 15, ...params },
   });
 
 export const createUser = (data, token) =>
   axios.post(`${API_BASE}/users`, data, {
     headers: { Authorization: `Bearer ${token}` },
   });
+
+export const bulkImportUsers = (file, lopHocId = null, token) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (lopHocId) formData.append('lop_hoc_id', lopHocId);
+  return axios.post(`${API_BASE}/users/bulk-import`, formData, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const changePassword = (userId, newPassword, token) =>
+  axios.put(`${API_BASE}/users/${userId}/change-password`, { new_password: newPassword }, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const bulkImportClassStudents = (classId, file, token) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return axios.post(`${API_BASE}/classes/${classId}/students/bulk-import`, formData, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+  });
+};
 
 export const updateUser = (userId, data, token) =>
   axios.put(`${API_BASE}/users/${userId}`, data, {
@@ -444,12 +468,11 @@ export const fetchRoomOccupancy = (roomId, token) =>
     headers: { Authorization: `Bearer ${token}` },
   });
 
-// =========================================================
 // Class (lop_hoc) APIs
-// =========================================================
-export const fetchClasses = (token) =>
+export const fetchClasses = (token, params = {}) =>
   axios.get(`${API_BASE}/classes`, {
     headers: { Authorization: `Bearer ${token}` },
+    params: { page: 1, page_size: 15, ...params },
   });
 
 export const createClass = (data, token) =>
@@ -467,5 +490,76 @@ export const deleteClass = (classId, token) =>
 // =========================================================
 export const fetchMe = (token) =>
   axios.get(`${API_BASE}/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+// =========================================================
+// Class student management (group workplace)
+// =========================================================
+export const listClassStudents = (classId, token) =>
+  axios.get(`${API_BASE}/classes/${classId}/students`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const fetchUnassignedStudents = (classId, search = '', token) =>
+  axios.get(`${API_BASE}/classes/${classId}/unassigned-students`, {
+    headers: { Authorization: `Bearer ${token}` },
+    params: search ? { search } : {},
+  });
+
+export const addStudentToClass = (classId, studentId, token) =>
+  axios.post(
+    `${API_BASE}/classes/${classId}/students`,
+    { student_id: studentId },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+export const removeStudentFromClass = (classId, studentId, token) =>
+  axios.delete(`${API_BASE}/classes/${classId}/students/${studentId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const listAvailableStudents = (classId, token) =>
+  axios.get(`${API_BASE}/classes/${classId}/available-students`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+// =========================================================
+// Groups (nhóm trong lớp) — 1 lớp có thể có NHIỀU nhóm, mỗi nhóm max 5 SV
+// =========================================================
+export const listClassGroups = (classId, token) =>
+  axios.get(`${API_BASE}/classes/${classId}/groups`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const createClassGroup = (classId, data, token) =>
+  axios.post(`${API_BASE}/classes/${classId}/groups`, data, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const updateGroup = (groupId, data, token) =>
+  axios.patch(`${API_BASE}/groups/${groupId}`, data, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const deleteGroup = (groupId, token) =>
+  axios.delete(`${API_BASE}/groups/${groupId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const listGroupMembers = (groupId, token) =>
+  axios.get(`${API_BASE}/groups/${groupId}/members`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const addGroupMember = (groupId, userId, token) =>
+  axios.post(
+    `${API_BASE}/groups/${groupId}/members`,
+    { user_id: userId },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+export const removeGroupMember = (groupId, userId, token) =>
+  axios.delete(`${API_BASE}/groups/${groupId}/members/${userId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });

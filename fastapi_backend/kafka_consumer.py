@@ -1,3 +1,9 @@
+# DEPRECATED - Phase 4: Kafka consumer da tach ra service rieng `kafka_event_consumer/`.
+# File nay chi con de tham khao/debug. KHONG goi start_kafka_consumer_background() tu main.py nua.
+# Logic consume + flush last_seen da duoc chuyen sang kafka_event_consumer/main.py.
+#
+# Giu lai ham public (get_latest_events, ...) neu code khac van con tham chieu.
+
 import json
 import threading
 import time as _time_module

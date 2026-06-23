@@ -1114,7 +1114,7 @@ function CameraCard({ camera, roomId, token, onDelete, onUpdate, onPeopleCount }
 /* ------------------------------------------------------------------ */
 /* RoomDetail main component                                            */
 /* ------------------------------------------------------------------ */
-export default function RoomDetail({ roomId, token, onBack }) {
+export default function RoomDetail({ roomId, token, onBack, workspaceContext }) {
   // Global cache — rooms list từ cache để hydrate header ngay
   const { cache } = useGlobalCache();
   const [room, setRoom] = useState(null);

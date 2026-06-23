@@ -58,13 +58,14 @@ export function GlobalCacheProvider({ children, token }) {
 
   // ── fetchFreshData: gọi API, cập nhật state + localStorage ─────────────────
 
-  const fetchFreshData = useCallback(async () => {
+  const fetchFreshData = useCallback(async (options = {}) => {
+    const { context = null } = options;
     initializing.current = true;
     try {
       const results = await Promise.allSettled([
         fetchDevices(token),
         fetchDashboards(token),
-        fetchRooms(token),
+        fetchRooms(token, context),
         fetchRules(token),
         axios.get(`${API_BASE}/stats/hourly`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -94,6 +95,7 @@ export function GlobalCacheProvider({ children, token }) {
         rules:      _rules,
         hourlyStats: hourlyRes.status    === 'fulfilled' ? (hourlyRes.value.data?.stats     || []) : [],
         dailyStats:  dailyRes.status     === 'fulfilled' ? (dailyRes.value.data?.stats     || []) : [],
+        workspaceContext: context,
       };
 
       setCache(next);
@@ -115,6 +117,12 @@ export function GlobalCacheProvider({ children, token }) {
 
     // BƯỚC 1: Hydrate từ localStorage — tức thì, không đợi network
     const fromStorage = loadFromStorage();
+    console.debug('[DEBUG-B4BD18] GlobalCache initialize: fromStorage', {
+      hasData: !!fromStorage,
+      'fromStorage.devices length': fromStorage?.devices?.length,
+      isCacheFresh,
+      initialized: initialized.current,
+    });
     if (fromStorage && initialized.current) {
       setCache(fromStorage);
       setCacheTimestamp(Date.now());
@@ -139,11 +147,23 @@ export function GlobalCacheProvider({ children, token }) {
   const updateCache = useCallback((patch) => {
     setCache(prev => {
       const next = { ...prev, ...patch };
+      console.debug('[DEBUG-B4BD18] updateCache: patching cache', {
+        patchKeys: Object.keys(patch),
+        'patch.devices length': patch.devices?.length,
+        'patch.devices[0]': patch.devices?.[0],
+        'next.devices length': next.devices?.length,
+      });
       saveToStorage(next);
       return next;
     });
     setCacheTimestamp(Date.now());
   }, []);
+
+  // ── refetch: gọi lại API với options mới (vd đổi workspace context) ─────────
+  const refetch = useCallback(async (options = {}) => {
+    if (!token) return;
+    await fetchFreshData(options);
+  }, [token, fetchFreshData]);
 
   // ── clearCache ───────────────────────────────────────────────────────────────
 
@@ -160,6 +180,7 @@ export function GlobalCacheProvider({ children, token }) {
     token,
     updateCache,
     clearCache,
+    refetch,
     isInitialized: initialized.current,
     isCacheFresh,
     initialize,

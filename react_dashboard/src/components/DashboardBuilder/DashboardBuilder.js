@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { fetchDashboard, fetchDevices, createWidget, updateWidget, deleteWidget } from '../../services';
+import { fetchDashboard, fetchDevices, fetchMe, createWidget, updateWidget, deleteWidget } from '../../services';
 import Toolbar, { WIDGET_TYPES } from './Toolbar';
 import Canvas from './Canvas';
 import WidgetEditor from './WidgetEditor';
@@ -11,22 +11,30 @@ export default function DashboardBuilder({ dashboardId, token, onBack, onSave })
   const [selectedWidget, setSelectedWidget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [canEdit, setCanEdit] = useState(true); // Phase 5: set from permission check
 
   // Load dashboard and widgets
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const [dashboardRes, devicesRes] = await Promise.all([
+      const [dashboardRes, devicesRes, meRes] = await Promise.all([
         fetchDashboard(dashboardId, token),
-        fetchDevices(token)
+        fetchDevices(token),
+        fetchMe(token),
       ]);
-      
+
       setDashboard(dashboardRes.data);
       setWidgets(dashboardRes.data.widgets || []);
       setDevices(devicesRes.data.devices || []);
+
+      // Phase 5: owner or admin can edit
+      const currentUserId = meRes.data.id;
+      const currentUserRole = meRes.data.vai_tro;
+      const isOwner = dashboardRes.data.nguoi_tao_id === currentUserId;
+      setCanEdit(isOwner || currentUserRole === 'admin');
     } catch (err) {
       console.error('Failed to load dashboard:', err);
-      alert('Không thể tải dashboard');
+      setCanEdit(false); // no permission or error
     } finally {
       setLoading(false);
     }
@@ -180,7 +188,7 @@ export default function DashboardBuilder({ dashboardId, token, onBack, onSave })
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#090f1f' }}>
       {/* Toolbar */}
-      <Toolbar onAddWidget={handleAddWidget} />
+      {canEdit && <Toolbar onAddWidget={handleAddWidget} />}
 
       {/* Canvas */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -193,7 +201,20 @@ export default function DashboardBuilder({ dashboardId, token, onBack, onSave })
           justifyContent: 'space-between',
           alignItems: 'center'
         }}>
-          <div>
+          {!canEdit && (
+            <span style={{
+              background: 'rgba(251, 191, 36, 0.1)',
+              color: '#fbbf24',
+              border: '1px solid rgba(251, 191, 36, 0.3)',
+              padding: '4px 12px',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontWeight: '600',
+            }}>
+              Chỉ xem (không có quyền chỉnh sửa)
+            </span>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, marginLeft: canEdit ? 0 : '12px' }}>
             <button
               onClick={onBack}
               style={{
@@ -214,23 +235,29 @@ export default function DashboardBuilder({ dashboardId, token, onBack, onSave })
           </div>
           <div>
             {saving && <span style={{ color: '#9ca3af', marginRight: '16px' }}>Đang lưu...</span>}
-            <button
-              onClick={() => {
-                if (onSave) onSave();
-                else onBack();
-              }}
-              style={{
-                padding: '10px 20px',
-                background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
-                border: 'none',
-                borderRadius: '6px',
-                color: '#0b1224',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-            >
-              Lưu Dashboard
-            </button>
+            {canEdit ? (
+              <button
+                onClick={() => {
+                  if (onSave) onSave();
+                  else onBack();
+                }}
+                style={{
+                  padding: '10px 20px',
+                  background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: '#0b1224',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Lưu Dashboard
+              </button>
+            ) : (
+              <span style={{ color: '#6b7280', fontSize: '14px' }}>
+                Chỉ xem
+              </span>
+            )}
           </div>
         </div>
 

@@ -1,130 +1,178 @@
 # fastapi_backend/websocket.py
+#
+# Phase 4 refactor:
+# - Moi worker co list `active_connections` rieng (in-memory, OK vi workers khong share WS state)
+# - Event realtime duoc publish qua Redis Pub/Sub channel `ws:events`
+#   (kafka_event_consumer la publisher chinh; co the co publisher khac trong tuong lai)
+# - Moi worker subscribe channel do va forward event den cac WS client dang ket noi
+#   trong worker do. Cach lam nay dam bao 1 user chi nhan event duy nhat 1 lan,
+#   khong bi duplicate khi co nhieu workers.
+# - Initial events (10 moi nhat) doc tu Redis list `ws:latest_events` de multi-worker share.
 
-from fastapi import WebSocket, WebSocketDisconnect, Request
-from starlette.websockets import WebSocketState
-from kafka_consumer import get_latest_events
 import asyncio
 import json
+import os
 import time
+from typing import List
 
-# Lưu danh sách các WebSocket connections đang active
-active_connections: list[WebSocket] = []
-# Lưu last timestamp đã gửi cho mỗi connection
-connection_last_timestamps: dict[WebSocket, float] = {}
+import redis.asyncio as aioredis
+from fastapi import WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
+
+# Danh sach WS connection trong worker hien tai (per-process, OK)
+active_connections: List[WebSocket] = []
+
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+WS_CHANNEL = "ws:events"
+WS_LATEST_KEY = "ws:latest_events"  # Redis list chua 100 event moi nhat
+WS_LATEST_MAX = 100
+INITIAL_EVENTS_COUNT = 10
+PING_INTERVAL = 10
+
+
+async def _get_initial_events() -> list:
+    """Doc 10 event moi nhat tu Redis list (share giua cac worker)."""
+    try:
+        r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+        raw_list = await r.lrange(WS_LATEST_KEY, 0, INITIAL_EVENTS_COUNT - 1)
+        await r.aclose()
+        # Redis LPUSH them vao head → can dao nguoc de lay theo thu tu thoi gian
+        events = []
+        for raw in reversed(raw_list):
+            try:
+                events.append(json.loads(raw))
+            except Exception:
+                continue
+        return events
+    except Exception as e:
+        print(f"[WS] Failed to read initial events from Redis: {e}")
+        return []
+
+
+async def _redis_subscriber_loop():
+    """
+    Background task (chay 1 lan moi worker) subscribe Redis Pub/Sub.
+    Khi co event moi → broadcast den active_connections trong worker nay.
+    """
+    while True:
+        try:
+            r = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+            pubsub = r.pubsub()
+            await pubsub.subscribe(WS_CHANNEL)
+            print(f"[WS] Subscribed to Redis channel '{WS_CHANNEL}'")
+            try:
+                async for message in pubsub.listen():
+                    if message.get("type") != "message":
+                        continue
+                    data = message.get("data")
+                    if not data:
+                        continue
+                    try:
+                        event = json.loads(data)
+                    except Exception:
+                        continue
+                    # Broadcast den cac connection trong worker hien tai
+                    await _broadcast_to_local(event)
+            finally:
+                await pubsub.unsubscribe(WS_CHANNEL)
+                await pubsub.aclose()
+                await r.aclose()
+        except Exception as e:
+            print(f"[WS] Subscriber error, reconnecting in 3s: {e}")
+            await asyncio.sleep(3)
+
+
+async def _broadcast_to_local(event: dict) -> None:
+    """Gui event den tat ca WS connection dang active trong worker hien tai."""
+    if not active_connections:
+        return
+    dead: List[WebSocket] = []
+    # Tao ban copy de tranh loi neu list bi modify khi dang lap
+    for ws in list(active_connections):
+        try:
+            if ws.application_state != WebSocketState.CONNECTED:
+                dead.append(ws)
+                continue
+            await ws.send_json(event)
+        except (WebSocketDisconnect, RuntimeError, ConnectionError):
+            dead.append(ws)
+        except Exception as e:
+            print(f"[WS] Broadcast error: {e}")
+            dead.append(ws)
+    for ws in dead:
+        try:
+            active_connections.remove(ws)
+        except ValueError:
+            pass
+
 
 def _allow_ws_origin(origin: str) -> bool:
-    """Kiểm tra origin có được phép kết nối WebSocket không."""
+    """Kiem tra origin co duoc phep ket noi WebSocket khong (dev: allow all)."""
     if not origin:
         return True
-    allowed = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
-    # Cho phép tất cả origin trong development
-    return True  # Hoặc check origin có trong allowed list
+    return True
+
 
 async def websocket_endpoint(websocket: WebSocket):
     """
-    WebSocket endpoint để push real-time events từ Kafka đến frontend.
-    Subscribe Kafka topic và gửi events ngay khi có dữ liệu mới.
+    WebSocket endpoint push real-time events den frontend.
+    - Initial events lay tu Redis list (share multi-worker)
+    - Realtime events nhan qua Redis Pub/Sub subscriber (chay nen trong main.py)
     """
     print(f"[WEBSOCKET] New connection attempt from {websocket.client}")
     try:
-        # Lấy origin từ headers
         origin = websocket.headers.get("origin", "")
-        
-        # Handle CORS cho WebSocket - chấp nhận kết nối từ mọi origin trong dev
         await websocket.accept(subprotocol=None)
         print(f"[WEBSOCKET] Connection accepted from {websocket.client} (origin: {origin})")
         active_connections.append(websocket)
-        connection_last_timestamps[websocket] = None
     except Exception as e:
         print(f"[WEBSOCKET] Error accepting connection: {e}")
         return
-    
+
     try:
-        # Gửi events mới nhất khi client kết nối
-        latest_events = get_latest_events()
-        if latest_events:
-            # Gửi 10 events gần nhất
-            for event in latest_events[-10:]:
-                try:
-                    # Kiểm tra connection state trước khi gửi
-                    if websocket.application_state != WebSocketState.CONNECTED:
-                        print(f"[WEBSOCKET] Connection closed, stopping initial events")
-                        break
-                    await websocket.send_json(event)
-                except (WebSocketDisconnect, RuntimeError, ConnectionError) as e:
-                    print(f"[WEBSOCKET] Connection closed during initial events: {e}")
-                    raise
-                except Exception as e:
-                    print(f"[WEBSOCKET] Error sending initial event: {e}")
-                    break
-        
-        # Monitor và gửi events mới từ Kafka
-        connection_alive = True
-        last_ping = time.time()
-        while connection_alive:
+        # Gui 10 events moi nhat khi moi ket noi (doc tu Redis)
+        initial_events = await _get_initial_events()
+        for event in initial_events:
+            if websocket.application_state != WebSocketState.CONNECTED:
+                break
             try:
-                # Nếu connection đã đóng thì thoát
+                await websocket.send_json(event)
+            except (WebSocketDisconnect, RuntimeError, ConnectionError) as e:
+                print(f"[WEBSOCKET] Connection closed during initial events: {e}")
+                raise
+            except Exception as e:
+                print(f"[WEBSOCKET] Error sending initial event: {e}")
+                break
+
+        # Vong lap giu song ket noi: doc tin nhan client (ping) + gui ping dinh ky
+        last_ping = time.time()
+        while True:
+            try:
                 if websocket.application_state != WebSocketState.CONNECTED:
-                    print("[WEBSOCKET] Connection state is not CONNECTED, exiting loop")
                     break
-
-                current_events = get_latest_events()
-                last_id = connection_last_timestamps.get(websocket)
-                
-                if current_events:
-                    # Tìm events mới hơn ID cuối cùng đã gửi
-                    new_events = []
-                    for event in current_events:
-                        event_id = event.get('_internal_id')
-                        if event_id:
-                            if last_id is None or event_id > last_id:
-                                new_events.append(event)
-                    
-                    # Gửi các events mới
-                    for event in new_events:
-                        await websocket.send_json(event)
-                        # Cập nhật ID cuối cùng
-                        event_id = event.get('_internal_id')
-                        if event_id:
-                            connection_last_timestamps[websocket] = event_id
-
-                # Gửi ping định kỳ để giữ kết nối
+                # Cho client gui message (text/ping) voi timeout ngan
+                try:
+                    msg = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
+                    # Co the xu ly command tu client o day neu can
+                except asyncio.TimeoutError:
+                    pass
+                # Ping dinh ky
                 now = time.time()
-                if now - last_ping >= 10:
+                if now - last_ping >= PING_INTERVAL:
                     try:
                         await websocket.send_json({"type": "ping", "ts": now})
                         last_ping = now
                     except Exception as e:
                         print(f"[WEBSOCKET] Ping failed: {e}")
                         break
-
-                await asyncio.sleep(0.5)  # Check mỗi 0.5 giây để real-time hơn
-            except (WebSocketDisconnect, RuntimeError, ConnectionError, Exception) as e:
-                # Nếu là lỗi về connection đã đóng, break loop
-                error_msg = str(e).lower()
-                if "close" in error_msg or "disconnect" in error_msg or "send" in error_msg:
-                    print(f"[WEBSOCKET] Connection closed: {e}")
-                    connection_alive = False
-                    break
-                else:
-                    print(f"[WEBSOCKET] Unexpected error: {e}")
-                    await asyncio.sleep(1)  # Wait a bit before retrying
-            
-    except WebSocketDisconnect:
-        print(f"[WEBSOCKET] Client disconnected normally")
-        if websocket in active_connections:
+            except WebSocketDisconnect:
+                break
+            except (RuntimeError, ConnectionError) as e:
+                print(f"[WEBSOCKET] Connection error: {e}")
+                break
+    finally:
+        try:
             active_connections.remove(websocket)
-        connection_last_timestamps.pop(websocket, None)
-    except (RuntimeError, ConnectionError) as e:
-        print(f"[WEBSOCKET] Connection error: {e}")
-        if websocket in active_connections:
-            active_connections.remove(websocket)
-        connection_last_timestamps.pop(websocket, None)
-    except Exception as e:
-        print(f"[WEBSOCKET] Unexpected error: {e}")
-        if websocket in active_connections:
-            active_connections.remove(websocket)
-        connection_last_timestamps.pop(websocket, None)
+        except ValueError:
+            pass

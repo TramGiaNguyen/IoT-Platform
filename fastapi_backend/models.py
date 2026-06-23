@@ -19,6 +19,7 @@ class Token(BaseModel):
     vai_tro: Optional[str] = None
     allowed_pages: Optional[List[str]] = None
     refresh_token: Optional[str] = None
+    phai_doi_mat_khau: Optional[bool] = False
 
 
 # =========================================================
@@ -30,6 +31,8 @@ class DashboardCreateRequest(BaseModel):
     mo_ta: Optional[str] = None
     icon: Optional[str] = "dashboard"
     mau_sac: Optional[str] = "#22d3ee"
+    phong_id: Optional[int] = None  # Phase 5: scope to phong (ca nhan or nhom)
+    lop_hoc_id: Optional[int] = None  # Phase 5: scope to lop_hoc
     widgets: Optional[List[Dict[str, Any]]] = []  # Optional widgets to create with dashboard
 
 
@@ -39,6 +42,8 @@ class DashboardUpdateRequest(BaseModel):
     icon: Optional[str] = None
     mau_sac: Optional[str] = None
     trang_thai: Optional[str] = None  # 'active' or 'archived'
+    phong_id: Optional[int] = None  # Phase 5: scope to phong (ca nhan or nhom)
+    lop_hoc_id: Optional[int] = None  # Phase 5: scope to lop_hoc
 
 
 class WidgetCreateRequest(BaseModel):

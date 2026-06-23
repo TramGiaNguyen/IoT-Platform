@@ -73,13 +73,16 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
 
   // State cho discovery modal
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
-  const [modalTab, setModalTab] = useState('provision'); // 'provision' or 'discover'
+  const [modalTab, setModalTab] = useState('provision'); // 'provision', 'discover', or 'import'
   const [discoveredDevices, setDiscoveredDevices] = useState([]);
   const [scanning, setScanning] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [discoverError, setDiscoverError] = useState('');
   const [rooms, setRooms] = useState([]);
   const [selectedDevices, setSelectedDevices] = useState({});
+
+  // State cho import config
+  const [importedDeviceConfig, setImportedDeviceConfig] = useState(null);
 
   // State cho provisioning wizard
   const [provisionStep, setProvisionStep] = useState(1); // 1: Form, 2: Result
@@ -103,6 +106,75 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   const [controlLinesSaved, setControlLinesSaved] = useState(false);
   const [savingControlLines, setSavingControlLines] = useState(false);
   const [downloadingConfig, setDownloadingConfig] = useState(false);
+
+  // ── Import config handler ──────────────────────────────────────────────────
+  const handleImportConfig = (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const config = JSON.parse(e.target.result);
+        if (!config.device?.device_id) {
+          alert('File config không hợp lệ: thiếu device_id');
+          return;
+        }
+        setImportedDeviceConfig(config);
+        // Pre-fill provision form with imported device info
+        setProvisionForm(prev => ({
+          ...prev,
+          ten_thiet_bi: config.device.ten_thiet_bi || prev.ten_thiet_bi,
+          phong_id: config.device.phong_id || prev.phong_id,
+          protocol: config.device.protocol || prev.protocol,
+          device_type: config.device.device_type || prev.device_type,
+        }));
+        alert(`Đã nhập config cho thiết bị: ${config.device.device_id}`);
+      } catch (err) {
+        alert('Đọc file config thất bại: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
+
+  const handleRegisterImportedDevice = async () => {
+    if (!importedDeviceConfig) return;
+    const cfg = importedDeviceConfig;
+    setRegistering(true);
+    setDiscoverError('');
+    try {
+      const payload = {
+        device_id: cfg.credentials?.device_id || cfg.device?.device_id,
+        ten_thiet_bi: provisionForm.ten_thiet_bi || cfg.device?.ten_thiet_bi || cfg.credentials?.device_id,
+        loai_thiet_bi: cfg.device?.loai_thiet_bi || null,
+        phong_id: provisionForm.phong_id || cfg.device?.phong_id || null,
+        secret_key: cfg.credentials?.secret_key || null,
+        http_api_key: cfg.credentials?.http_api_key || null,
+        protocol: cfg.device?.protocol || 'mqtt',
+        device_type: cfg.device?.device_type || 'sensor',
+        edge_control_url: cfg.device?.edge_control_url || null,
+        keys: cfg.data_keys || [],
+        control_commands: cfg.control_commands || [],
+        re_register: true,
+      };
+      const res = await axios.post(`${API_BASE}/devices/register`, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setImportedDeviceConfig(null);
+      setProvisionForm({ ten_thiet_bi: '', phong_id: '', protocol: 'mqtt', device_type: 'sensor', loai_thiet_bi: '', data_keys: [] });
+      setShowDiscoveryModal(false);
+      // DEBUG C1: log add success
+      console.debug('[DEBUG-B4BD18] handleRegisterImportedDevice: calling loadLatestAll()', { registered: res.data.device?.ma_thiet_bi, is_reregister: res.data.is_reregister });
+      loadLatestAll();
+      alert(res.data.is_reregister
+        ? `Đã khôi phục thiết bị '${res.data.device?.ma_thiet_bi}' thành công. Gateway có thể tiếp tục gửi dữ liệu ngay.`
+        : `Đăng ký thiết bị '${res.data.device?.ma_thiet_bi}' thành công.`);
+    } catch (err) {
+      setDiscoverError('Lỗi đăng ký: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setRegistering(false);
+    }
+  };
 
   // Statistics state
   const [hourlyStats, setHourlyStats] = useState([]);
@@ -148,6 +220,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
 
       // Chia sẻ device list cho các component khác qua GlobalCache
       updateCache({ devices: mappedDevices });
+      console.debug('[DEBUG-B4BD18] loadLatestAll: updateCache called, mappedDevices length=' + mappedDevices.length, { mappedDevices: mappedDevices.map(d => d.ma_thiet_bi) });
 
       setDeviceData((prev) => {
         const newDeviceData = {};
@@ -319,6 +392,8 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
         delete next[device.ma_thiet_bi];
         return next;
       });
+      // DEBUG A1: log delete — devices should be removed now
+      console.debug('[DEBUG-B4BD18] handleDeleteDevice: device removed from local state', { deleted: device.ma_thiet_bi });
     } catch (err) {
       console.error('Delete device failed', err);
     }
@@ -326,8 +401,22 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
 
   // ─── useEffects ───
 
+  // DEBUG: trace device list on mount/remount
+  console.debug('[DEBUG-B4BD18] Dashboard useEffect [token,workspaceId] triggered', {
+    'initialDevices length': initialDevices?.length,
+    'initialDevices[0]': initialDevices?.[0],
+    'cache.devices length': cache.devices?.length,
+    token: !!token,
+    workspaceId,
+  });
+
   // Đồng bộ prop devices từ App xuống state cục bộ
   useEffect(() => {
+    // DEBUG: log when initialDevices changes
+    console.debug('[DEBUG-B4BD18] useEffect [initialDevices] ran — overwriting local devices', {
+      'initialDevices length': initialDevices?.length,
+      'initialDevices[0]': initialDevices?.[0],
+    });
     setDevices(initialDevices);
   }, [initialDevices]);
 
@@ -805,6 +894,10 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
             setShowDiscoveryModal(true);
             setDiscoveredDevices([]);
             setDiscoverError('');
+            setImportedDeviceConfig(null);
+            setModalTab('provision');
+            setProvisionStep(1);
+            setProvisionResult(null);
             // Load rooms
             axios.get(`${API_BASE}/rooms`, { headers: { Authorization: `Bearer ${token}` } })
               .then(res => setRooms(res.data.rooms || []))
@@ -819,7 +912,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
 
         {/* Device Modal - Provision/Discover */}
         {showDiscoveryModal && (
-          <div className="modal-overlay" onClick={() => { setShowDiscoveryModal(false); setProvisionStep(1); setProvisionResult(null); }}>
+          <div className="modal-overlay" onClick={() => { setShowDiscoveryModal(false); setProvisionStep(1); setProvisionResult(null); setImportedDeviceConfig(null); setModalTab('provision'); }}>
             <div className="modal-content modal-lg" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <div className="modal-tabs">
@@ -835,8 +928,14 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                   >
                     🔍 Quét thiết bị
                   </button>
+                  <button
+                    className={`modal-tab ${modalTab === 'import' ? 'active' : ''}`}
+                    onClick={() => setModalTab('import')}
+                  >
+                    📥 Nhập config
+                  </button>
                 </div>
-                <button className="modal-close" onClick={() => { setShowDiscoveryModal(false); setProvisionStep(1); setProvisionResult(null); }}>✕</button>
+                <button className="modal-close" onClick={() => { setShowDiscoveryModal(false); setProvisionStep(1); setProvisionResult(null); setImportedDeviceConfig(null); setModalTab('provision'); }}>✕</button>
               </div>
               <div className="modal-body">
 
@@ -1219,6 +1318,208 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* TAB: Import Config */}
+                {modalTab === 'import' && (
+                  <div style={{ padding: '10px 0' }}>
+                    <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '16px' }}>
+                      Tải lên file config JSON đã xuất trước đó để khôi phục thiết bị với cùng device_id, credentials và cấu hình — gateway không cần config lại.
+                    </p>
+
+                    {/* File upload area */}
+                    <div style={{
+                      border: '2px dashed #1e3a5f',
+                      borderRadius: '8px',
+                      padding: '32px',
+                      textAlign: 'center',
+                      marginBottom: '20px',
+                      background: '#0f172a',
+                    }}>
+                      <svg viewBox="0 0 24 24" width="40" height="40" style={{ marginBottom: '12px', color: '#60a5fa' }}>
+                        <path d="M9 16h6M9 13l3-3 3 3M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                      </svg>
+                      <p style={{ color: '#94a3b8', marginBottom: '12px' }}>Kéo thả file config JSON hoặc nhấn nút bên dưới</p>
+                      <label
+                        htmlFor="import-config-file"
+                        style={{
+                          display: 'inline-block',
+                          padding: '8px 20px',
+                          background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
+                          borderRadius: '6px',
+                          color: '#0b1224',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                        }}
+                      >
+                        Chọn file config
+                      </label>
+                      <input
+                        id="import-config-file"
+                        type="file"
+                        accept=".json"
+                        style={{ display: 'none' }}
+                        onChange={handleImportConfig}
+                      />
+                    </div>
+
+                    {/* Preview of imported config */}
+                    {importedDeviceConfig && (
+                      <div style={{
+                        background: '#1e293b',
+                        borderRadius: '8px',
+                        padding: '16px',
+                        marginBottom: '16px',
+                        border: '1px solid #334155',
+                      }}>
+                        <h4 style={{ color: '#60a5fa', margin: '0 0 12px 0', fontSize: '0.95rem' }}>
+                          Config đã nhập — {importedDeviceConfig.device?.device_id}
+                        </h4>
+
+                        {/* Device info */}
+                        <div style={{ marginBottom: '10px' }}>
+                          <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>Thiết bị</div>
+                          <div style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
+                            <strong>{importedDeviceConfig.device?.ten_thiet_bi}</strong> &nbsp;
+                            <span style={{ color: '#64748b' }}>({importedDeviceConfig.device?.device_type || 'sensor'} / {importedDeviceConfig.device?.protocol || 'mqtt'})</span>
+                          </div>
+                        </div>
+
+                        {/* Credentials */}
+                        {importedDeviceConfig.credentials && (
+                          <div style={{ marginBottom: '10px' }}>
+                            <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>Credentials</div>
+                            <div style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#86efac' }}>
+                              device_id: {importedDeviceConfig.credentials.device_id}<br />
+                              {importedDeviceConfig.credentials.secret_key && (
+                                <>secret_key: {importedDeviceConfig.credentials.secret_key.substring(0, 12)}...<br /></>
+                              )}
+                              {importedDeviceConfig.credentials.http_api_key && (
+                                <>http_api_key: {importedDeviceConfig.credentials.http_api_key.substring(0, 12)}...<br /></>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* MQTT topics */}
+                        {importedDeviceConfig.mqtt_config && (
+                          <div style={{ marginBottom: '10px' }}>
+                            <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>MQTT Topics</div>
+                            <div style={{ fontSize: '0.78rem', fontFamily: 'monospace', color: '#c4b5fd' }}>
+                              data: <span style={{ color: '#94a3b8' }}>{importedDeviceConfig.mqtt_config.topic_data || '—'}</span><br />
+                              status: <span style={{ color: '#94a3b8' }}>{importedDeviceConfig.mqtt_config.topic_status || '—'}</span><br />
+                              control: <span style={{ color: '#94a3b8' }}>{importedDeviceConfig.mqtt_config.topic_control || '—'}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Data keys */}
+                        {importedDeviceConfig.data_keys && importedDeviceConfig.data_keys.length > 0 && (
+                          <div style={{ marginBottom: '10px' }}>
+                            <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>
+                              Data Keys ({importedDeviceConfig.data_keys.length})
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                              {importedDeviceConfig.data_keys.slice(0, 8).map((k, i) => (
+                                <span key={i} style={{
+                                  background: '#0f172a',
+                                  border: '1px solid #334155',
+                                  borderRadius: '4px',
+                                  padding: '2px 8px',
+                                  fontSize: '0.75rem',
+                                  color: '#e2e8f0',
+                                  fontFamily: 'monospace',
+                                }}>
+                                  {k.khoa} {k.don_vi ? `(${k.don_vi})` : ''}
+                                </span>
+                              ))}
+                              {importedDeviceConfig.data_keys.length > 8 && (
+                                <span style={{ fontSize: '0.75rem', color: '#64748b', alignSelf: 'center' }}>
+                                  +{importedDeviceConfig.data_keys.length - 8} more
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Relay control commands */}
+                        {importedDeviceConfig.control_commands && importedDeviceConfig.control_commands.length > 0 && (
+                          <div>
+                            <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>
+                              Relay Commands ({importedDeviceConfig.control_commands.length} relays)
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                              {importedDeviceConfig.control_commands.map((cmd, i) => (
+                                <span key={i} style={{
+                                  background: '#0f172a',
+                                  border: '1px solid #334155',
+                                  borderRadius: '4px',
+                                  padding: '2px 8px',
+                                  fontSize: '0.75rem',
+                                  color: '#fbbf24',
+                                }}>
+                                  Relay {cmd.relay}: {cmd.name || 'Relay'}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Editable fields */}
+                    {importedDeviceConfig && (
+                      <>
+                        <div className="form-group">
+                          <label>Tên thiết bị *</label>
+                          <input
+                            type="text"
+                            value={provisionForm.ten_thiet_bi}
+                            onChange={(e) => setProvisionForm({ ...provisionForm, ten_thiet_bi: e.target.value })}
+                            placeholder="Tên thiết bị"
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Phòng</label>
+                          <select
+                            value={provisionForm.phong_id}
+                            onChange={(e) => setProvisionForm({ ...provisionForm, phong_id: e.target.value })}
+                          >
+                            <option value="">-- Chọn phòng --</option>
+                            {rooms.map(r => <option key={r.id} value={r.id}>{r.ten_phong || r.ma_phong}</option>)}
+                          </select>
+                        </div>
+                      </>
+                    )}
+
+                    {discoverError && (
+                      <div style={{ color: '#f87171', fontSize: '0.85rem', marginBottom: '12px', padding: '8px', background: 'rgba(248,113,113,0.1)', borderRadius: '6px' }}>
+                        {discoverError}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '8px' }}>
+                      <button
+                        className="btn-ghost"
+                        onClick={() => {
+                          setImportedDeviceConfig(null);
+                          setProvisionForm({ ten_thiet_bi: '', phong_id: '', protocol: 'mqtt', device_type: 'sensor', loai_thiet_bi: '', data_keys: [] });
+                          setDiscoverError('');
+                        }}
+                        disabled={registering}
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        className="register-btn-modal"
+                        onClick={handleRegisterImportedDevice}
+                        disabled={!importedDeviceConfig || !provisionForm.ten_thiet_bi || registering}
+                      >
+                        {registering ? '⏳ Đang đăng ký...' : '✅ Khôi phục thiết bị'}
+                      </button>
+                    </div>
                   </div>
                 )}
 

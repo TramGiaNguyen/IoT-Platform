@@ -13,3 +13,4 @@ requests
 cryptography
 redis
 APScheduler==3.10.4
+openpyxl>=3.1.0

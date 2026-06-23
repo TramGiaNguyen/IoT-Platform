@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { fetchRooms, fetchDevices, updateDeviceRoom, createRoom, updateRoom, deleteRoom } from '../services';
 import { API_BASE } from '../config/api';
 
-export default function RoomManagement({ token, onBack }) {
+export default function RoomManagement({ token, onBack, workspaceContext = 'ca_nhan' }) {
   const [rooms, setRooms] = useState([]);
   const [devices, setDevices] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -15,14 +15,16 @@ export default function RoomManagement({ token, onBack }) {
     nguoi_quan_ly_id: ''
   });
 
+  const isGroupContext = workspaceContext === 'nhom';
+
   const loadRooms = useCallback(async () => {
     try {
-      const res = await fetchRooms(token);
+      const res = await fetchRooms(token, workspaceContext);
       setRooms(res.data.rooms || []);
     } catch (e) {
       console.error('Load rooms failed', e);
     }
-  }, [token]);
+  }, [token, workspaceContext]);
 
   const loadDevices = useCallback(async () => {
     try {
@@ -325,17 +327,28 @@ export default function RoomManagement({ token, onBack }) {
     <div className="rules-container">
       <div className="rules-header">
         <div>
-          <h2>Quản lý phòng</h2>
-          <p className="muted">Tổ chức và gán thiết bị vào các phòng</p>
+          <h2>
+            {isGroupContext ? 'Phòng nhóm' : 'Quản lý phòng'}
+            {isGroupContext && <span className="room-badge-group">NHÓM</span>}
+          </h2>
+          <p className="muted">
+            {isGroupContext
+              ? 'Phòng làm việc chung của lớp - các thành viên có thể cùng xem và quản lý thiết bị'
+              : 'Tổ chức và gán thiết bị vào các phòng'}
+          </p>
         </div>
         <div className="rules-actions">
-          <button className="primary-btn" onClick={handleOpenAdd}>Thêm phòng</button>
+          {!isGroupContext && (
+            <button className="primary-btn" onClick={handleOpenAdd}>Thêm phòng</button>
+          )}
           <button className="secondary-btn" onClick={onBack}>Quay lại</button>
         </div>
       </div>
 
       <div className="room-grid">
-        {rooms.map((room) => (
+        {rooms.map((room) => {
+          const isGroupRoom = room.loai_phong === 'nhom';
+          return (
           <div key={room.id} className="room-card">
             <div className="room-card-header">
               <div className="room-info">
@@ -345,6 +358,7 @@ export default function RoomManagement({ token, onBack }) {
                   onClick={() => window.location.hash = `#/rooms/${room.id}`}
                 >
                   {room.ten_phong}
+                  {isGroupRoom && <span className="room-badge-group">NHÓM</span>}
                 </h3>
                 <div className="room-meta">
                   {room.ma_phong && <span>Mã: {room.ma_phong}</span>}
@@ -358,12 +372,16 @@ export default function RoomManagement({ token, onBack }) {
                 <button className="btn-icon" onClick={() => handleCopyApiUrl(room.id)} title="Copy API Data">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 </button>
-                <button className="btn-icon" onClick={() => handleEditRoom(room)} title="Sửa">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                </button>
-                <button className="btn-icon danger" onClick={() => handleDeleteRoom(room.id)} title="Xóa">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                </button>
+                {!isGroupRoom && (
+                  <button className="btn-icon" onClick={() => handleEditRoom(room)} title="Sửa">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                  </button>
+                )}
+                {!isGroupRoom && (
+                  <button className="btn-icon danger" onClick={() => handleDeleteRoom(room.id)} title="Xóa">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -401,10 +419,15 @@ export default function RoomManagement({ token, onBack }) {
               </select>
             </div>
           </div>
-        ))}
+        );
+        })}
         {rooms.length === 0 && (
           <div className="no-data-placeholder">
-            <p>Chưa có phòng nào. Hãy tạo phòng mới!</p>
+            <p>
+              {isGroupContext
+                ? 'Bạn chưa tham gia nhóm nào, hoặc lớp của bạn chưa có phòng nhóm.'
+                : 'Chưa có phòng nào. Hãy tạo phòng mới!'}
+            </p>
           </div>
         )}
       </div>

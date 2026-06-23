@@ -1,7 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { fetchDashboards, createDashboard, updateDashboard, deleteDashboard } from '../services';
+import { fetchDashboards, createDashboard, updateDashboard, deleteDashboard, fetchRooms, fetchClasses } from '../services';
 import DashboardBuilder from './DashboardBuilder/DashboardBuilder';
 import '../styles/style.css';
+
+const CONTEXT_LABELS = {
+  ca_nhan: 'Cá nhân',
+  nhom: 'Nhóm',
+  lop_hoc: 'Lớp',
+  none: 'Chung',
+};
 
 export default function DashboardManagement({ token, onBack, onDashboardsChange }) {
   const [dashboards, setDashboards] = useState([]);
@@ -13,8 +20,13 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
   const [formData, setFormData] = useState({
     ten_dashboard: '',
     mo_ta: '',
-    mau_sac: '#22d3ee'
+    mau_sac: '#22d3ee',
+    phong_id: '',
+    lop_hoc_id: '',
   });
+  const [contextFilter, setContextFilter] = useState('all'); // 'all' | 'mine' | 'group' | 'class'
+  const [rooms, setRooms] = useState([]);
+  const [classes, setClasses] = useState([]);
 
   const loadDashboards = useCallback(async () => {
     setLoading(true);
@@ -30,15 +42,43 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
     }
   }, [token]);
 
+  const loadRoomsAndClasses = useCallback(async () => {
+    try {
+      const [r, c] = await Promise.all([
+        fetchRooms(token).catch(() => ({ data: { rooms: [] } })),
+        fetchClasses(token).catch(() => ({ data: { classes: [] } })),
+      ]);
+      setRooms(r.data.rooms || r.data || []);
+      setClasses(c.data.classes || c.data || []);
+    } catch (e) {
+      console.error('Load rooms/classes failed:', e);
+    }
+  }, [token]);
+
   useEffect(() => {
     loadDashboards();
   }, [loadDashboards]);
+
+  useEffect(() => {
+    loadRoomsAndClasses();
+  }, [loadRoomsAndClasses]);
+
+  // Client-side filter theo context
+  const filteredDashboards = dashboards.filter((d) => {
+    if (contextFilter === 'all') return true;
+    if (contextFilter === 'mine') return d.phong_id && !d.lop_hoc_id && d.loai_phong === 'ca_nhan';
+    if (contextFilter === 'group') return d.phong_id && d.loai_phong === 'nhom';
+    if (contextFilter === 'class') return d.lop_hoc_id != null;
+    return true;
+  });
 
   const resetForm = () => {
     setFormData({
       ten_dashboard: '',
       mo_ta: '',
-      mau_sac: '#22d3ee'
+      mau_sac: '#22d3ee',
+      phong_id: '',
+      lop_hoc_id: '',
     });
     setEditingDashboard(null);
   };
@@ -53,7 +93,9 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
     setFormData({
       ten_dashboard: dashboard.ten_dashboard || '',
       mo_ta: dashboard.mo_ta || '',
-      mau_sac: dashboard.mau_sac || '#22d3ee'
+      mau_sac: dashboard.mau_sac || '#22d3ee',
+      phong_id: dashboard.phong_id || '',
+      lop_hoc_id: dashboard.lop_hoc_id || '',
     });
     setFormVisible(true);
   };
@@ -66,10 +108,17 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
     }
 
     try {
+      const payload = {
+        ten_dashboard: formData.ten_dashboard,
+        mo_ta: formData.mo_ta,
+        mau_sac: formData.mau_sac,
+        phong_id: formData.phong_id ? Number(formData.phong_id) : null,
+        lop_hoc_id: formData.lop_hoc_id ? Number(formData.lop_hoc_id) : null,
+      };
       if (editingDashboard) {
-        await updateDashboard(editingDashboard.id, formData, token);
+        await updateDashboard(editingDashboard.id, payload, token);
       } else {
-        await createDashboard(formData, token);
+        await createDashboard(payload, token);
       }
       resetForm();
       setFormVisible(false);
@@ -179,6 +228,33 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
         </div>
       )}
 
+      {/* Filter chips - Phase 5 */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        {[
+          { key: 'all', label: `Tất cả (${dashboards.length})` },
+          { key: 'mine', label: `Cá nhân (${dashboards.filter(d => d.phong_id && d.loai_phong === 'ca_nhan').length})` },
+          { key: 'group', label: `Nhóm (${dashboards.filter(d => d.phong_id && d.loai_phong === 'nhom').length})` },
+          { key: 'class', label: `Lớp (${dashboards.filter(d => d.lop_hoc_id).length})` },
+        ].map((chip) => (
+          <button
+            key={chip.key}
+            onClick={() => setContextFilter(chip.key)}
+            style={{
+              padding: '6px 14px',
+              background: contextFilter === chip.key ? '#22d3ee' : '#111a2d',
+              color: contextFilter === chip.key ? '#0b1224' : '#9ca3af',
+              border: '1px solid ' + (contextFilter === chip.key ? '#22d3ee' : '#1f2a44'),
+              borderRadius: '999px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: contextFilter === chip.key ? '600' : '400',
+            }}
+          >
+            {chip.label}
+          </button>
+        ))}
+      </div>
+
       {/* Dashboard Form Modal */}
       {formVisible && (
         <div style={{
@@ -253,7 +329,59 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
 
 
 
-              <div style={{ marginBottom: '24px' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '14px' }}>
+                  Gắn với phòng (tuỳ chọn - để trống = cá nhân)
+                </label>
+                <select
+                  value={formData.phong_id}
+                  onChange={(e) => setFormData({ ...formData, phong_id: e.target.value, lop_hoc_id: '' })}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: '#111a2d',
+                    border: '1px solid #1f2a44',
+                    borderRadius: '6px',
+                    color: '#e5e7eb',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">-- Không gắn với phòng cụ thể --</option>
+                  {rooms.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.loai_phong === 'nhom' ? `[${r.ten_nhom || 'Nhóm'}] ` : '[Cá nhân] '}
+                      {r.ten_phong || `Phòng #${r.id}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '14px' }}>
+                  Gắn với lớp (tuỳ chọn - chia sẻ với cả lớp)
+                </label>
+                <select
+                  value={formData.lop_hoc_id}
+                  onChange={(e) => setFormData({ ...formData, lop_hoc_id: e.target.value, phong_id: '' })}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: '#111a2d',
+                    border: '1px solid #1f2a44',
+                    borderRadius: '6px',
+                    color: '#e5e7eb',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">-- Không gắn với lớp --</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.ten_lop || `Lớp #${c.id}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '14px' }}>
                   Màu sắc
                 </label>
@@ -340,13 +468,37 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
           <h3 style={{ color: '#e5e7eb', marginBottom: '8px' }}>Chưa có dashboard nào</h3>
           <p>Bấm nút "Tạo Dashboard Mới" để bắt đầu</p>
         </div>
+      ) : filteredDashboards.length === 0 ? (
+        <div style={{
+          textAlign: 'center',
+          padding: '40px 20px',
+          color: '#9ca3af',
+        }}>
+          <p>Không có dashboard nào khớp với bộ lọc "{contextFilter}".</p>
+        </div>
       ) : (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
           gap: '20px'
         }}>
-          {dashboards.map(dashboard => (
+          {filteredDashboards.map(dashboard => {
+            const contextType = dashboard.lop_hoc_id
+              ? 'lop_hoc'
+              : dashboard.loai_phong === 'nhom'
+                ? 'nhom'
+                : dashboard.phong_id
+                  ? 'ca_nhan'
+                  : 'none';
+            const contextLabel = CONTEXT_LABELS[contextType];
+            const contextDetail = dashboard.ten_lop
+              ? dashboard.ten_lop
+              : dashboard.ten_phong
+                ? (dashboard.loai_phong === 'nhom'
+                    ? `[${dashboard.ten_nhom || 'Nhóm'}] ${dashboard.ten_phong}`
+                    : dashboard.ten_phong)
+                : null;
+            return (
             <div
               key={dashboard.id}
               style={{
@@ -391,6 +543,35 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
                         {dashboard.mo_ta}
                       </p>
                     )}
+                    <span
+                      title={contextDetail || ''}
+                      style={{
+                        display: 'inline-block',
+                        marginTop: '6px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        borderRadius: '4px',
+                        background:
+                          contextType === 'lop_hoc' ? 'rgba(168, 85, 247, 0.15)' :
+                          contextType === 'nhom' ? 'rgba(34, 211, 238, 0.15)' :
+                          contextType === 'ca_nhan' ? 'rgba(74, 222, 128, 0.15)' :
+                          'rgba(156, 163, 175, 0.15)',
+                        color:
+                          contextType === 'lop_hoc' ? '#c4b5fd' :
+                          contextType === 'nhom' ? '#67e8f9' :
+                          contextType === 'ca_nhan' ? '#86efac' :
+                          '#9ca3af',
+                        border: '1px solid ' + (
+                          contextType === 'lop_hoc' ? 'rgba(168, 85, 247, 0.4)' :
+                          contextType === 'nhom' ? 'rgba(34, 211, 238, 0.4)' :
+                          contextType === 'ca_nhan' ? 'rgba(74, 222, 128, 0.4)' :
+                          'rgba(156, 163, 175, 0.4)'
+                        ),
+                      }}
+                    >
+                      {contextLabel}{contextDetail ? `: ${contextDetail}` : ''}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -487,7 +668,8 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
                 {new Date(dashboard.ngay_tao).toLocaleDateString('vi-VN')}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
