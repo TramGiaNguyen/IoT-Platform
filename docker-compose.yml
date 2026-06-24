@@ -22,7 +22,7 @@ services:
     volumes:
       - mqtt-data:/mosquitto/data
     healthcheck:
-      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/1883' || exit 1"]
+      test: ["CMD-SHELL", "timeout 5 sh -c '</dev/tcp/localhost/1883' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -700,69 +700,122 @@ def impersonate_user(
 
 from fastapi import Query
 
-def get_workspace_conditions(cursor, current_email: str, workspace_id: Optional[int] = None, alias: str = "") -> tuple[str, list]:
-    cursor.execute("SELECT id, vai_tro FROM nguoi_dung WHERE email = %s", (current_email,))
-    user = cursor.fetchone()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-        
-    user_id = user["id"]
-    role = user["vai_tro"]
-    col_name = f"{alias}.nguoi_so_huu_id" if alias else "nguoi_so_huu_id"
-    
+
+def _build_device_access_conditions(cursor, user_id, role, workspace_id=None, alias=""):
+    """
+    Xây dựng điều kiện SQL truy cập thiết bị cho user.
+
+    Permission model:
+      - Creator (nguoi_tao_id = user_id): luôn thấy thiết bị mình tạo
+      - Owner (nguoi_so_huu_id = user_id): thấy thiết bị mình sở hữu
+      - Student: thấy thiết bị trong phòng nhóm mình là thành viên
+      - Teacher: thấy thiết bị do SV trong lớp mình tạo ra
+      - Admin: thấy tất cả (hoặc theo workspace_id nếu có)
+
+    Returns: (condition_sql: str, params: list)
+    """
+    col_owner   = f"{alias}.nguoi_so_huu_id" if alias else "nguoi_so_huu_id"
+    col_creator = f"{alias}.nguoi_tao_id"  if alias else "nguoi_tao_id"
+    col_phong   = f"{alias}.phong_id"       if alias else "phong_id"
+
+    def _get_teacher_class_ids():
+        cursor.execute("SELECT id FROM lop_hoc WHERE giao_vien_id = %s", (user_id,))
+        return [c["id"] for c in cursor.fetchall()]
+
+    def _get_student_ids_in_teacher_classes():
+        class_ids = _get_teacher_class_ids()
+        if not class_ids:
+            return []
+        fmt = ','.join(['%s'] * len(class_ids))
+        cursor.execute(f"SELECT id FROM nguoi_dung WHERE lop_hoc_id IN ({fmt})", tuple(class_ids))
+        return [s["id"] for s in cursor.fetchall()]
+
     if role == "admin":
         if workspace_id is not None:
-            return f"{col_name} = %s", [workspace_id]
+            return f"({col_owner} = %s OR {col_creator} = %s)", [workspace_id, workspace_id]
         return "1=1", []
-            
-    elif role == "teacher":
-        allowed_ids = [user_id]
-        cursor.execute("SELECT id FROM lop_hoc WHERE giao_vien_id = %s", (user_id,))
-        classes = cursor.fetchall()
-        if classes:
-            class_ids = [c["id"] for c in classes]
-            format_strings = ','.join(['%s'] * len(class_ids))
-            cursor.execute(f"SELECT id FROM nguoi_dung WHERE lop_hoc_id IN ({format_strings})", tuple(class_ids))
-            students = cursor.fetchall()
-            allowed_ids.extend([s["id"] for s in students])
-            
-        if workspace_id is not None:
-            if workspace_id not in allowed_ids:
-                raise HTTPException(status_code=403, detail="Workspace access denied")
-            return f"{col_name} = %s", [workspace_id]
-        else:
-            format_strings = ','.join(['%s'] * len(allowed_ids))
-            return f"{col_name} IN ({format_strings})", allowed_ids
-            
-    else: # student
-        if workspace_id is not None and workspace_id != user_id:
-            raise HTTPException(status_code=403, detail="Workspace access denied")
-        return f"{col_name} = %s", [user_id]
 
-def get_authorized_workspace_id(cursor, current_email: str, workspace_id: Optional[int] = None) -> int:
+    elif role == "teacher":
+        student_ids = _get_student_ids_in_teacher_classes()
+        all_ids = [user_id] + student_ids
+
+        if workspace_id is not None:
+            if workspace_id not in all_ids:
+                raise HTTPException(status_code=403, detail="Workspace access denied")
+            return f"({col_owner} = %s OR {col_creator} = %s)", [workspace_id, workspace_id]
+
+        if not all_ids:
+            return f"({col_owner} = %s)", [user_id]
+        fmt = ','.join(['%s'] * len(all_ids))
+        return f"({col_owner} IN ({fmt}) OR {col_creator} IN ({fmt}))", all_ids + all_ids
+
+    else:  # student
+        cursor.execute(
+            "SELECT ptv.phong_id FROM phong_nhom_thanh_vien ptv "
+            "JOIN phong p ON ptv.phong_id = p.id "
+            "WHERE ptv.user_id = %s AND p.loai_phong = 'nhom'",
+            (user_id,)
+        )
+        group_room_ids = [r["phong_id"] for r in cursor.fetchall()]
+
+        if workspace_id is not None:
+            # workspace_id mang gia tri:
+            #   - user_id         -> "Ca nhan": chi thay device MINH tao
+            #   - group_room_id   -> "Nhom": thay device trong phong nhom
+            if workspace_id == user_id:
+                # "Ca nhan": KHONG gop group room - chi thiet bi ca nhan
+                return f"({col_owner} = %s OR {col_creator} = %s)", [user_id, user_id]
+            else:
+                # "Nhom": thay moi device trong phong nhom do
+                return f"({col_phong} = %s)", [workspace_id]
+
+        # Khong co workspace_id -> thay ca ca nhan va nhom
+        if not group_room_ids:
+            return f"({col_owner} = %s OR {col_creator} = %s)", [user_id, user_id]
+        fmt = ','.join(['%s'] * len(group_room_ids))
+        return (
+            f"({col_owner} = %s OR {col_creator} = %s OR {col_phong} IN ({fmt}))",
+            [user_id, user_id] + group_room_ids
+        )
+
+
+def get_workspace_conditions(cursor, current_email: str, workspace_id: Optional[int] = None, alias: str = "") -> tuple[str, list]:
+    """
+    Điều kiện truy cập thiết bị cho user hiện tại.
+
+    Permission model:
+      - Device creator: luôn thấy thiết bị mình tạo
+      - Student: thấy thiết bị trong phòng nhóm mình thuộc
+      - Teacher: thấy thiết bị do SV trong lớp mình tạo
+      - Admin: thấy tất cả (hoặc theo workspace_id)
+    """
     cursor.execute("SELECT id, vai_tro FROM nguoi_dung WHERE email = %s", (current_email,))
     user = cursor.fetchone()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-        
+
+    return _build_device_access_conditions(
+        cursor, user["id"], user["vai_tro"], workspace_id, alias
+    )
+
+
+def get_authorized_workspace_id(cursor, current_email: str, workspace_id: Optional[int] = None) -> int:
+    """Trả về workspace_id hợp lệ cho user."""
+    cursor.execute("SELECT id, vai_tro FROM nguoi_dung WHERE email = %s", (current_email,))
+    user = cursor.fetchone()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
     user_id = user["id"]
     role = user["vai_tro"]
-    
     target_id = workspace_id if workspace_id is not None else user_id
-    
+
     if role == "admin":
         return target_id
     elif role == "teacher":
-        allowed_ids = [user_id]
-        cursor.execute("SELECT id FROM lop_hoc WHERE giao_vien_id = %s", (user_id,))
-        classes = cursor.fetchall()
-        if classes:
-            c_ids = [c["id"] for c in classes]
-            format_strings = ','.join(['%s'] * len(c_ids))
-            cursor.execute(f"SELECT id FROM nguoi_dung WHERE lop_hoc_id IN ({format_strings})", tuple(c_ids))
-            students = cursor.fetchall()
-            allowed_ids.extend([s["id"] for s in students])
-        if target_id not in allowed_ids:
+        student_ids = _get_student_ids_in_teacher_classes()
+        allowed = {user_id} | set(student_ids)
+        if target_id not in allowed:
             raise HTTPException(status_code=403, detail="Not authorized for this workspace")
         return target_id
     else:
@@ -980,36 +1033,38 @@ def list_devices(
         if role == "admin":
             # Admin: workspace_id (optional) hoặc tất cả
             if workspace_id is not None:
-                ws_cond = "t.nguoi_so_huu_id = %s"
-                ws_params = [workspace_id]
+                ws_cond = "(t.nguoi_so_huu_id = %s OR t.nguoi_tao_id = %s)"
+                ws_params = [workspace_id, workspace_id]
             else:
                 ws_cond = "1=1"
                 ws_params = []
         elif role == "teacher":
-            # Teacher: cá nhân + mọi thiết bị trong phòng nhóm của lớp mình dạy
+            # Teacher: cá nhân + mọi thiết bị do SV trong lớp mình dạy tạo ra
             if workspace_id is not None:
                 # Validate workspace thuộc quyền
                 get_authorized_workspace_id(cursor, current_user, workspace_id)
-                ws_cond = "t.nguoi_so_huu_id = %s"
-                ws_params = [workspace_id]
+                ws_cond = "(t.nguoi_so_huu_id = %s OR t.nguoi_tao_id = %s)"
+                ws_params = [workspace_id, workspace_id]
             else:
                 ws_cond = (
                     "(t.nguoi_so_huu_id = %s "
+                    " OR t.nguoi_tao_id = %s "
                     " OR (p.loai_phong = 'nhom' AND p.lop_hoc_id IN "
                     "     (SELECT id FROM lop_hoc WHERE giao_vien_id = %s)))"
                 )
-                ws_params = [user_id, user_id]
+                ws_params = [user_id, user_id, user_id]
         else:
-            # Student: cá nhân HOẶC phòng nhóm mà SV là thành viên
+            # Student: cá nhân HOẶC phòng nhóm mà SV là thành viên HOẶC do mình tạo
             if workspace_id is not None and workspace_id != user_id:
                 raise HTTPException(status_code=403, detail="Workspace access denied")
             ws_cond = (
                 "(t.nguoi_so_huu_id = %s "
+                " OR t.nguoi_tao_id = %s "
                 " OR (p.loai_phong = 'nhom' AND p.id IN "
                 "     (SELECT ptv.phong_id FROM phong_nhom_thanh_vien ptv "
                 "      WHERE ptv.user_id = %s)))"
             )
-            ws_params = [user_id, user_id]
+            ws_params = [user_id, user_id, user_id]
 
         query = f"""
             SELECT t.id, t.ma_thiet_bi, t.ten_thiet_bi, t.loai_thiet_bi,
@@ -1100,24 +1155,14 @@ def register_device(
     Insert vào bảng thiet_bi và khoa_du_lieu.
     """
     conn = get_mysql()
-    cursor = conn.cursor(dictionary=True)  # ← Thêm dictionary=True
-    
-    try:
-        owner_id = get_authorized_workspace_id(cursor, current_user, workspace_id)
+    cursor = conn.cursor(dictionary=True)
 
-        # Phase 3: Nếu phòng là nhóm, owner = GV lớp (không phải SV tạo)
-        # Mục đích: cả nhóm dùng chung TB nhóm, TB thuộc sở hữu của GV lớp.
-        if request.phong_id:
-            cursor.execute(
-                "SELECT loai_phong, lop_hoc_id FROM phong WHERE id = %s",
-                (request.phong_id,),
-            )
-            phong = cursor.fetchone()
-            if phong and phong["loai_phong"] == "nhom":
-                cursor.execute("SELECT giao_vien_id FROM lop_hoc WHERE id = %s", (phong["lop_hoc_id"],))
-                cls = cursor.fetchone()
-                if cls:
-                    owner_id = cls["giao_vien_id"]
+    try:
+        # Lấy thông tin user hiện tại
+        requester_role, requester_id, _ = _get_role_and_id(conn, current_user)
+        owner_id = get_authorized_workspace_id(cursor, current_user, workspace_id)
+        # nguoi_tao_id: người thực sự tạo ra thiết bị = chính người thực hiện
+        nguoi_tao_id = requester_id
 
         # Kiểm tra device_id đã tồn tại chưa
         cursor.execute("SELECT id, nguoi_so_huu_id FROM thiet_bi WHERE ma_thiet_bi = %s", (request.device_id,))
@@ -1145,18 +1190,6 @@ def register_device(
             is_reregister = True
             existing_device_id = existing["id"]
 
-            # DEBUG log hypothesis A
-            with open("debug-b4bd18.log", "a") as f:
-                import json, datetime
-                f.write(json.dumps({
-                    "sessionId": "b4bd18", "runId": "debug",
-                    "hypothesisId": "A",
-                    "location": "routes.py:1140",
-                    "message": "re-register path entered",
-                    "data": {"existing_device_id": existing_device_id, "existing": existing, "request_re_register": request.re_register},
-                    "timestamp": int(datetime.datetime.now().timestamp() * 1000)
-                }) + "\n")
-
             cursor.execute("""
                 UPDATE thiet_bi SET
                     is_active = 1,
@@ -1164,6 +1197,7 @@ def register_device(
                     ten_thiet_bi = %s,
                     loai_thiet_bi = %s,
                     phong_id = %s,
+                    nguoi_tao_id = COALESCE(nguoi_tao_id, %s),
                     secret_key = COALESCE(%s, secret_key),
                     http_api_key = COALESCE(%s, http_api_key),
                     protocol = COALESCE(%s, protocol),
@@ -1174,6 +1208,7 @@ def register_device(
                 device_name,
                 device_loai,
                 device_phong,
+                nguoi_tao_id,
                 device_secret,
                 device_http,
                 device_proto,
@@ -1226,14 +1261,15 @@ def register_device(
             cursor.execute("""
                 INSERT INTO thiet_bi
                     (ma_thiet_bi, ten_thiet_bi, loai_thiet_bi, phong_id, trang_thai, nguoi_so_huu_id,
-                     secret_key, http_api_key, protocol, device_type, edge_control_url)
-                VALUES (%s, %s, %s, %s, 'offline', %s, %s, %s, %s, %s, %s)
+                     nguoi_tao_id, secret_key, http_api_key, protocol, device_type, edge_control_url)
+                VALUES (%s, %s, %s, %s, 'offline', %s, %s, %s, %s, %s, %s, %s)
             """, (
                 request.device_id,
                 device_name,
                 device_loai,
                 device_phong,
                 owner_id,
+                nguoi_tao_id,
                 device_secret,
                 device_http,
                 device_proto,
@@ -1386,8 +1422,14 @@ def provision_device(
         secret_key = generate_secret_key()
         http_api_key = generate_api_key() if request.protocol in ["http", "both"] else None
 
-        # Phase 3: Xác định nguoi_so_huu_id hợp lý theo loại phòng
+        # Phase 3: Xác định nguoi_so_huu_id và nguoi_tao_id
+        # nguoi_tao_id: người thực sự tạo ra thiết bị (luôn = requester)
+        # nguoi_so_huu_id: người "sở hữu" thiết bị trên Dashboard cá nhân
+        #   - Phòng nhóm: owner = giáo viên phụ trách lớp (GV quản lý nhóm)
+        #   - Phòng cá nhân: owner = chủ phòng
         requester_role, requester_id, _ = _get_role_and_id(conn, current_user)
+        nguoi_tao_id = requester_id  # Người tạo = chính người thực hiện
+
         if room["loai_phong"] == "nhom":
             # Phòng nhóm: owner = GV phụ trách lớp (cả nhóm dùng chung)
             cursor.execute("SELECT giao_vien_id FROM lop_hoc WHERE id = %s", (room["lop_hoc_id"],))
@@ -1403,9 +1445,10 @@ def provision_device(
         cursor.execute("""
             INSERT INTO thiet_bi (
                 ma_thiet_bi, ten_thiet_bi, loai_thiet_bi, phong_id,
-                trang_thai, protocol, device_type, secret_key, http_api_key, nguoi_so_huu_id, provisioned_at
+                trang_thai, protocol, device_type, secret_key, http_api_key,
+                nguoi_so_huu_id, nguoi_tao_id, provisioned_at
             )
-            VALUES (%s, %s, %s, %s, 'offline', %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, 'offline', %s, %s, %s, %s, %s, %s, NOW())
         """, (
             device_id,
             request.ten_thiet_bi,
@@ -1416,6 +1459,7 @@ def provision_device(
             secret_key,
             http_api_key,
             owner_id,
+            nguoi_tao_id,
         ))
         
         thiet_bi_id = cursor.lastrowid
@@ -3013,6 +3057,35 @@ def get_room(room_id: int, current_user: str = Depends(get_current_user)):
         user_id = user["id"]
         user_role = user["vai_tro"]
 
+        # Lay thong tin phong truoc de biet loai + lop (dung 404 vs 403)
+        cursor.execute(
+            "SELECT id, loai_phong, lop_hoc_id, nguoi_so_huu_id FROM phong WHERE id = %s",
+            (room_id,),
+        )
+        room_meta = cursor.fetchone()
+        if not room_meta:
+            raise HTTPException(status_code=404, detail="Room not found")
+
+        is_group = room_meta["loai_phong"] == "nhom"
+
+        # Phan quyen: tra ve 403 cho phep phan biet voi 404
+        if user_role == "student":
+            if is_group:
+                cursor.execute(
+                    "SELECT 1 FROM phong_nhom_thanh_vien WHERE phong_id = %s AND user_id = %s LIMIT 1",
+                    (room_id, user_id),
+                )
+                if not cursor.fetchone():
+                    raise HTTPException(status_code=403, detail="Bạn không phải thành viên nhóm này")
+            elif room_meta["nguoi_so_huu_id"] != user_id:
+                raise HTTPException(status_code=403, detail="Bạn không có quyền xem phòng này")
+        elif user_role == "teacher" and is_group:
+            cursor.execute("SELECT giao_vien_id FROM lop_hoc WHERE id = %s", (room_meta["lop_hoc_id"],))
+            cls = cursor.fetchone()
+            if not cls or cls["giao_vien_id"] != user_id:
+                raise HTTPException(status_code=403, detail="Bạn không phụ trách lớp của nhóm này")
+        # admin: pass
+
         base_select = """
             SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta,
                    p.nguoi_quan_ly_id, p.nguoi_so_huu_id, p.ngay_tao,
@@ -3023,38 +3096,8 @@ def get_room(room_id: int, current_user: str = Depends(get_current_user)):
             LEFT JOIN nguoi_dung u ON p.nguoi_so_huu_id = u.id
             LEFT JOIN thiet_bi t ON p.id = t.phong_id AND t.is_active = 1
         """
-
-        if user_role == "admin":
-            cursor.execute(
-                base_select + " WHERE p.id = %s GROUP BY p.id",
-                (room_id,),
-            )
-        elif user_role == "teacher":
-            cursor.execute(
-                base_select
-                + """ WHERE p.id = %s
-                    AND (
-                        p.nguoi_so_huu_id = %s
-                        OR p.nguoi_so_huu_id IN (
-                            SELECT nd.id
-                            FROM nguoi_dung nd
-                            INNER JOIN lop_hoc lh ON nd.lop_hoc_id = lh.id
-                            WHERE lh.giao_vien_id = %s
-                        )
-                    )
-                    GROUP BY p.id""",
-                (room_id, user_id, user_id),
-            )
-        else:
-            cursor.execute(
-                base_select
-                + " WHERE p.id = %s AND p.nguoi_so_huu_id = %s GROUP BY p.id",
-                (room_id, user_id),
-            )
-
+        cursor.execute(base_select + " WHERE p.id = %s GROUP BY p.id", (room_id,))
         room = cursor.fetchone()
-        if not room:
-            raise HTTPException(status_code=404, detail="Room not found")
 
         return {
             "id": room["id"],
@@ -3322,7 +3365,8 @@ def list_devices_by_room(room_id: int, current_user: str = Depends(get_current_u
 @router.get("/rooms/{room_id}/data")
 def get_room_device_data(
     room_id: int,
-    current_user: str = Depends(get_current_user)
+    token: Optional[str] = Query(None),
+    current_user: str = Depends(get_current_user_optional)
 ):
     """
     Lấy dữ liệu mới nhất của tất cả thiết bị (bao gồm giá trị data) thuộc một phòng cụ thể.
@@ -4722,15 +4766,50 @@ def update_device_room(
         
         # Get device owner
         cursor.execute(
-            "SELECT nguoi_so_huu_id FROM thiet_bi WHERE ma_thiet_bi = %s AND is_active = 1",
+            "SELECT nguoi_so_huu_id, phong_id FROM thiet_bi WHERE ma_thiet_bi = %s AND is_active = 1",
             (device_id,)
         )
         device = cursor.fetchone()
         if not device:
             raise HTTPException(status_code=404, detail="Device not found")
-        
-        # Check if user owns the device (or is admin)
-        if role != "admin" and device["nguoi_so_huu_id"] != user_id:
+
+        # Check if user has permission to move this device
+        # Cho phép:
+        #   - admin
+        #   - owner của device
+        #   - teacher của lớp (chủ phòng nhóm)
+        #   - thành viên phòng nhóm nếu device đang ở trong phòng nhóm đó
+        can_move = False
+        if role == "admin":
+            can_move = True
+        elif device["nguoi_so_huu_id"] == user_id:
+            can_move = True
+        elif role == "teacher":
+            cursor.execute(
+                "SELECT giao_vien_id FROM lop_hoc WHERE id = %s",
+                (user_lop_hoc_id,),
+            )
+            cls = cursor.fetchone()
+            if cls and cls["giao_vien_id"] == user_id:
+                can_move = True
+
+        # Nếu device đang ở phòng nhóm, mọi thành viên nhóm đó được gỡ
+        if not can_move and device.get("phong_id"):
+            cursor.execute(
+                "SELECT p.loai_phong FROM phong p WHERE p.id = %s",
+                (device["phong_id"],),
+            )
+            cur_room = cursor.fetchone()
+            if cur_room and cur_room.get("loai_phong") == "nhom":
+                cursor.execute(
+                    "SELECT 1 FROM phong_nhom_thanh_vien "
+                    "WHERE phong_id = %s AND user_id = %s LIMIT 1",
+                    (device["phong_id"], user_id),
+                )
+                if cursor.fetchone():
+                    can_move = True
+
+        if not can_move:
             raise HTTPException(
                 status_code=403,
                 detail="You can only add/remove your own devices to/from rooms"
@@ -4789,7 +4868,11 @@ def update_device_room(
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Device not found")
         conn.commit()
+        # Phong của device thay đổi => invalidate CẢ rooms cache (để list phòng
+        # hiển thị đúng số thiết bị) VÀ devices cache (để list thiết bị trả về
+        # phong_id mới, tránh trả cache cũ trong TTL 10s của /devices).
         _invalidate_api_cache("api:rooms:*")
+        _invalidate_api_cache("api:devices:*")
         return {"message": "updated"}
     except HTTPException:
         raise
@@ -5590,7 +5673,55 @@ def list_rules(
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
     try:
-        ws_cond, ws_params = get_workspace_conditions(cursor, current_user, workspace_id, alias="r")
+        cursor.execute("SELECT id, vai_tro FROM nguoi_dung WHERE email = %s", (current_user,))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        user_id = user["id"]
+        role = user["vai_tro"]
+
+        # Rules thuộc về phòng; filter theo phòng user có quyền truy cập
+        #   - admin: tất cả (hoặc theo workspace_id nếu có)
+        #   - teacher: phòng thuộc lớp mình dạy + phòng cá nhân mình sở hữu
+        #   - student: phòng nhóm mình là thành viên + phòng cá nhân mình sở hữu
+        if role == "admin":
+            if workspace_id is not None:
+                cond = "r.nguoi_so_huu_id = %s"
+                params = [workspace_id]
+            else:
+                cond = "1=1"
+                params = []
+        else:
+            cursor.execute("SELECT id FROM lop_hoc WHERE giao_vien_id = %s", (user_id,))
+            teacher_class_ids = [c["id"] for c in cursor.fetchall()]
+
+            cursor.execute(
+                "SELECT ptv.phong_id FROM phong_nhom_thanh_vien ptv "
+                "JOIN phong p ON ptv.phong_id = p.id "
+                "WHERE ptv.user_id = %s AND p.loai_phong = 'nhom'",
+                (user_id,)
+            )
+            group_room_ids = [r["phong_id"] for r in cursor.fetchall()]
+
+            if teacher_class_ids:
+                fmt_cls = ','.join(['%s'] * len(teacher_class_ids))
+                cond = (
+                    f"(r.nguoi_so_huu_id = %s "
+                    f" OR r.phong_id IN (SELECT id FROM phong WHERE lop_hoc_id IN ({fmt_cls}))"
+                    f" OR r.phong_id IN ({','.join(['%s'] * len(group_room_ids)) if group_room_ids else 'NULL'}))"
+                )
+                params = [user_id] + teacher_class_ids + group_room_ids
+            else:
+                if group_room_ids:
+                    cond = (
+                        f"(r.nguoi_so_huu_id = %s "
+                        f" OR r.phong_id IN ({','.join(['%s'] * len(group_room_ids))}))"
+                    )
+                    params = [user_id] + group_room_ids
+                else:
+                    cond = "r.nguoi_so_huu_id = %s"
+                    params = [user_id]
+
         query = f"""
             SELECT r.id as rule_id, r.ten_rule, r.phong_id, r.condition_device_id,
                    r.conditions, r.rule_graph, r.muc_do_uu_tien, r.trang_thai, r.nguoi_so_huu_id,
@@ -5598,9 +5729,8 @@ def list_rules(
                    ra.action_command, ra.action_params, ra.delay_seconds, ra.thu_tu
             FROM rules r
             LEFT JOIN rule_actions ra ON r.id = ra.rule_id
-            WHERE {ws_cond}
+            WHERE {cond}
         """
-        params = list(ws_params)
         if trang_thai:
             query += " AND r.trang_thai = %s"
             params.append(trang_thai)

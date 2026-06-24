@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { fetchRooms, fetchDevices, updateDeviceRoom, createRoom, updateRoom, deleteRoom } from '../services';
 import { API_BASE } from '../config/api';
 
@@ -16,6 +16,9 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
   });
 
   const isGroupContext = workspaceContext === 'nhom';
+
+  // Đánh dấu khi đang có optimistic update để tránh ghi đè state
+  const pendingRef = useRef(false);
 
   const loadRooms = useCallback(async () => {
     try {
@@ -98,12 +101,31 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
   };
 
   const handleAssign = async (deviceId, roomId) => {
+    // 1. Optimistic update: thay đổi state NGAY để UI phản hồi tức thì
+    const previousDevices = devices;
+    setDevices(prev => prev.map(d =>
+      String(d.ma_thiet_bi) === String(deviceId) ? { ...d, phong_id: roomId } : d
+    ));
+    // Đánh dấu đang có thao tác để skip refresh ngầm
+    pendingRef.current = true;
     try {
       await updateDeviceRoom(deviceId, roomId, token);
-      await loadDevices();
+      // 2. Refresh ngầm để đồng bộ với server (không block UI).
+      //    Ghi đè state nếu server trả về khác; giữ nguyên nếu khớp.
+      const [devList, roomList] = await Promise.all([
+        fetchDevices(token).then(r => r.data.devices || []).catch(() => null),
+        fetchRooms(token, workspaceContext).then(r => r.data.rooms || []).catch(() => null),
+      ]);
+      pendingRef.current = false;
+      if (devList) setDevices(devList);
+      if (roomList) setRooms(roomList);
     } catch (e) {
+      pendingRef.current = false;
+      // Rollback về state cũ nếu server từ chối
+      setDevices(previousDevices);
       console.error('Assign device failed', e);
-      alert('Gán thiết bị thất bại');
+      const msg = e.response?.data?.detail || e.message || 'Unknown error';
+      alert('Gán thiết bị thất bại: ' + msg);
     }
   };
 
