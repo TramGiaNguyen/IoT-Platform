@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchDevices, fetchDeviceDataKeys, fetchControlLines } from '../../services';
+import '../../styles/dashboard-builder.css';
 
 export default function WidgetEditor({ widget, devices, token, onSave, onCancel }) {
   const [formData, setFormData] = useState({
@@ -85,22 +86,31 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WidgetEditor.js:50',message:'handleSave entry',data:{device_id:formData.device_id,data_keys_count:formData.data_keys?.length||0,hasWidget:!!widget},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
     // #endregion
-    if (!formData.device_id) {
+    const widgetType = widget?.widget_type;
+
+    // Handle widget types that don't require device_id
+    const noDeviceRequired = ['video_stream', 'image_gallery', 'text_input', 'dropdown_menu', 'segmented_switch', 'numeric_input'];
+    if (!noDeviceRequired.includes(widgetType) && !formData.device_id) {
       alert('Vui lòng chọn thiết bị');
       return;
     }
-    const isScada = widget?.widget_type === 'scada_symbol';
-    const isRelayButton = widget?.widget_type === 'relay_button';
-    const isScatterPlot = widget?.widget_type === 'scatter_plot';
 
-    if (!isRelayButton && !isScada && (!formData.data_keys || formData.data_keys.length === 0)) {
+    const isScada = widgetType === 'scada_symbol';
+    const isRelayButton = widgetType === 'relay_button';
+    const isScatterPlot = widgetType === 'scatter_plot';
+    const isVideoStream = widgetType === 'video_stream';
+    const isImageGallery = widgetType === 'image_gallery';
+
+    // Validate data keys for most widgets
+    if (!isRelayButton && !isScada && !noDeviceRequired.includes(widgetType) && (!formData.data_keys || formData.data_keys.length === 0)) {
       if (!isScatterPlot || (!formData.x_key && !formData.y_key)) {
         alert('Vui lòng chọn ít nhất một data key');
         return;
       }
     }
 
-    let config;
+    let config = {};
+
     if (isScada) {
       config = {
         device_id: formData.device_id,
@@ -125,7 +135,104 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         data_keys: [formData.x_key, formData.y_key].filter(Boolean),
         time_range: formData.time_range,
       };
+    } else if (isVideoStream) {
+      config = {
+        stream_url: formData.stream_url || '',
+        autoplay: formData.autoplay !== false,
+        muted: formData.muted !== false,
+      };
+    } else if (isImageGallery) {
+      config = {
+        images: formData.images || [],
+        interval: formData.interval || 5000,
+      };
+    } else if (widgetType === 'lcd_display') {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        time_range: formData.time_range,
+        line_count: formData.line_count || 2,
+        bg_color: formData.bg_color || '#1a3a2a',
+        text_color: formData.text_color || '#00ff88',
+      };
+    } else if (widgetType === 'led_indicator') {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        time_range: formData.time_range,
+        color: formData.color || '#22c55e',
+      };
+    } else if (widgetType === 'level_display') {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        time_range: formData.time_range,
+        orientation: formData.orientation || 'horizontal',
+        min: formData.min || 0,
+        max: formData.max || 100,
+        unit: formData.unit || '',
+      };
+    } else if (widgetType === 'gradient_ramp') {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        time_range: formData.time_range,
+        min: formData.min || 0,
+        max: formData.max || 100,
+        unit: formData.unit || '°C',
+        low_color: formData.low_color || '#22d3ee',
+        high_color: formData.high_color || '#ef4444',
+      };
+    } else if (widgetType === 'map_widget') {
+      config = {
+        device_id: formData.device_id,
+        lat_key: formData.lat_key || 'lat',
+        lng_key: formData.lng_key || 'lng',
+        center_lat: formData.center_lat || 21.0285,
+        center_lng: formData.center_lng || 105.8522,
+        zoom: formData.zoom || 15,
+      };
+    } else if (widgetType === 'joystick') {
+      config = {
+        device_id: formData.device_id,
+        x_datakey: formData.x_datakey || 'joystick_x',
+        y_datakey: formData.y_datakey || 'joystick_y',
+      };
+    } else if (widgetType === 'rgb_control') {
+      config = {
+        device_id: formData.device_id,
+        color_datakey: formData.color_datakey || 'rgb_color',
+        brightness_datakey: formData.brightness_datakey || 'rgb_brightness',
+        presets: formData.presets,
+      };
+    } else if (widgetType === 'dropdown_menu') {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        options: formData.options || ['Option 1', 'Option 2', 'Option 3'],
+      };
+    } else if (widgetType === 'segmented_switch') {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        segments: formData.segments || ['Mode 1', 'Mode 2', 'Mode 3'],
+      };
+    } else if (widgetType === 'text_input') {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        placeholder: formData.placeholder || 'Nhập text...',
+      };
+    } else if (widgetType === 'numeric_input') {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        min: formData.min || 0,
+        max: formData.max || 100,
+        step: formData.step || 1,
+      };
     } else {
+      // Default config for line_chart, bar_chart, gauge, etc.
       config = {
         device_id: formData.device_id,
         data_keys: formData.data_keys,
@@ -158,55 +265,26 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
   };
 
   return (
-    <div style={{
-      width: '320px',
-      background: '#0b1224',
-      borderLeft: '1px solid #1f2a44',
-      padding: '20px',
-      height: '100%',
-      overflowY: 'auto'
-    }}>
-      <h3 style={{ color: '#e5e7eb', marginTop: 0, marginBottom: '20px' }}>
+    <div className="db-widget-editor-panel">
+      <h3 className="db-builder-title">
         {widget ? 'Chỉnh sửa Widget' : 'Cấu hình Widget'}
       </h3>
 
-      <div style={{ marginBottom: '16px' }}>
-        <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>
-          Tên Widget
-        </label>
+      <div className="form-row">
+        <label>Tên Widget</label>
         <input
           type="text"
           value={formData.ten_widget}
           onChange={(e) => setFormData({ ...formData, ten_widget: e.target.value })}
           placeholder="Ví dụ: Nhiệt độ & Độ ẩm"
-          style={{
-            width: '100%',
-            padding: '10px',
-            background: '#111a2d',
-            border: '1px solid #1f2a44',
-            borderRadius: '6px',
-            color: '#e5e7eb',
-            fontSize: '14px'
-          }}
         />
       </div>
 
-      <div style={{ marginBottom: '16px' }}>
-        <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>
-          Thiết bị *
-        </label>
+      <div className="form-row">
+        <label>Thiết bị *</label>
         <select
           value={formData.device_id}
           onChange={(e) => setFormData({ ...formData, device_id: e.target.value, data_keys: [] })}
-          style={{
-            width: '100%',
-            padding: '10px',
-            background: '#111a2d',
-            border: '1px solid #1f2a44',
-            borderRadius: '6px',
-            color: '#e5e7eb',
-            fontSize: '14px'
-          }}
         >
           <option value="">-- Chọn thiết bị --</option>
           {devices.map(device => (
@@ -218,47 +296,37 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
       </div>
 
       {formData.device_id && widget?.widget_type !== 'relay_button' && (
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>
-            Data Keys * {loadingKeys && <span style={{ fontSize: '11px', color: '#64748b' }}>(Đang tải...)</span>}
+        <div className="form-row">
+          <label>
+            Data Keys * {loadingKeys && <span style={{ fontSize: '11px', color: 'var(--bdu-muted)' }}>(Đang tải...)</span>}
           </label>
           {availableKeys.length === 0 && !loadingKeys ? (
-            <div style={{ padding: '12px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#9ca3af', fontSize: '12px' }}>
+            <div className="db-empty-keys">
               Chưa có data keys. Thiết bị cần gửi dữ liệu trước.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div className="db-keys-list">
               {availableKeys.map(keyInfo => {
                 const key = keyInfo.khoa || keyInfo;
                 const keyName = typeof keyInfo === 'string' ? keyInfo : keyInfo.khoa;
                 const unit = typeof keyInfo === 'object' ? keyInfo.don_vi : '';
                 const description = typeof keyInfo === 'object' ? keyInfo.mo_ta : '';
+                const isSelected = formData.data_keys?.includes(keyName);
                 return (
                   <label
                     key={key}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '8px',
-                      background: formData.data_keys?.includes(keyName) ? '#1a2332' : '#111a2d',
-                      border: `1px solid ${formData.data_keys?.includes(keyName) ? '#22d3ee' : '#1f2a44'}`,
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      color: '#e5e7eb'
-                    }}
+                    className={`db-key-option${isSelected ? ' selected' : ''}`}
                     title={description || unit ? `${description || ''} ${unit ? `(${unit})` : ''}`.trim() : ''}
                   >
                     <input
                       type="checkbox"
-                      checked={formData.data_keys?.includes(keyName) || false}
+                      checked={isSelected || false}
                       onChange={() => toggleDataKey(keyName)}
-                      style={{ accentColor: '#22d3ee' }}
+                      style={{ accentColor: 'var(--bdu-cyan)' }}
                     />
                     <span style={{ flex: 1 }}>
                       {keyName}
-                      {unit && <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '4px' }}>({unit})</span>}
+                      {unit && <span style={{ fontSize: '11px', color: 'var(--bdu-muted)', marginLeft: '4px' }}>({unit})</span>}
                     </span>
                   </label>
                 );
@@ -269,71 +337,38 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
       )}
 
       {widget?.widget_type !== 'relay_button' && (
-        <div style={{ marginBottom: '16px' }}>
-        <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>
-          Time Range
-        </label>
-        <select
-          value={formData.time_range}
-          onChange={(e) => setFormData({ ...formData, time_range: e.target.value })}
-          style={{
-            width: '100%',
-            padding: '10px',
-            background: '#111a2d',
-            border: '1px solid #1f2a44',
-            borderRadius: '6px',
-            color: '#e5e7eb',
-            fontSize: '14px'
-          }}
-        >
-          <option value="1h">1 giờ</option>
-          <option value="6h">6 giờ</option>
-          <option value="24h">24 giờ</option>
-          <option value="7d">7 ngày</option>
-          <option value="30d">30 ngày</option>
-        </select>
-      </div>
+        <div className="form-row">
+          <label>Time Range</label>
+          <select
+            value={formData.time_range}
+            onChange={(e) => setFormData({ ...formData, time_range: e.target.value })}
+          >
+            <option value="1h">1 giờ</option>
+            <option value="6h">6 giờ</option>
+            <option value="24h">24 giờ</option>
+            <option value="7d">7 ngày</option>
+            <option value="30d">30 ngày</option>
+          </select>
+        </div>
       )}
 
       {/* Widget-specific options */}
       {widget?.widget_type === 'gauge' && (
         <>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>
-              Min Value
-            </label>
+          <div className="form-row">
+            <label>Min Value</label>
             <input
               type="number"
               value={formData.min || 0}
               onChange={(e) => setFormData({ ...formData, min: parseFloat(e.target.value) })}
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: '#111a2d',
-                border: '1px solid #1f2a44',
-                borderRadius: '6px',
-                color: '#e5e7eb',
-                fontSize: '14px'
-              }}
             />
           </div>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>
-              Max Value
-            </label>
+          <div className="form-row">
+            <label>Max Value</label>
             <input
               type="number"
               value={formData.max || 100}
               onChange={(e) => setFormData({ ...formData, max: parseFloat(e.target.value) })}
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: '#111a2d',
-                border: '1px solid #1f2a44',
-                borderRadius: '6px',
-                color: '#e5e7eb',
-                fontSize: '14px'
-              }}
             />
           </div>
         </>
@@ -341,17 +376,17 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
 
       {widget?.widget_type === 'scada_symbol' && (
         <>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>Loại symbol</label>
-            <select value={formData.symbol_type || 'light'} onChange={(e) => setFormData({ ...formData, symbol_type: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }}>
+          <div className="form-row">
+            <label>Loại symbol</label>
+            <select value={formData.symbol_type || 'light'} onChange={(e) => setFormData({ ...formData, symbol_type: e.target.value })}>
               <option value="light">Đèn</option>
               <option value="ac">Điều hòa</option>
               <option value="sensor">Cảm biến</option>
             </select>
           </div>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>Data key</label>
-            <select value={formData.data_key || 'state'} onChange={(e) => setFormData({ ...formData, data_key: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }}>
+          <div className="form-row">
+            <label>Data key</label>
+            <select value={formData.data_key || 'state'} onChange={(e) => setFormData({ ...formData, data_key: e.target.value })}>
               {availableKeys.map(k => {
                 const key = typeof k === 'string' ? k : k.khoa;
                 const label = typeof k === 'string' ? k : `${k.khoa}${k.don_vi ? ` (${k.don_vi})` : ''}`;
@@ -365,116 +400,303 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
 
       {/* Relay button config */}
       {widget?.widget_type === 'relay_button' && (
-        <>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>Số Relay</label>
-            {controlLines.length > 0 ? (
-              <select value={formData.relay_number || 1} onChange={(e) => setFormData({ ...formData, relay_number: Number(e.target.value) })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }}>
-                {controlLines.map(l => (
-                  <option key={l.relay_number} value={l.relay_number}>{l.ten_duong || `Relay ${l.relay_number}`}</option>
-                ))}
-              </select>
-            ) : (
-              <input type="number" min="1" value={formData.relay_number || 1} onChange={(e) => setFormData({ ...formData, relay_number: Number(e.target.value) })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }} />
-            )}
-            <p style={{ color: '#64748b', fontSize: '11px', marginTop: '6px' }}>Chọn relay cần điều khiển. Trạng thái realtime qua WebSocket.</p>
-          </div>
-        </>
+        <div className="form-row">
+          <label>Số Relay</label>
+          {controlLines.length > 0 ? (
+            <select value={formData.relay_number || 1} onChange={(e) => setFormData({ ...formData, relay_number: Number(e.target.value) })}>
+              {controlLines.map(l => (
+                <option key={l.relay_number} value={l.relay_number}>{l.ten_duong || `Relay ${l.relay_number}`}</option>
+              ))}
+            </select>
+          ) : (
+            <input type="number" min="1" value={formData.relay_number || 1} onChange={(e) => setFormData({ ...formData, relay_number: Number(e.target.value) })} />
+          )}
+          <p style={{ color: 'var(--bdu-muted)', fontSize: '11px', marginTop: '6px' }}>
+            Chọn relay cần điều khiển. Trạng thái realtime qua WebSocket.
+          </p>
+        </div>
       )}
 
       {/* Scatter plot config */}
       {widget?.widget_type === 'scatter_plot' && formData.device_id && (
         <>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>Trục X (giá trị ngang) *</label>
-            <select value={formData.x_key || ''} onChange={(e) => setFormData({ ...formData, x_key: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }}>
+          <div className="form-row">
+            <label>Trục X (giá trị ngang) *</label>
+            <select value={formData.x_key || ''} onChange={(e) => setFormData({ ...formData, x_key: e.target.value })}>
               <option value="">-- Chọn key --</option>
               {availableKeys.map(k => { const key = k.khoa || k; return <option key={key} value={key}>{key}</option>; })}
             </select>
           </div>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>Trục Y (giá trị dọc) *</label>
-            <select value={formData.y_key || ''} onChange={(e) => setFormData({ ...formData, y_key: e.target.value })} style={{ width: '100%', padding: '10px', background: '#111a2d', border: '1px solid #1f2a44', borderRadius: '6px', color: '#e5e7eb' }}>
+          <div className="form-row">
+            <label>Trục Y (giá trị dọc) *</label>
+            <select value={formData.y_key || ''} onChange={(e) => setFormData({ ...formData, y_key: e.target.value })}>
               <option value="">-- Chọn key --</option>
               {availableKeys.map(k => { const key = k.khoa || k; return <option key={key} value={key}>{key}</option>; })}
             </select>
           </div>
         </>
+      )}
+
+      {/* Joystick config */}
+      {widget?.widget_type === 'joystick' && formData.device_id && (
+        <>
+          <div className="form-row">
+            <label>X Data Key</label>
+            <select value={formData.x_datakey || 'joystick_x'} onChange={(e) => setFormData({ ...formData, x_datakey: e.target.value })}>
+              <option value="joystick_x">joystick_x</option>
+              {availableKeys.map(k => { const key = k.khoa || k; return <option key={key} value={key}>{key}</option>; })}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>Y Data Key</label>
+            <select value={formData.y_datakey || 'joystick_y'} onChange={(e) => setFormData({ ...formData, y_datakey: e.target.value })}>
+              <option value="joystick_y">joystick_y</option>
+              {availableKeys.map(k => { const key = k.khoa || k; return <option key={key} value={key}>{key}</option>; })}
+            </select>
+          </div>
+        </>
+      )}
+
+      {/* RGB Control config */}
+      {widget?.widget_type === 'rgb_control' && formData.device_id && (
+        <>
+          <div className="form-row">
+            <label>Color Data Key</label>
+            <input type="text" value={formData.color_datakey || 'rgb_color'} onChange={(e) => setFormData({ ...formData, color_datakey: e.target.value })} placeholder="rgb_color" />
+          </div>
+          <div className="form-row">
+            <label>Brightness Data Key</label>
+            <input type="text" value={formData.brightness_datakey || 'rgb_brightness'} onChange={(e) => setFormData({ ...formData, brightness_datakey: e.target.value })} placeholder="rgb_brightness" />
+          </div>
+        </>
+      )}
+
+      {/* Video Stream config */}
+      {widget?.widget_type === 'video_stream' && (
+        <>
+          <div className="form-row">
+            <label>Stream URL</label>
+            <input type="text" value={formData.stream_url || ''} onChange={(e) => setFormData({ ...formData, stream_url: e.target.value })} placeholder="http://camera:8080/stream" />
+          </div>
+          <div className="form-row" style={{ display: 'flex', gap: '16px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--bdu-muted)' }}>
+              <input type="checkbox" checked={formData.autoplay !== false} onChange={(e) => setFormData({ ...formData, autoplay: e.target.checked })} style={{ accentColor: 'var(--bdu-cyan)' }} />
+              Autoplay
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--bdu-muted)' }}>
+              <input type="checkbox" checked={formData.muted !== false} onChange={(e) => setFormData({ ...formData, muted: e.target.checked })} style={{ accentColor: 'var(--bdu-cyan)' }} />
+              Muted
+            </label>
+          </div>
+        </>
+      )}
+
+      {/* Map Widget config */}
+      {widget?.widget_type === 'map_widget' && formData.device_id && (
+        <>
+          <div className="form-row">
+            <label>Latitude Key</label>
+            <input type="text" value={formData.lat_key || 'lat'} onChange={(e) => setFormData({ ...formData, lat_key: e.target.value })} placeholder="lat" />
+          </div>
+          <div className="form-row">
+            <label>Longitude Key</label>
+            <input type="text" value={formData.lng_key || 'lng'} onChange={(e) => setFormData({ ...formData, lng_key: e.target.value })} placeholder="lng" />
+          </div>
+          <div className="form-row form-row-flex">
+            <div style={{ flex: 1 }}>
+              <label>Center Lat</label>
+              <input type="number" step="0.0001" value={formData.center_lat || 21.0285} onChange={(e) => setFormData({ ...formData, center_lat: parseFloat(e.target.value) })} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label>Center Lng</label>
+              <input type="number" step="0.0001" value={formData.center_lng || 105.8522} onChange={(e) => setFormData({ ...formData, center_lng: parseFloat(e.target.value) })} />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Image Gallery config */}
+      {widget?.widget_type === 'image_gallery' && (
+        <>
+          <div className="form-row">
+            <label>Image URLs (1 per line)</label>
+            <textarea
+              value={(formData.images || []).join('\n')}
+              onChange={(e) => setFormData({ ...formData, images: e.target.value.split('\n').filter(Boolean) })}
+              placeholder="https://example.com/image1.jpg&#10;https://example.com/image2.jpg"
+              style={{ height: '80px', resize: 'vertical' }}
+            />
+          </div>
+          <div className="form-row">
+            <label>Slide Interval (ms)</label>
+            <input type="number" value={formData.interval || 5000} onChange={(e) => setFormData({ ...formData, interval: parseInt(e.target.value) })} />
+          </div>
+        </>
+      )}
+
+      {/* LCD Display config */}
+      {widget?.widget_type === 'lcd_display' && (
+        <>
+          <div className="form-row">
+            <label>Line Count</label>
+            <input type="number" min="1" max="4" value={formData.line_count || 2} onChange={(e) => setFormData({ ...formData, line_count: parseInt(e.target.value) })} />
+          </div>
+          <div className="form-row">
+            <label>Background Color</label>
+            <input type="color" value={formData.bg_color || '#1a3a2a'} onChange={(e) => setFormData({ ...formData, bg_color: e.target.value })} className="db-color-input" />
+          </div>
+          <div className="form-row">
+            <label>Text Color</label>
+            <input type="color" value={formData.text_color || '#00ff88'} onChange={(e) => setFormData({ ...formData, text_color: e.target.value })} className="db-color-input" />
+          </div>
+        </>
+      )}
+
+      {/* LED Indicator config */}
+      {widget?.widget_type === 'led_indicator' && (
+        <div className="form-row">
+          <label>LED Color</label>
+          <input type="color" value={formData.color || '#22c55e'} onChange={(e) => setFormData({ ...formData, color: e.target.value })} className="db-color-input" />
+        </div>
+      )}
+
+      {/* Level Display config */}
+      {widget?.widget_type === 'level_display' && (
+        <>
+          <div className="form-row">
+            <label>Orientation</label>
+            <select value={formData.orientation || 'horizontal'} onChange={(e) => setFormData({ ...formData, orientation: e.target.value })}>
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
+            </select>
+          </div>
+          <div className="form-row form-row-flex">
+            <div style={{ flex: 1 }}>
+              <label>Min</label>
+              <input type="number" value={formData.min || 0} onChange={(e) => setFormData({ ...formData, min: parseFloat(e.target.value) })} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label>Max</label>
+              <input type="number" value={formData.max || 100} onChange={(e) => setFormData({ ...formData, max: parseFloat(e.target.value) })} />
+            </div>
+          </div>
+          <div className="form-row">
+            <label>Unit</label>
+            <input type="text" value={formData.unit || ''} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} placeholder="%" />
+          </div>
+        </>
+      )}
+
+      {/* Gradient Ramp config */}
+      {widget?.widget_type === 'gradient_ramp' && (
+        <>
+          <div className="form-row form-row-flex">
+            <div style={{ flex: 1 }}>
+              <label>Low Color</label>
+              <input type="color" value={formData.low_color || '#22d3ee'} onChange={(e) => setFormData({ ...formData, low_color: e.target.value })} className="db-color-input" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label>High Color</label>
+              <input type="color" value={formData.high_color || '#ef4444'} onChange={(e) => setFormData({ ...formData, high_color: e.target.value })} className="db-color-input" />
+            </div>
+          </div>
+          <div className="form-row form-row-flex">
+            <div style={{ flex: 1 }}>
+              <label>Min</label>
+              <input type="number" value={formData.min || 0} onChange={(e) => setFormData({ ...formData, min: parseFloat(e.target.value) })} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label>Max</label>
+              <input type="number" value={formData.max || 100} onChange={(e) => setFormData({ ...formData, max: parseFloat(e.target.value) })} />
+            </div>
+          </div>
+          <div className="form-row">
+            <label>Unit</label>
+            <input type="text" value={formData.unit || '°C'} onChange={(e) => setFormData({ ...formData, unit: e.target.value })} placeholder="°C" />
+          </div>
+        </>
+      )}
+
+      {/* Dropdown Menu config */}
+      {widget?.widget_type === 'dropdown_menu' && (
+        <div className="form-row">
+          <label>Options (1 per line)</label>
+          <textarea
+            value={(formData.options || ['Option 1', 'Option 2', 'Option 3']).join('\n')}
+            onChange={(e) => setFormData({ ...formData, options: e.target.value.split('\n').filter(Boolean) })}
+            placeholder="Mode 1&#10;Mode 2&#10;Mode 3"
+            style={{ height: '80px', resize: 'vertical' }}
+          />
+        </div>
+      )}
+
+      {/* Segmented Switch config */}
+      {widget?.widget_type === 'segmented_switch' && (
+        <div className="form-row">
+          <label>Segments (1 per line)</label>
+          <textarea
+            value={(formData.segments || ['Mode 1', 'Mode 2', 'Mode 3']).join('\n')}
+            onChange={(e) => setFormData({ ...formData, segments: e.target.value.split('\n').filter(Boolean) })}
+            placeholder="Auto&#10;Manual&#10;Timer"
+            style={{ height: '80px', resize: 'vertical' }}
+          />
+        </div>
+      )}
+
+      {/* Numeric Input config */}
+      {widget?.widget_type === 'numeric_input' && (
+        <div className="form-row form-row-flex">
+          <div style={{ flex: 1 }}>
+            <label>Min</label>
+            <input type="number" value={formData.min || 0} onChange={(e) => setFormData({ ...formData, min: parseFloat(e.target.value) })} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label>Max</label>
+            <input type="number" value={formData.max || 100} onChange={(e) => setFormData({ ...formData, max: parseFloat(e.target.value) })} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label>Step</label>
+            <input type="number" value={formData.step || 1} onChange={(e) => setFormData({ ...formData, step: parseFloat(e.target.value) })} />
+          </div>
+        </div>
       )}
 
       {/* Stat card config */}
       {widget?.widget_type === 'stat_card' && (
         <>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>
-              Label
-            </label>
+          <div className="form-row">
+            <label>Label</label>
             <input
               type="text"
               value={formData.label || ''}
               onChange={(e) => setFormData({ ...formData, label: e.target.value })}
               placeholder="Ví dụ: Nhiệt độ"
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: '#111a2d',
-                border: '1px solid #1f2a44',
-                borderRadius: '6px',
-                color: '#e5e7eb',
-                fontSize: '14px'
-              }}
             />
           </div>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '13px' }}>
-              Unit
-            </label>
+          <div className="form-row">
+            <label>Unit</label>
             <input
               type="text"
               value={formData.unit || ''}
               onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
               placeholder="Ví dụ: °C"
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: '#111a2d',
-                border: '1px solid #1f2a44',
-                borderRadius: '6px',
-                color: '#e5e7eb',
-                fontSize: '14px'
-              }}
             />
           </div>
         </>
       )}
 
-      <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+      <div className="db-form-actions-row">
         <button
           onClick={onCancel}
-          style={{
-            flex: 1,
-            padding: '10px',
-            background: '#111a2d',
-            border: '1px solid #1f2a44',
-            borderRadius: '6px',
-            color: '#e5e7eb',
-            cursor: 'pointer'
-          }}
+          className="db-btn-secondary"
+          style={{ flex: 1 }}
         >
           Hủy
         </button>
         <button
           onClick={handleSave}
-          style={{
-            flex: 1,
-            padding: '10px',
-            background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
-            border: 'none',
-            borderRadius: '6px',
-            color: '#0b1224',
-            fontWeight: '600',
-            cursor: 'pointer'
-          }}
+          className="db-btn-primary"
+          style={{ flex: 1 }}
         >
           Lưu
         </button>

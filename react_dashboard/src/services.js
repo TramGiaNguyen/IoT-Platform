@@ -34,9 +34,10 @@ export const login = (username, password) =>
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
 
-export const fetchDevices = (token) =>
+export const fetchDevices = (token, options = {}) =>
   axios.get(`${API_BASE}/devices`, {
     headers: { Authorization: `Bearer ${token}` },
+    ...options,
   });
 
 export const fetchDevicesLatestAll = (token, workspaceId = null) =>
@@ -66,16 +67,20 @@ export const registerDevice = (deviceData, token) =>
     headers: { Authorization: `Bearer ${token}` },
   });
 
-export const fetchRooms = (token, context = null) =>
+export const fetchRooms = (token, workspaceId = null, options = {}) =>
   axios.get(`${API_BASE}/rooms`, {
     headers: { Authorization: `Bearer ${token}` },
-    params: context ? { context } : {},
+    params: workspaceId ? { workspace_id: workspaceId } : {},
+    ...options,
   });
 
-export const createRoom = (data, token) =>
-  axios.post(`${API_BASE}/rooms`, data, {
+export const createRoom = (data, token, workspaceId = null) => {
+  const params = workspaceId ? { workspace_id: workspaceId } : {};
+  return axios.post(`${API_BASE}/rooms`, data, {
     headers: { Authorization: `Bearer ${token}` },
+    params,
   });
+};
 
 export const updateRoom = (roomId, data, token) =>
   axios.put(`${API_BASE}/rooms/${roomId}`, data, {
@@ -92,13 +97,14 @@ export const fetchDevicesByRoom = (roomId, token) =>
     headers: { Authorization: `Bearer ${token}` },
   });
 
-export const fetchRules = (token, status, workspaceId = null) =>
+export const fetchRules = (token, status, workspaceId = null, options = {}) =>
   axios.get(`${API_BASE}/rules`, {
     headers: { Authorization: `Bearer ${token}` },
     params: {
       ...(status ? { trang_thai: status } : {}),
       ...(workspaceId ? { workspace_id: workspaceId } : {})
     },
+    ...options,
   });
 
 export const createRule = (data, token) =>
@@ -251,9 +257,11 @@ export const updateUserPermissions = (userId, pages, token) =>
 // =========================================================
 
 // List all dashboards
-export const fetchDashboards = (token) =>
+export const fetchDashboards = (token, workspaceId = null, options = {}) =>
   axios.get(`${API_BASE}/dashboards`, {
     headers: { Authorization: `Bearer ${token}` },
+    params: workspaceId ? { workspace_id: workspaceId } : {},
+    ...options,
   });
 
 // Get dashboard detail with widgets
@@ -263,10 +271,13 @@ export const fetchDashboard = (dashboardId, token) =>
   });
 
 // Create new dashboard
-export const createDashboard = (data, token) =>
-  axios.post(`${API_BASE}/dashboards`, data, {
+export const createDashboard = (data, token, workspaceId = null) => {
+  const params = workspaceId ? { workspace_id: workspaceId } : {};
+  return axios.post(`${API_BASE}/dashboards`, data, {
     headers: { Authorization: `Bearer ${token}` },
+    params,
   });
+};
 
 // Update dashboard
 export const updateDashboard = (dashboardId, data, token) =>
@@ -490,6 +501,16 @@ export const deleteClass = (classId, token) =>
 // =========================================================
 export const fetchMe = (token) =>
   axios.get(`${API_BASE}/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const fetchMyGroups = (token) =>
+  axios.get(`${API_BASE}/auth/me/groups`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const fetchTeacherDevices = (token) =>
+  axios.get(`${API_BASE}/teachers/me/devices`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 

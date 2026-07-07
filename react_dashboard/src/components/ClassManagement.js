@@ -11,7 +11,7 @@ const MAX_STUDENTS_PER_CLASS = 100;
 const MAX_MEMBERS_PER_GROUP = 5;
 const PAGE_SIZE = 15;
 
-export default function ClassManagement({ token, onBack, onClassChanged }) {
+export default function ClassManagement({ token, onBack, onClassChanged, workspaceContext = 'ca_nhan', userInfo = null }) {
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -57,19 +57,19 @@ export default function ClassManagement({ token, onBack, onClassChanged }) {
       loadClasses(currentPage);
       if (onClassChanged) onClassChanged(token);
     } catch (e) {
-      alert('Loi tao lop: ' + (e.response?.data?.detail || e.message));
+      alert('Lỗi tạo lớp: ' + (e.response?.data?.detail || e.message));
     }
   };
 
   const handleDeleteClass = async (cls, e) => {
     e.stopPropagation();
-    if (!window.confirm(`Xoa lop "${cls.ten_lop}"?\n\nCac nhom + thanh vien nhom cua lop cung se bi xoa theo.`)) return;
+    if (!window.confirm(`Xóa lớp "${cls.ten_lop}"?\n\nCác nhóm + thành viên nhóm của lớp cũng sẽ bị xóa theo.`)) return;
     try {
       await deleteClass(cls.id, token);
       if (selectedClass?.id === cls.id) setSelectedClass(null);
       loadClasses(currentPage);
     } catch (e) {
-      alert('Loi xoa lop: ' + (e.response?.data?.detail || e.message));
+      alert('Lỗi xóa lớp: ' + (e.response?.data?.detail || e.message));
     }
   };
 
@@ -84,18 +84,14 @@ export default function ClassManagement({ token, onBack, onClassChanged }) {
   return (
     <div className="rules-container">
       <div className="rules-header">
-        <div>
-          <h2>Quan ly lop hoc</h2>
-          <p className="muted">Tao lop, them hoc vien va phan nhom lam viec</p>
-        </div>
+        <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại</button>
         <div className="rules-actions">
-          <button className="primary-btn" onClick={() => setShowClassModal(true)}>+ Them lop</button>
-          <button className="secondary-btn" onClick={onBack}>Quay lai</button>
+          <button className="primary-btn" onClick={() => setShowClassModal(true)}>+ Thêm lớp</button>
         </div>
       </div>
 
       {loading ? (
-        <div className="loading">Dang tai...</div>
+        <div className="loading">Đang tải...</div>
       ) : (
         <>
         <div className="devices-grid neo-grid">
@@ -109,17 +105,17 @@ export default function ClassManagement({ token, onBack, onClassChanged }) {
                 <div className="icon-wrap" style={{ fontSize: '24px' }}>🏫</div>
                 <div className="card-meta">
                   <h3>{cls.ten_lop}</h3>
-                  <p>Ma lop: {cls.id}</p>
+                  <p>Mã lớp: {cls.id}</p>
                 </div>
-                <button className="delete-device-btn" onClick={(e) => handleDeleteClass(cls, e)} title="Xoa lop">×</button>
+                <button className="delete-device-btn" onClick={(e) => handleDeleteClass(cls, e)} title="Xóa lớp">×</button>
               </div>
               <div className="card-body">
                 <div className="metric-row">
-                  <span className="label">Giao vien phu trach</span>
-                  <span className="value">{cls.giao_vien_ten || <span style={{ color: '#6b7280', fontSize: '14px' }}>Chua phan cong</span>}</span>
+                  <span className="label">Giáo viên phụ trách</span>
+                  <span className="value">{cls.giao_vien_ten || <span className="cm-empty-teacher">Chưa phân công</span>}</span>
                 </div>
                 <div className="metric-row">
-                  <span className="label">Si so</span>
+                  <span className="label">Sĩ số</span>
                   <span className="value">
                     <span className={`role-badge ${(cls.so_luong_sv || 0) >= MAX_STUDENTS_PER_CLASS ? 'student' : 'teacher'}`}>
                       {cls.so_luong_sv || 0} / {MAX_STUDENTS_PER_CLASS}
@@ -127,33 +123,29 @@ export default function ClassManagement({ token, onBack, onClassChanged }) {
                   </span>
                 </div>
                 <div className="metric-row" style={{ borderBottom: 'none' }}>
-                  <span className="label">So nhom</span>
+                  <span className="label">Số nhóm</span>
                   <span className="value">
                     <span className="role-badge teacher">{cls.so_luong_nhom || 0}</span>
                   </span>
                 </div>
                 <div className="metric-row" style={{ borderBottom: 'none' }}>
-                  <span className="label">Ngay tao</span>
+                  <span className="label">Ngày tạo</span>
                   <span className="value">{cls.ngay_tao ? new Date(cls.ngay_tao).toLocaleDateString('vi-VN') : '—'}</span>
                 </div>
               </div>
               <div className="card-footer" style={{ justifyContent: 'center' }}>
                 <button
                   onClick={(e) => { e.stopPropagation(); setSelectedClass(cls); }}
-                  style={{
-                    background: '#6366f1', color: 'white', border: 'none',
-                    padding: '6px 16px', borderRadius: '4px', cursor: 'pointer',
-                    fontSize: '13px', fontWeight: '600',
-                  }}
+                  className="cm-btn-detail"
                 >
-                  Xem chi tiet
+                  Xem chi tiết
                 </button>
               </div>
             </div>
           ))}
           {classes.length === 0 && (
             <div className="empty-state" style={{ width: '100%', gridColumn: '1 / -1' }}>
-              <p>Chua co lop nao duoc tao. Nhan "+ Them lop" de bat dau.</p>
+              <p>Chưa có lớp nào được tạo. Nhấn "+ Thêm lớp" để bắt đầu.</p>
             </div>
           )}
         </div>
@@ -162,7 +154,7 @@ export default function ClassManagement({ token, onBack, onClassChanged }) {
         {totalPages > 1 && (
           <div className="pagination-bar">
             <span className="pagination-info">
-              Hien thi {classes.length} / {totalClasses} lop — Trang {currentPage} / {totalPages}
+              Hiển thị {classes.length} / {totalClasses} lớp — Trang {currentPage} / {totalPages}
             </span>
             <div className="pagination-controls">
               <button onClick={() => loadClasses(1)} disabled={currentPage === 1}>«</button>
@@ -180,27 +172,27 @@ export default function ClassManagement({ token, onBack, onClassChanged }) {
         </>
       )}
 
-      {/* Modal: Them lop */}
+      {/* Modal: Thêm lớp */}
       {showClassModal && (
         <div className="modal-backdrop">
           <div className="modal-content" style={{ maxWidth: 420 }}>
             <div className="modal-header">
-              <h3>Them lop hoc</h3>
+              <h3>Thêm lớp học</h3>
               <button onClick={() => { setShowClassModal(false); setNewClassName(''); }}>×</button>
             </div>
             <form className="rule-form" onSubmit={handleCreateClass}>
               <label>
-                Ten lop *
+                Tên lớp *
                 <input type="text" value={newClassName}
                   onChange={e => setNewClassName(e.target.value)}
-                  placeholder="VD: Lop CNTT K20A" required autoFocus />
+                  placeholder="VD: Lớp CNTT K20A" required autoFocus />
               </label>
-              <p style={{ fontSize: '12px', color: '#9ca3af', margin: '8px 0 16px' }}>
-                Sau khi tao lop, click vao the lop de them hoc vien va quan ly nhom.
+              <p className="cm-help-text" style={{ margin: '8px 0 16px' }}>
+                Sau khi tạo lớp, click vào thẻ lớp để thêm học viên và quản lý nhóm.
               </p>
               <div className="form-actions">
-                <button type="submit">Tao lop</button>
-                <button type="button" onClick={() => { setShowClassModal(false); setNewClassName(''); }}>Huy</button>
+                <button type="submit">Tạo lớp</button>
+                <button type="button" onClick={() => { setShowClassModal(false); setNewClassName(''); }}>Huỷ</button>
               </div>
             </form>
           </div>
@@ -231,17 +223,17 @@ function ClassDetailPanel({ cls, token, onClose, onChanged }) {
     <div className="modal-backdrop">
       <div className="modal-content class-detail-panel">
         <div className="modal-header">
-          <h3>Lop "{classData.ten_lop}"</h3>
+          <h3>Lớp "{classData.ten_lop}"</h3>
           <button onClick={onClose}>×</button>
         </div>
 
         {/* Tabs */}
         <div className="class-detail-tabs">
           <button className={activeTab === 'students' ? 'active' : ''} onClick={() => setActiveTab('students')}>
-            👤 Hoc vien ({classData.so_luong_sv || 0})
+            👤 Học viên ({classData.so_luong_sv || 0})
           </button>
           <button className={activeTab === 'groups' ? 'active' : ''} onClick={() => setActiveTab('groups')}>
-            👥 Nhom ({classData.so_luong_nhom || 0})
+            👥 Nhóm ({classData.so_luong_nhom || 0})
           </button>
         </div>
 
@@ -252,7 +244,7 @@ function ClassDetailPanel({ cls, token, onClose, onChanged }) {
         )}
 
         <div className="form-actions" style={{ marginTop: '16px' }}>
-          <button type="button" onClick={onClose}>Dong</button>
+          <button type="button" onClick={onClose}>Đóng</button>
         </div>
       </div>
     </div>
@@ -287,18 +279,18 @@ function StudentTab({ cls, token, onChanged }) {
   useEffect(() => { loadStudents(); }, [loadStudents]);
 
   const handleRemoveStudent = async (student) => {
-    if (!window.confirm(`Xoa hoc vien "${student.ten}" khoi lop?`)) return;
+    if (!window.confirm(`Xoá học viên "${student.ten}" khỏi lớp?`)) return;
     try {
       await removeStudentFromClass(cls.id, student.id, token);
       loadStudents();
       onChanged();
     } catch (e) {
-      alert('Loi xoa hoc vien: ' + (e.response?.data?.detail || e.message));
+      alert('Lỗi xoá học viên: ' + (e.response?.data?.detail || e.message));
     }
   };
 
   const handleImpersonate = async (student) => {
-    if (!window.confirm(`Dang nhap vao tai khoan "${student.ten}"?`)) return;
+    if (!window.confirm(`Đăng nhập vào tài khoản "${student.ten}"?`)) return;
     try {
       const res = await impersonateUser(student.id, token);
       localStorage.setItem('token', res.data.access_token);
@@ -306,12 +298,12 @@ function StudentTab({ cls, token, onChanged }) {
       localStorage.setItem('allowedPages', JSON.stringify(res.data.allowed_pages || []));
       window.location.reload();
     } catch (err) {
-      alert('Dang nhap that bai: ' + (err.response?.data?.detail || err.message));
+      alert('Đăng nhập thất bại: ' + (err.response?.data?.detail || err.message));
     }
   };
 
   const handleBulkImport = async () => {
-    if (!bulkFile) { alert('Vui long chon file .xlsx'); return; }
+    if (!bulkFile) { alert('Vui lòng chọn file .xlsx'); return; }
     setBulkLoading(true);
     setBulkError(null);
     setBulkResult(null);
@@ -331,43 +323,43 @@ function StudentTab({ cls, token, onChanged }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <p style={{ color: '#9ca3af', fontSize: '13px', margin: 0 }}>
-          Si so toi da <strong>{MAX_STUDENTS_PER_CLASS}</strong> hoc vien.
+        <p className="cm-help-text">
+          Sĩ số tối đa <strong>{MAX_STUDENTS_PER_CLASS}</strong> học viên.
         </p>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className="secondary-btn" onClick={() => setShowBulkModal(true)} style={{ fontSize: '13px', padding: '8px 14px' }}>
-            Nhap file .xlsx
+            Nhập file .xlsx
           </button>
           <button className="primary-btn" onClick={() => setShowPickerModal(true)} style={{ fontSize: '13px', padding: '8px 14px' }}>
-            + Them hoc vien
+            + Thêm học viên
           </button>
         </div>
       </div>
 
       {loading ? (
-        <div className="loading">Dang tai hoc vien...</div>
+        <div className="loading">Đang tải học viên...</div>
       ) : students.length === 0 ? (
-        <div className="empty-state"><p>Chua co hoc vien nao trong lop.</p></div>
+        <div className="empty-state"><p>Chưa có học viên nào trong lớp.</p></div>
       ) : (
         <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-          <table className="table" style={{ width: '100%' }}>
+          <table className="table cm-table" style={{ width: '100%' }}>
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Ten</th>
+                <th>Tên</th>
                 <th>Email</th>
-                <th>Thao tac</th>
+                <th>Thao tác</th>
               </tr>
             </thead>
             <tbody>
               {students.map(s => (
-                <tr key={s.id} style={{ borderBottom: '1px solid #1f2a44' }}>
-                  <td style={{ padding: '8px' }}>{s.id}</td>
-                  <td style={{ padding: '8px' }}>{s.ten}</td>
-                  <td style={{ padding: '8px', color: '#9ca3af', fontSize: '13px' }}>{s.email || '—'}</td>
-                  <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
-                    <button className="btn-edit" onClick={() => handleImpersonate(s)} style={{ fontSize: '11px', padding: '4px 8px' }}>Dang nhap</button>
-                    <button className="btn-delete" onClick={() => handleRemoveStudent(s)} style={{ fontSize: '11px', padding: '4px 8px' }}>Xoa</button>
+                <tr key={s.id}>
+                  <td>{s.id}</td>
+                  <td>{s.ten}</td>
+                  <td className="cm-table-muted">{s.email || '—'}</td>
+                  <td className="cm-table-actions">
+                    <button className="btn-edit" onClick={() => handleImpersonate(s)} style={{ fontSize: '11px', padding: '4px 8px' }}>Đăng nhập</button>
+                    <button className="btn-delete" onClick={() => handleRemoveStudent(s)} style={{ fontSize: '11px', padding: '4px 8px' }}>Xoá</button>
                   </td>
                 </tr>
               ))}
@@ -376,7 +368,7 @@ function StudentTab({ cls, token, onChanged }) {
         </div>
       )}
 
-      {/* Modal: Picker chon hoc vien chua thuoc lop nao */}
+      {/* Modal: Picker chọn học viên chưa thuộc lớp nào */}
       {showPickerModal && (
         <StudentPickerModal
           cls={cls}
@@ -391,14 +383,14 @@ function StudentTab({ cls, token, onChanged }) {
         <div className="modal-backdrop" style={{ zIndex: 1100 }}>
           <div className="modal-content" style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3>Nhap hang loat hoc vien tu file .xlsx</h3>
+              <h3>Nhập hàng loạt học viên từ file .xlsx</h3>
               <button onClick={() => { setShowBulkModal(false); setBulkFile(null); setBulkResult(null); setBulkError(null); }}>×</button>
             </div>
-            <p style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '16px' }}>
-              File can co cot <strong>"Ma SV"</strong>. Tai khoan tao ra se co mat khau <strong>111111</strong> va yeu cau doi mat khau khi dang nhap lan dau.
+            <p className="cm-bulk-helper">
+              File cần có cột <strong>"Mã SV"</strong>. Tài khoản tạo ra sẽ có mật khẩu <strong>111111</strong> và yêu cầu đổi mật khẩu khi đăng nhập lần đầu.
             </p>
             <div
-              className="bulk-import-dropzone"
+              className="bulk-import-dropzone cm-bulk-dropzone"
               onClick={() => document.getElementById('bulk-student-input').click()}
               onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
               onDragLeave={e => e.currentTarget.classList.remove('drag-over')}
@@ -412,21 +404,21 @@ function StudentTab({ cls, token, onChanged }) {
               <input id="bulk-student-input" type="file" accept=".xlsx" style={{ display: 'none' }}
                 onChange={e => { const f = e.target.files[0]; if (f) setBulkFile(f); }} />
               {bulkFile ? (
-                <p style={{ color: '#22d3ee', fontWeight: 600 }}>{bulkFile.name}</p>
+                <p className="cm-bulk-file-name">{bulkFile.name}</p>
               ) : (
                 <>
                   <p style={{ fontSize: '18px', margin: '0 0 4px' }}>📄</p>
-                  <p>Keo tha file .xlsx hoac click de chon</p>
+                  <p>Kéo thả file .xlsx hoặc click để chọn</p>
                 </>
               )}
-              <p className="file-hint">Chi ho tro dinh dang .xlsx</p>
+              <p className="file-hint">Chỉ hỗ trợ định dạng .xlsx</p>
             </div>
             {bulkResult && <div className="bulk-import-result success"><p style={{ margin: 0 }}>{bulkResult.message}</p></div>}
             {bulkError && <div className="bulk-import-result error"><p style={{ margin: 0 }}>{bulkError}</p></div>}
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '12px' }}>
-              <button className="secondary-btn" onClick={() => setShowBulkModal(false)}>Huy</button>
+            <div className="cm-bulk-footer">
+              <button className="secondary-btn" onClick={() => setShowBulkModal(false)}>Huỷ</button>
               <button className="primary-btn" onClick={handleBulkImport} disabled={!bulkFile || bulkLoading}>
-                {bulkLoading ? 'Dang xu ly...' : 'Nhap'}
+                {bulkLoading ? 'Đang xử lý...' : 'Nhập'}
               </button>
             </div>
           </div>
@@ -437,7 +429,7 @@ function StudentTab({ cls, token, onChanged }) {
 }
 
 // =========================================================
-// StudentPickerModal — chon tu danh sach SV chua thuoc lop nao
+// StudentPickerModal — chọn từ danh sách SV chưa thuộc lớp nào
 // =========================================================
 function StudentPickerModal({ cls, token, onClose, onAdded }) {
   const [pickerStudents, setPickerStudents] = useState([]);
@@ -505,8 +497,8 @@ function StudentPickerModal({ cls, token, onClose, onAdded }) {
 
     if (failed.length > 0) {
       const first = failed[0].reason;
-      setPickerError((first?.response?.data?.detail || first?.message || 'Loi') +
-        (failed.length > 1 ? ` (${failed.length}/${ids.length} that bai)` : ''));
+      setPickerError((first?.response?.data?.detail || first?.message || 'Lỗi') +
+        (failed.length > 1 ? ` (${failed.length}/${ids.length} thất bại)` : ''));
     }
 
     const successCount = ids.length - failed.length;
@@ -522,41 +514,41 @@ function StudentPickerModal({ cls, token, onClose, onAdded }) {
     <div className="modal-backdrop" style={{ zIndex: 1100 }}>
       <div className="modal-content" style={{ maxWidth: 720 }}>
         <div className="modal-header">
-          <h3>Them hoc vien vao lop "{cls.ten_lop}"</h3>
+          <h3>Thêm học viên vào lớp "{cls.ten_lop}"</h3>
           <button onClick={onClose}>×</button>
         </div>
-        <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 12px' }}>
-          Chon tu danh sach sinh vien chua thuoc lop hoc nao. Tick chon roi nhan "Them vao lop".
+        <p className="cm-bulk-picker-helper">
+          Chọn từ danh sách sinh viên chưa thuộc lớp học nào. Tick chọn rồi nhấn "Thêm vào lớp".
         </p>
 
         <div className="filter-bar" style={{ marginBottom: '12px' }}>
           <input
             type="text"
-            placeholder="Tim kiem theo ten..."
+            placeholder="Tìm kiếm theo tên..."
             value={pickerSearch}
             onChange={e => handleSearchChange(e.target.value)}
             autoFocus
           />
-          <span style={{ color: '#9ca3af', fontSize: '13px', whiteSpace: 'nowrap' }}>
-            {pickerLoading ? 'Dang tai...' : `${pickerStudents.length} hoc vien`}
+          <span className="cm-help-text" style={{ whiteSpace: 'nowrap' }}>
+            {pickerLoading ? 'Đang tải...' : `${pickerStudents.length} học viên`}
           </span>
         </div>
 
         {pickerError && <div className="bulk-import-result error" style={{ marginBottom: '8px' }}><p style={{ margin: 0 }}>{pickerError}</p></div>}
 
         {pickerStudents.length === 0 && !pickerLoading ? (
-          <div className="empty-state"><p>Khong co hoc vien nao chua thuoc lop.</p></div>
+          <div className="empty-state"><p>Không có học viên nào chưa thuộc lớp.</p></div>
         ) : (
-          <div style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #1f2a44', borderRadius: '8px' }}>
+          <div className="cm-picker-table-wrap">
             <table className="table" style={{ width: '100%' }}>
-              <thead style={{ position: 'sticky', top: 0, background: '#0f172a', zIndex: 1 }}>
+              <thead className="cm-picker-thead">
                 <tr>
-                  <th style={{ width: '40px', textAlign: 'center' }}>
+                  <th>
                     <input
                       type="checkbox"
                       checked={allCurrentSelected}
                       onChange={toggleAllCurrent}
-                      title="Chon tat ca tren trang"
+                      title="Chọn tất cả trên trang"
                     />
                   </th>
                   <th>ID</th>
@@ -566,9 +558,10 @@ function StudentPickerModal({ cls, token, onClose, onAdded }) {
               </thead>
               <tbody>
                 {pickerStudents.map(s => (
-                  <tr key={s.id} style={{ borderBottom: '1px solid #1f2a44', cursor: 'pointer', background: pickerSelected.has(s.id) ? 'rgba(34, 211, 238, 0.08)' : 'transparent' }}
+                  <tr key={s.id}
+                      className={pickerSelected.has(s.id) ? 'cm-picker-row-selected' : ''}
                       onClick={() => toggleOne(s.id)}>
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
+                    <td className="cm-picker-cell-center">
                       <input
                         type="checkbox"
                         checked={pickerSelected.has(s.id)}
@@ -576,9 +569,9 @@ function StudentPickerModal({ cls, token, onClose, onAdded }) {
                         onClick={e => e.stopPropagation()}
                       />
                     </td>
-                    <td style={{ padding: '8px' }}>{s.id}</td>
-                    <td style={{ padding: '8px' }}>{s.ten}</td>
-                    <td style={{ padding: '8px', color: '#9ca3af', fontSize: '13px' }}>{s.email || '—'}</td>
+                    <td>{s.id}</td>
+                    <td>{s.ten}</td>
+                    <td className="cm-picker-muted">{s.email || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -587,17 +580,17 @@ function StudentPickerModal({ cls, token, onClose, onAdded }) {
         )}
 
         <div className="form-actions" style={{ marginTop: '14px' }}>
-          <span style={{ color: '#9ca3af', fontSize: '13px', marginRight: 'auto' }}>
-            Da chon: <strong style={{ color: '#22d3ee' }}>{pickerSelected.size}</strong>
+          <span className="cm-picker-count">
+            Đã chọn: <strong>{pickerSelected.size}</strong>
           </span>
-          <button type="button" onClick={onClose}>Dong</button>
+          <button type="button" onClick={onClose}>Đóng</button>
           <button
             type="button"
             className="primary-btn"
             onClick={handleAdd}
             disabled={pickerSelected.size === 0 || pickerAdding}
           >
-            {pickerAdding ? 'Dang them...' : `Them vao lop${pickerSelected.size > 0 ? ` (${pickerSelected.size})` : ''}`}
+            {pickerAdding ? 'Đang thêm...' : `Thêm vào lớp${pickerSelected.size > 0 ? ` (${pickerSelected.size})` : ''}`}
           </button>
         </div>
       </div>
@@ -645,7 +638,7 @@ function GroupTab({ cls, token, onChanged }) {
       setNewGroupName(''); setNewGroupDesc(''); setShowCreateGroup(false);
       loadGroups(); onChanged();
     } catch (err) {
-      alert('Loi tao nhom: ' + (err.response?.data?.detail || err.message));
+      alert('Lỗi tạo nhóm: ' + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -662,18 +655,18 @@ function GroupTab({ cls, token, onChanged }) {
       setEditingGroup(null);
       loadGroups(); onChanged();
     } catch (err) {
-      alert('Loi cap nhat: ' + (err.response?.data?.detail || err.message));
+      alert('Lỗi cập nhật: ' + (err.response?.data?.detail || err.message));
     }
   };
 
   const handleDeleteGroup = async (g) => {
-    if (!window.confirm(`Xoa nhom "${g.ten_nhom || g.ten_phong}"?\n\nTat ca thanh vien trong nhom se bi go khoi nhom (van thuoc lop).`)) return;
+    if (!window.confirm(`Xoá nhóm "${g.ten_nhom || g.ten_phong}"?\n\nTất cả thành viên trong nhóm sẽ bị gỡ khỏi nhóm (vẫn thuộc lớp).`)) return;
     try {
       await deleteGroup(g.id, token);
       if (openGroupId === g.id) { setOpenGroupId(null); setGroupMembers([]); setGroupStudents([]); }
       loadGroups(); onChanged();
     } catch (err) {
-      alert('Loi xoa nhom: ' + (err.response?.data?.detail || err.message));
+      alert('Lỗi xoá nhóm: ' + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -714,103 +707,98 @@ function GroupTab({ cls, token, onChanged }) {
       loadGroups(); onChanged();
       setGroupStudents(prev => prev.filter(s => s.id !== studentId));
     } catch (err) {
-      alert('Loi them thanh vien: ' + (err.response?.data?.detail || err.message));
+      alert('Lỗi thêm thành viên: ' + (err.response?.data?.detail || err.message));
     }
   };
 
   const handleRemoveMember = async (studentId, studentName) => {
     if (!openGroupId) return;
-    if (!window.confirm(`Go "${studentName}" khoi nhom?`)) return;
+    if (!window.confirm(`Gỡ "${studentName}" khỏi nhóm?`)) return;
     try {
       await removeGroupMember(openGroupId, studentId, token);
       const memRes = await listGroupMembers(openGroupId, token);
       setGroupMembers(memRes.data.members || []);
       loadGroups(); onChanged();
     } catch (err) {
-      alert('Loi go thanh vien: ' + (err.response?.data?.detail || err.message));
+      alert('Lỗi gỡ thành viên: ' + (err.response?.data?.detail || err.message));
     }
   };
-
-  const btnPrimary = { background: '#6366f1', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' };
-  const btnSecondary = { background: '#4b5563', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' };
-  const btnInfo = { background: '#22d3ee', color: '#0f172a', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' };
-  const btnDanger = { background: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '500' };
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <p style={{ color: '#9ca3af', fontSize: '13px', margin: 0 }}>
-          Moi lop co the tao nhieu nhom, moi nhom toi da <strong>{MAX_MEMBERS_PER_GROUP}</strong> sinh vien.
+        <p className="cm-help-text">
+          Mỗi lớp có thể tạo nhiều nhóm, mỗi nhóm tối đa <strong>{MAX_MEMBERS_PER_GROUP}</strong> sinh viên.
         </p>
         <button className="primary-btn" onClick={() => setShowCreateGroup(true)} style={{ fontSize: '13px', padding: '8px 14px' }}>
-          + Tao nhom
+          + Tạo nhóm
         </button>
       </div>
 
       {loading ? (
-        <div className="loading">Dang tai nhom...</div>
+        <div className="loading">Đang tải nhóm...</div>
       ) : groups.length === 0 ? (
-        <div className="empty-state"><p>Lop chua co nhom nao. Nhan "+ Tao nhom" de bat dau.</p></div>
+        <div className="empty-state"><p>Lớp chưa có nhóm nào. Nhấn "+ Tạo nhóm" để bắt đầu.</p></div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
           {groups.map(g => (
             <div key={g.id} className="neo-card" style={{ padding: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-                  <span style={{ fontSize: '20px' }}>👥</span>
+              <div className="cm-group-row">
+                <div className="cm-group-row-left">
+                  <span className="cm-group-row-icon">👥</span>
                   {editingGroup && editingGroup.id === g.id ? (
                     <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
-                      style={{ flex: 1, padding: '6px 8px', background: '#0f172a', border: '1px solid #1f2a44', borderRadius: '8px', color: '#e2e8f0' }} autoFocus />
+                      className="cm-group-row-edit-input" autoFocus />
                   ) : (
-                    <strong style={{ fontSize: '15px' }}>{g.ten_nhom || g.ten_phong}</strong>
+                    <strong className="cm-group-row-name">{g.ten_nhom || g.ten_phong}</strong>
                   )}
                   <span className={`role-badge ${g.so_thanh_vien >= MAX_MEMBERS_PER_GROUP ? 'student' : 'teacher'}`}>
                     {g.so_thanh_vien}/{MAX_MEMBERS_PER_GROUP}
                   </span>
                 </div>
-                <div style={{ display: 'flex', gap: '6px' }}>
+                <div className="cm-group-actions">
                   {editingGroup && editingGroup.id === g.id ? (
-                    <><button onClick={handleSaveEdit} style={btnPrimary}>Luu</button><button onClick={() => setEditingGroup(null)} style={btnSecondary}>Huy</button></>
+                    <><button onClick={handleSaveEdit} className="cm-btn-save">Lưu</button><button onClick={() => setEditingGroup(null)} className="cm-btn-secondary">Huỷ</button></>
                   ) : (
-                    <><button onClick={() => handleOpenGroup(g)} style={btnInfo}>{openGroupId === g.id ? 'Dong' : 'Thanh vien'}</button><button onClick={() => handleStartEdit(g)} style={btnSecondary}>Sua</button><button onClick={() => handleDeleteGroup(g)} style={btnDanger}>Xoa</button></>
+                    <><button onClick={() => handleOpenGroup(g)} className="cm-btn-info">{openGroupId === g.id ? 'Đóng' : 'Thành viên'}</button><button onClick={() => handleStartEdit(g)} className="cm-btn-secondary">Sửa</button><button onClick={() => handleDeleteGroup(g)} className="cm-btn-danger">Xoá</button></>
                   )}
                 </div>
               </div>
 
               {openGroupId === g.id && (
-                <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1f2a44' }}>
+                <div className="cm-group-detail">
                   {memberLoading ? (
-                    <div className="loading">Dang tai thanh vien...</div>
+                    <div className="loading">Đang tải thành viên...</div>
                   ) : (
                     <>
-                      <h4 style={{ fontSize: '13px', color: '#9ca3af', marginBottom: '8px' }}>Thanh vien ({groupMembers.length}/{MAX_MEMBERS_PER_GROUP})</h4>
+                      <h4>Thành viên ({groupMembers.length}/{MAX_MEMBERS_PER_GROUP})</h4>
                       {groupMembers.length === 0 ? (
-                        <p style={{ color: '#6b7280', fontSize: '13px' }}>Chua co thanh vien nao.</p>
+                        <p className="cm-group-empty-text">Chưa có thành viên nào.</p>
                       ) : (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                           {groupMembers.map(m => (
-                            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid #6366f1', borderRadius: '16px', padding: '4px 10px', fontSize: '13px' }}>
+                            <div key={m.id} className="cm-member-chip">
                               <span>👤 {m.ten}</span>
-                              <button onClick={() => handleRemoveMember(m.id, m.ten)} style={{ background: 'transparent', border: 'none', color: '#fca5a5', cursor: 'pointer', fontSize: '14px', padding: 0, marginLeft: '4px' }}>×</button>
+                              <button onClick={() => handleRemoveMember(m.id, m.ten)} className="cm-member-chip-remove">×</button>
                             </div>
                           ))}
                         </div>
                       )}
                       {g.so_thanh_vien < MAX_MEMBERS_PER_GROUP && (
                         <div>
-                          <h4 style={{ fontSize: '13px', color: '#9ca3af', marginBottom: '8px' }}>+ Them sinh vien (chua o nhom nao trong lop)</h4>
+                          <h4>+ Thêm sinh viên (chưa ở nhóm nào trong lớp)</h4>
                           {groupStudents.length === 0 ? (
-                            <p style={{ color: '#6b7280', fontSize: '13px' }}>Tat ca sinh vien trong lop da thuoc nhom khac.</p>
+                            <p className="cm-group-empty-text">Tất cả sinh viên trong lớp đã thuộc nhóm khác.</p>
                           ) : (
-                            <div style={{ maxHeight: '160px', overflowY: 'auto' }}>
+                            <div className="cm-add-student-table">
                               <table className="table" style={{ width: '100%' }}>
                                 <tbody>
                                   {groupStudents.map(s => (
-                                    <tr key={s.id} style={{ borderBottom: '1px solid #1f2a44' }}>
-                                      <td style={{ padding: '6px 8px', fontSize: '13px' }}>{s.ten}</td>
-                                      <td style={{ padding: '6px 8px', fontSize: '12px', color: '#9ca3af' }}>{s.email || '—'}</td>
-                                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                                        <button onClick={() => handleAddMember(s.id)} style={{ background: '#10b981', color: 'white', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>Them</button>
+                                    <tr key={s.id}>
+                                      <td>{s.ten}</td>
+                                      <td className="cm-cell-muted">{s.email || '—'}</td>
+                                      <td className="cm-cell-right">
+                                        <button onClick={() => handleAddMember(s.id)} className="cm-btn-add-student">Thêm</button>
                                       </td>
                                     </tr>
                                   ))}
@@ -833,15 +821,15 @@ function GroupTab({ cls, token, onChanged }) {
         <div className="modal-backdrop" style={{ zIndex: 1100 }}>
           <div className="modal-content" style={{ maxWidth: 420 }}>
             <div className="modal-header">
-              <h3>Tao nhom moi</h3>
+              <h3>Tạo nhóm mới</h3>
               <button onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setNewGroupDesc(''); }}>×</button>
             </div>
             <form className="rule-form" onSubmit={handleCreateGroup}>
-              <label>Ten nhom * <input type="text" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="VD: Nhom 1, Nhom Arduino" required autoFocus /></label>
-              <label>Mo ta (tuy chon) <input type="text" value={newGroupDesc} onChange={e => setNewGroupDesc(e.target.value)} placeholder="VD: Nhom lam do an nhung" /></label>
+              <label>Tên nhóm * <input type="text" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="VD: Nhóm 1, Nhóm Arduino" required autoFocus /></label>
+              <label>Mô tả (tuỳ chọn) <input type="text" value={newGroupDesc} onChange={e => setNewGroupDesc(e.target.value)} placeholder="VD: Nhóm làm đồ án nhúng" /></label>
               <div className="form-actions">
-                <button type="submit">Tao</button>
-                <button type="button" onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setNewGroupDesc(''); }}>Huy</button>
+                <button type="submit">Tạo</button>
+                <button type="button" onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setNewGroupDesc(''); }}>Huỷ</button>
               </div>
             </form>
           </div>

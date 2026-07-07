@@ -1,227 +1,113 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import axios from 'axios';
-import { PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { fetchDevicesLatestAll } from '../services';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, LineChart, Line } from 'recharts';
+import { fetchDevicesLatestAll, fetchRooms } from '../services';
 import { API_BASE, WS_URL } from '../config/api';
 import { useGlobalCache } from '../context/GlobalCache';
+import LogStream from './LogStream';
+import AddDeviceModal from './AddDeviceModal';
 import '../styles/Dashboard.css';
 
-// Một vài icon dạng SVG nhỏ để mô phỏng phong cách trong sample
-const Icon = {
-  sensor: (
-    <svg viewBox="0 0 24 24" className="icon">
-      <rect x="6" y="3" width="12" height="18" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="12" cy="8" r="1.2" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.2" fill="currentColor" />
-      <circle cx="12" cy="16" r="1.2" fill="currentColor" />
-    </svg>
-  ),
-  ac: (
-    <svg viewBox="0 0 24 24" className="icon">
-      <rect x="3" y="6" width="18" height="6" rx="2" ry="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M6 14l3 4m6-4l-3 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  ),
-  light: (
-    <svg viewBox="0 0 24 24" className="icon">
-      <path d="M12 3a6 6 0 00-3 11.2V17a1 1 0 001 1h4a1 1 0 001-1v-2.8A6 6 0 0012 3z" fill="none" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M9 21h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  ),
-  default: (
-    <svg viewBox="0 0 24 24" className="icon">
-      <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
-  ),
-};
+// Material Symbols helper component
+const Icon = ({ name, className = '' }) => (
+  <span className={`material-symbols-outlined ${className}`}>{name}</span>
+);
 
-// Helper keys definition (similar to DeviceSetupWizard)
-const getDefaultKeysForDeviceType = (type) => {
-  if (type === 'smart_classroom_energy') {
-    return [
-      { khoa: 'Thoi_gian_bat_dau', don_vi: '', mo_ta: 'Thời gian bắt đầu' },
-      { khoa: 'Thoi_gian_ket_thuc', don_vi: '', mo_ta: 'Thời gian kết thúc' },
-      { khoa: 'Thoi_luong', don_vi: 's', mo_ta: 'Thời lượng' },
-      { khoa: 'Nang_luong', don_vi: 'kWh', mo_ta: 'Năng lượng tiêu thụ' },
-      { khoa: 'Dien_ap_TB', don_vi: 'V', mo_ta: 'Điện áp trung bình' },
-      { khoa: 'Dien_ap_Max', don_vi: 'V', mo_ta: 'Điện áp tối đa' },
-      { khoa: 'Dien_ap_Min', don_vi: 'V', mo_ta: 'Điện áp tối thiểu' },
-      { khoa: 'Dong_dien_TB', don_vi: 'A', mo_ta: 'Dòng điện trung bình' },
-      { khoa: 'Dong_dien_Max', don_vi: 'A', mo_ta: 'Dòng điện tối đa' },
-      { khoa: 'Dong_dien_Min', don_vi: 'A', mo_ta: 'Dòng điện tối thiểu' },
-      { khoa: 'Cong_suat_TB', don_vi: 'W', mo_ta: 'Công suất trung bình' },
-      { khoa: 'Cong_suat_Max', don_vi: 'W', mo_ta: 'Công suất tối đa' },
-      { khoa: 'Cong_suat_Min', don_vi: 'W', mo_ta: 'Công suất tối thiểu' },
-      { khoa: 'He_so_cong_suat_TB', don_vi: '', mo_ta: 'Hệ số công suất TB' },
-      { khoa: 'Tan_so_TB', don_vi: 'Hz', mo_ta: 'Tần số trung bình' },
-      { khoa: 'Tien_dien', don_vi: 'VND', mo_ta: 'Tiền điện ước tính' }
-    ];
-  }
-  return [];
-};
-
-const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRooms, workspaceId }) => {
-  // Global cache — đọc NGAY từ cache, không cần chờ fetch
+const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRooms, onOpenDevice, onOpenAlerts, onWsStatusChange, headerSearch = '', workspaceId, workspaceContext, userInfo, userRole = '', isAdmin = false, isTeacher = false, teacherRooms = [] }) => {
   const { cache, updateCache } = useGlobalCache();
-  // Ưu tiên: global cache → props → rỗng
-  const initialFromCache = cache.devices?.length > 0 ? cache.devices : initialDevices;
+  // Admin/teacher không phân biệt workspace cá nhân / nhóm — chỉ student mới có
+  // 2 tab. isStudent = role chính xác là student.
+  const isStudent = userRole === 'student';
+  // Only seed local state from cache when the cached workspace matches the
+  // current workspace — otherwise the cache belongs to the previous tab and
+  // would briefly render stale devices after a workspace switch.
+  const cacheMatchesWorkspace = !cache?.workspaceContext || cache.workspaceContext === workspaceContext;
+  const initialFromCache = (cache.devices?.length > 0 && cacheMatchesWorkspace) ? cache.devices : [];
 
   const [devices, setDevices] = useState(initialFromCache);
   const [deviceData, setDeviceData] = useState({});
   const [loading, setLoading] = useState(true);
   const [wsConnected, setWsConnected] = useState(false);
 
-  // State cho discovery modal
-  const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
-  const [modalTab, setModalTab] = useState('provision'); // 'provision', 'discover', or 'import'
-  const [discoveredDevices, setDiscoveredDevices] = useState([]);
-  const [scanning, setScanning] = useState(false);
-  const [registering, setRegistering] = useState(false);
-  const [discoverError, setDiscoverError] = useState('');
-  const [rooms, setRooms] = useState([]);
-  const [selectedDevices, setSelectedDevices] = useState({});
-
-  // State cho import config
-  const [importedDeviceConfig, setImportedDeviceConfig] = useState(null);
-
-  // State cho provisioning wizard
-  const [provisionStep, setProvisionStep] = useState(1); // 1: Form, 2: Result
-  const [provisionForm, setProvisionForm] = useState({
-    ten_thiet_bi: '',
-    phong_id: '',
-    protocol: 'mqtt',
-    device_type: 'sensor',
-    loai_thiet_bi: '',
-    data_keys: []
-  });
-  const [provisionResult, setProvisionResult] = useState(null);
-  const [provisioning, setProvisioning] = useState(false);
-  const [provisionError, setProvisionError] = useState('');
-  // State cho detect-keys
-  const [detecting, setDetecting] = useState(false);
-  const [detectProgress, setDetectProgress] = useState(0);
-  const [detectedKeys, setDetectedKeys] = useState([]);
-  // State cho control lines
-  const [controlLines, setControlLines] = useState([]);
-  const [controlLinesSaved, setControlLinesSaved] = useState(false);
-  const [savingControlLines, setSavingControlLines] = useState(false);
-  const [downloadingConfig, setDownloadingConfig] = useState(false);
-
-  // ── Import config handler ──────────────────────────────────────────────────
-  const handleImportConfig = (event) => {
-    const file = event.target.files && event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const config = JSON.parse(e.target.result);
-        if (!config.device?.device_id) {
-          alert('File config không hợp lệ: thiếu device_id');
-          return;
-        }
-        setImportedDeviceConfig(config);
-        // Pre-fill provision form with imported device info
-        setProvisionForm(prev => ({
-          ...prev,
-          ten_thiet_bi: config.device.ten_thiet_bi || prev.ten_thiet_bi,
-          phong_id: config.device.phong_id || prev.phong_id,
-          protocol: config.device.protocol || prev.protocol,
-          device_type: config.device.device_type || prev.device_type,
-        }));
-        alert(`Đã nhập config cho thiết bị: ${config.device.device_id}`);
-      } catch (err) {
-        alert('Đọc file config thất bại: ' + err.message);
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
-  };
-
-  const handleRegisterImportedDevice = async () => {
-    if (!importedDeviceConfig) return;
-    const cfg = importedDeviceConfig;
-    setRegistering(true);
-    setDiscoverError('');
-    try {
-      const payload = {
-        device_id: cfg.credentials?.device_id || cfg.device?.device_id,
-        ten_thiet_bi: provisionForm.ten_thiet_bi || cfg.device?.ten_thiet_bi || cfg.credentials?.device_id,
-        loai_thiet_bi: cfg.device?.loai_thiet_bi || null,
-        phong_id: provisionForm.phong_id || cfg.device?.phong_id || null,
-        secret_key: cfg.credentials?.secret_key || null,
-        http_api_key: cfg.credentials?.http_api_key || null,
-        protocol: cfg.device?.protocol || 'mqtt',
-        device_type: cfg.device?.device_type || 'sensor',
-        edge_control_url: cfg.device?.edge_control_url || null,
-        keys: cfg.data_keys || [],
-        control_commands: cfg.control_commands || [],
-        re_register: true,
-      };
-      const res = await axios.post(`${API_BASE}/devices/register`, payload, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setImportedDeviceConfig(null);
-      setProvisionForm({ ten_thiet_bi: '', phong_id: '', protocol: 'mqtt', device_type: 'sensor', loai_thiet_bi: '', data_keys: [] });
-      setShowDiscoveryModal(false);
-      // DEBUG C1: log add success
-      console.debug('[DEBUG-B4BD18] handleRegisterImportedDevice: calling loadLatestAll()', { registered: res.data.device?.ma_thiet_bi, is_reregister: res.data.is_reregister });
-      loadLatestAll();
-      alert(res.data.is_reregister
-        ? `Đã khôi phục thiết bị '${res.data.device?.ma_thiet_bi}' thành công. Gateway có thể tiếp tục gửi dữ liệu ngay.`
-        : `Đăng ký thiết bị '${res.data.device?.ma_thiet_bi}' thành công.`);
-    } catch (err) {
-      setDiscoverError('Lỗi đăng ký: ' + (err.response?.data?.detail || err.message));
-    } finally {
-      setRegistering(false);
+  const getScopeFilteredDevices = useCallback((allDevices, scope, uid, isAdmin = false, isTeacher = false, teacherRooms = [], cacheWorkspaceContext = null) => {
+    if (!allDevices?.length) return [];
+    if (!scope) return [];
+    // If userInfo is not yet hydrated, we cannot safely apply the per-user
+    // scope filter. Returning allDevices here would briefly leak devices from
+    // another workspace on reload. Wait until uid is known.
+    if (!uid) return [];
+    // Stale-cache guard: if the cache was populated for a different workspace
+    // than the one currently selected, ignore it until a fresh fetch resolves.
+    if (cacheWorkspaceContext && cacheWorkspaceContext !== scope) return [];
+    if (isAdmin) {
+      // Admin có toàn quyền, không phân biệt workspace — thấy mọi thiết bị
+      return allDevices;
     }
-  };
+    if (isTeacher) {
+      // Teacher quản lý lớp mình dạy, không phân biệt workspace — chỉ thấy
+      // devices ở các phòng thuộc lớp mình phụ trách (cá nhân lẫn nhóm)
+      const teacherRoomSet = new Set(teacherRooms);
+      return allDevices.filter(d =>
+        teacherRoomSet.has(d.phong_id) || d.nguoi_so_huu_id === uid
+      );
+    }
+    if (scope === 'ca_nhan') {
+      // ca_nhan = personal devices only. A device that belongs to a group
+      // (nhom_id set) is a group device regardless of who created it; it must
+      // never appear on the personal tab even if the current user is the
+      // creator.
+      const isPersonalDevice = (d) =>
+        d.nguoi_so_huu_id === uid && d.nhom_id == null;
+      return allDevices.filter(isPersonalDevice);
+    }
+    if (scope === 'nhom') {
+      return allDevices.filter(d => d.nhom_id != null);
+    }
+    return allDevices;
+  }, []);
 
-  // Statistics state
+  const scopedDevices = getScopeFilteredDevices(cache.devices, workspaceContext, userInfo?.id, isAdmin, isTeacher, teacherRooms, cache?.workspaceContext);
+  // #region agent log [ca9780] H7: only log when scoped output changes (avoid render flood)
+  const _scopedKey = scopedDevices.map(d => d.ma_thiet_bi || d.device_id).join(',');
+  if (typeof window !== 'undefined' && window.__lastScopedKey !== _scopedKey) {
+    window.__lastScopedKey = _scopedKey;
+    fetch('http://127.0.0.1:7336/ingest/f2170468-c8de-41c8-b4d9-c82967e9e840', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ca9780' }, body: JSON.stringify({ sessionId: 'ca9780', runId: 'debug-newdevice-v2', hypothesisId: 'H7', location: 'Dashboard.js:scopedDevices', message: 'scopedDevices CHANGED', data: { workspaceContext, cacheWorkspaceContext: cache?.workspaceContext ?? null, cacheMatchesWorkspace, uid: userInfo?.id, isAdmin, isTeacher, cacheDevicesLen: cache.devices?.length, cacheDevicesAll: cache.devices?.map(d => ({ id: d.ma_thiet_bi || d.device_id, owner: d.nguoi_so_huu_id, creator: d.nguoi_tao_id, nhom: d.nhom_id })), scopedDevicesLen: scopedDevices.length, scopedDevicesIds: scopedDevices.map(d => d.ma_thiet_bi || d.device_id) }, timestamp: Date.now() }) }).catch(() => {});
+  }
+  // #endregion
+  const [showDeviceModal, setShowDeviceModal] = useState(false);
+
   const [hourlyStats, setHourlyStats] = useState([]);
   const [dailyStats, setDailyStats] = useState([]);
-
-  // Search and Pagination state
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const devicesPerPage = 12;
 
-  // ─── Data loading functions ───
-  // Cache key theo workspace để tách biệt cache giữa các workspace
-  const _cacheKey = (workspaceId) => `dashboard_latest_${workspaceId ?? 'global'}`;
-  const CACHE_TTL_MS = 60_000; // 60s
-
-  // Tái sử dụng devices.map trong WebSocket handler mà không re-trigger effect
   const devicesIdsRef = useRef([]);
 
+  // Convert workspaceContext string to workspaceId integer for API calls.
+  // Student tab Nhóm: truyền primary_nhom_id. Các role khác (admin/teacher) luôn null.
+  const effectiveWorkspaceId =
+    isStudent && workspaceContext === 'nhom' && userInfo?.primary_nhom_id
+      ? userInfo.primary_nhom_id
+      : null;
+
   const loadLatestAll = async (silent = false) => {
-    // Silent mode: không set loading, chỉ cập nhật data
     try {
-      const res = await fetchDevicesLatestAll(token, workspaceId);
+      const res = await fetchDevicesLatestAll(token, effectiveWorkspaceId);
       const payload = res.data.devices || [];
-
-      // Cache được lưu tự động bởi GlobalCache.updateCache() → localStorage persistence
-      // (saveToStorage debounced trong GlobalCache.js)
-
       const mappedDevices = payload.map((d) => ({
-        ma_thiet_bi: d.device_id,
-        ten_thiet_bi: d.ten_thiet_bi,
-        loai_thiet_bi: d.loai_thiet_bi,
-        trang_thai: d.trang_thai,
-        last_seen: d.last_seen,
-        phong_id: d.phong_id,
-        ten_phong: d.ten_phong,
-        ma_phong: d.ma_phong,
+        ma_thiet_bi: d.device_id, ten_thiet_bi: d.ten_thiet_bi,
+        loai_thiet_bi: d.loai_thiet_bi, trang_thai: d.trang_thai,
+        last_seen: d.last_seen, phong_id: d.phong_id,
+        ten_phong: d.ten_phong, ma_phong: d.ma_phong,
+        nhom_id: d.nhom_id,
       }));
-
-      // Chuẩn hóa: ref luôn là String[] để so sánh với data.device_id từ WS không bị lệch kiểu
       devicesIdsRef.current = mappedDevices.map(d => String(d.ma_thiet_bi));
-
       setDevices(mappedDevices);
-
-      // Chia sẻ device list cho các component khác qua GlobalCache
       updateCache({ devices: mappedDevices });
-      console.debug('[DEBUG-B4BD18] loadLatestAll: updateCache called, mappedDevices length=' + mappedDevices.length, { mappedDevices: mappedDevices.map(d => d.ma_thiet_bi) });
-
+      // #region agent log [ca9780] H4: track what loadLatestAll actually receives
+      fetch('http://127.0.0.1:7336/ingest/f2170468-c8de-41c8-b4d9-c82967e9e840', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ca9780' }, body: JSON.stringify({ sessionId: 'ca9780', runId: 'debug-newdevice', hypothesisId: 'H4', location: 'Dashboard.js:loadLatestAll', message: 'loadLatestAll received payload', data: { silent, workspaceContext, payloadCount: payload.length, payloadIds: payload.slice(0, 10).map(d => d.device_id), uid: userInfo?.id }, timestamp: Date.now() }) }).catch(() => {});
+      // #endregion
       setDeviceData((prev) => {
         const newDeviceData = {};
         payload.forEach((item) => {
@@ -231,8 +117,6 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
           newDeviceData[item.device_id] = {
             ...item,
             last_seen: Math.max(existingLastSeen, newLastSeen),
-            // API data (item.data) thắng cho các key trùng — đảm bảo thẻ luôn hiển thị số mới nhất từ MySQL
-            // existing.data chỉ bổ sung các key mà API không có (fallback từ WS hoặc poll trước)
             data: { ...(existing.data || {}), ...(item.data || {}) },
           };
         });
@@ -245,47 +129,55 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     }
   };
 
-  // Hydrate từ GlobalCache (localStorage-backed) NGAY khi mount — không blocking
+  const [roomsCount, setRoomsCount] = useState(0);
+
+  const loadRoomsCount = useCallback(async () => {
+    try {
+      const res = await fetchRooms(token, effectiveWorkspaceId);
+      setRoomsCount((res.data.rooms || []).length);
+    } catch (err) {
+      console.error('Error loading rooms count:', err);
+    }
+  }, [token, effectiveWorkspaceId]);
+
   useEffect(() => {
-    if (!token) return;
-    // GlobalCache đã hydrate từ localStorage khi mount
-    // → devices đã có trong cache, chỉ cần sync vào component state
-    if (cache.devices && cache.devices.length > 0) {
+    if (!token) {
+      setDevices([]); setDeviceData({}); setLoading(false); return;
+    }
+    if (cache.devices && cache.devices.length > 0 && cacheMatchesWorkspace) {
       const mappedDevices = cache.devices.map((d) => ({
         ma_thiet_bi: d.ma_thiet_bi || d.device_id,
         ten_thiet_bi: d.ten_thiet_bi || d.ten_thiet_bi,
-        loai_thiet_bi: d.loai_thiet_bi,
-        trang_thai: d.trang_thai,
-        last_seen: d.last_seen,
-        phong_id: d.phong_id,
-        ten_phong: d.ten_phong,
-        ma_phong: d.ma_phong,
+        loai_thiet_bi: d.loai_thiet_bi, trang_thai: d.trang_thai,
+        last_seen: d.last_seen, phong_id: d.phong_id,
+        ten_phong: d.ten_phong, ma_phong: d.ma_phong,
+        nhom_id: d.nhom_id,
       }));
       devicesIdsRef.current = mappedDevices.map(d => String(d.ma_thiet_bi));
       setDevices(mappedDevices);
       const newDeviceData = {};
       (cache.devices || []).forEach((item) => {
         const id = item.ma_thiet_bi || item.device_id;
-        newDeviceData[id] = { ...item };
+        newDeviceData[id] = { ...item, nhom_id: item.nhom_id };
       });
       setDeviceData(newDeviceData);
-      setLoading(false); // cache từ localStorage còn tươi → không cần spinner
-      loadLatestAll(true); // refresh background
+      setLoading(false);
+      loadLatestAll(true);
       return;
     }
     loadLatestAll(false);
-  }, [token, workspaceId]);
+  }, [token, workspaceContext, userInfo?.primary_nhom_id, cacheMatchesWorkspace]);
 
   const loadStats = async () => {
     try {
       const [hourlyRes, dailyRes] = await Promise.all([
         axios.get(`${API_BASE}/stats/hourly`, {
           headers: { Authorization: `Bearer ${token}` },
-          params: { hours: 24, ...(workspaceId ? { workspace_id: workspaceId } : {}) }
+          params: { hours: 24, ...(effectiveWorkspaceId ? { workspace_id: effectiveWorkspaceId } : {}) }
         }),
         axios.get(`${API_BASE}/stats/daily`, {
           headers: { Authorization: `Bearer ${token}` },
-          params: { days: 7, ...(workspaceId ? { workspace_id: workspaceId } : {}) }
+          params: { days: 7, ...(effectiveWorkspaceId ? { workspace_id: effectiveWorkspaceId } : {}) }
         })
       ]);
       setHourlyStats(hourlyRes.data.stats || []);
@@ -295,13 +187,9 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     }
   };
 
-  // ─── Handlers (định nghĩa trước useEffect để tránh stale closure) ───
-
   const formatValue = (value, unit = '') => {
     if (value === null || value === undefined) return 'N/A';
-    if (typeof value === 'number') {
-      return `${value.toFixed(1)}${unit}`;
-    }
+    if (typeof value === 'number') return `${value.toFixed(1)}${unit}`;
     return `${value}${unit}`;
   };
 
@@ -379,70 +267,54 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   };
 
   const handleDeleteDevice = async (device) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa thiết bị "${device.ten_thiet_bi || device.ma_thiet_bi}" khỏi hệ thống?`)) {
-      return;
-    }
-    try {
-      await axios.delete(`${API_BASE}/devices/${device.ma_thiet_bi}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+    if (!window.confirm(`Xóa thiết bị "${device.ten_thiet_bi || device.ma_thiet_bi}"?`)) return;
+
       setDevices((prev) => prev.filter((d) => d.ma_thiet_bi !== device.ma_thiet_bi));
       setDeviceData((prev) => {
         const next = { ...prev };
         delete next[device.ma_thiet_bi];
         return next;
       });
-      // DEBUG A1: log delete — devices should be removed now
-      console.debug('[DEBUG-B4BD18] handleDeleteDevice: device removed from local state', { deleted: device.ma_thiet_bi });
+
+    try {
+      await axios.delete(`${API_BASE}/devices/${device.ma_thiet_bi}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
     } catch (err) {
       console.error('Delete device failed', err);
+      setDevices((prev) => [...prev, device]);
+      alert('Xóa thiết bị thất bại. Vui lòng thử lại.');
     }
   };
 
-  // ─── useEffects ───
-
-  // DEBUG: trace device list on mount/remount
-  console.debug('[DEBUG-B4BD18] Dashboard useEffect [token,workspaceId] triggered', {
-    'initialDevices length': initialDevices?.length,
-    'initialDevices[0]': initialDevices?.[0],
-    'cache.devices length': cache.devices?.length,
-    token: !!token,
-    workspaceId,
-  });
-
-  // Đồng bộ prop devices từ App xuống state cục bộ
   useEffect(() => {
-    // DEBUG: log when initialDevices changes
-    console.debug('[DEBUG-B4BD18] useEffect [initialDevices] ran — overwriting local devices', {
-      'initialDevices length': initialDevices?.length,
-      'initialDevices[0]': initialDevices?.[0],
-    });
-    setDevices(initialDevices);
-  }, [initialDevices]);
+    if (typeof onWsStatusChange === 'function') onWsStatusChange(wsConnected);
+  }, [wsConnected, onWsStatusChange]);
 
-  // Stats: poll mỗi 60s + poll latest-all mỗi 30s (Redis cache backend giảm DB load)
-  // WebSocket vẫn xử lý real-time → polling chỉ là backup / sync data định kỳ
+  useEffect(() => {
+    if (headerSearch !== undefined) {
+      setSearchQuery(headerSearch);
+      setCurrentPage(1);
+    }
+  }, [headerSearch]);
+
   useEffect(() => {
     if (!token) return;
-
-    // Poll ngay lần đầu
     loadStats();
     loadLatestAll();
-
+    loadRoomsCount();
     const statsInterval = setInterval(loadStats, 60000);
-    // 10s: đủ nhanh để cảm nhận realtime mà không gây overload server
     const latestInterval = setInterval(() => loadLatestAll(true), 10000);
-
+    const roomsInterval = setInterval(loadRoomsCount, 60000);
     return () => {
       clearInterval(statsInterval);
       clearInterval(latestInterval);
+      clearInterval(roomsInterval);
     };
-  }, [token, workspaceId]);
+  }, [token, workspaceContext, userInfo?.primary_nhom_id]);
 
-  // WebSocket: chỉ phụ thuộc [token] — dùng devicesIdsRef thay vì devices.map
   useEffect(() => {
     if (!token) return;
-
     const wsRef = { current: null };
     const reconnectTimerRef = { current: null };
     let mounted = false;
@@ -450,90 +322,52 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     const connectWs = () => {
       if (mounted && !wsRef.current) {
         wsRef.current = new WebSocket(WS_URL);
-
         wsRef.current.onopen = () => {
-          if (!mounted) {
-            try { wsRef.current.close(); } catch (_) { /* ignore */ }
-            return;
-          }
+          if (!mounted) { try { wsRef.current.close(); } catch (e) {} return; }
           setWsConnected(true);
         };
-
         wsRef.current.onmessage = (event) => {
           if (!mounted) return;
           try {
             const data = JSON.parse(event.data);
             const wsDeviceId = String(data.device_id || '');
-            if (!wsDeviceId) return;
-            if (!devicesIdsRef.current.includes(wsDeviceId)) return;
-
+            if (!wsDeviceId || !devicesIdsRef.current.includes(wsDeviceId)) return;
             setDeviceData((prev) => {
               const currentDeviceData = prev[wsDeviceId] || {};
               const currentData = currentDeviceData.data || {};
               const newData = { ...currentData };
               Object.keys(data).forEach((key) => {
                 if (key !== 'device_id' && key !== 'timestamp' && key !== 'type') {
-                  newData[key] = {
-                    ...currentData[key],
-                    value: data[key],
-                    timestamp: data.timestamp,
-                  };
+                  newData[key] = { ...currentData[key], value: data[key], timestamp: data.timestamp };
                 }
               });
-              // Chỉ update last_seen nếu WS timestamp mới hơn (so sánh ở đơn vị giây)
-              const wsTsSec = data.timestamp > 1e12
-                ? Math.floor(data.timestamp / 1000)
-                : Math.floor(data.timestamp);
+              const wsTsSec = data.timestamp > 1e12 ? Math.floor(data.timestamp / 1000) : Math.floor(data.timestamp);
               const existingTsSec = currentDeviceData.last_seen
-                ? (currentDeviceData.last_seen > 1e12
-                    ? Math.floor(currentDeviceData.last_seen / 1000)
-                    : Math.floor(currentDeviceData.last_seen))
+                ? (currentDeviceData.last_seen > 1e12 ? Math.floor(currentDeviceData.last_seen / 1000) : Math.floor(currentDeviceData.last_seen))
                 : 0;
               const newLastSeen = wsTsSec > existingTsSec ? data.timestamp : currentDeviceData.last_seen;
-              return {
-                ...prev,
-                [wsDeviceId]: {
-                  ...currentDeviceData,
-                  device_id: wsDeviceId,
-                  last_seen: newLastSeen,
-                  data: newData,
-                },
-              };
+              return { ...prev, [wsDeviceId]: { ...currentDeviceData, device_id: wsDeviceId, last_seen: newLastSeen, data: newData } };
             });
-          } catch (err) {
-            console.error('Error parsing WebSocket message:', err);
-          }
+          } catch (err) { console.error('WS parse error:', err); }
         };
-
         wsRef.current.onerror = () => setWsConnected(false);
-
         wsRef.current.onclose = () => {
-          setWsConnected(false);
-          wsRef.current = null;
-          if (mounted) {
-            reconnectTimerRef.current = setTimeout(connectWs, 3000);
-          }
+          setWsConnected(false); wsRef.current = null;
+          if (mounted) reconnectTimerRef.current = setTimeout(connectWs, 3000);
         };
       }
     };
 
     mounted = true;
     connectWs();
-
     return () => {
       mounted = false;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      devicesIdsRef.current = [];
       if (wsRef.current) {
-        if (wsRef.current.readyState === WebSocket.OPEN) {
-          try { wsRef.current.close(); } catch (_) { /* ignore */ }
-        } else if (wsRef.current.readyState === WebSocket.CONNECTING) {
-          wsRef.current.addEventListener(
-            'open',
-            () => {
-              try { wsRef.current.close(); } catch (_) { /* ignore */ }
-            },
-            { once: true }
-          );
+        if (wsRef.current.readyState === WebSocket.OPEN) { try { wsRef.current.close(); } catch (e) {} }
+        else if (wsRef.current.readyState === WebSocket.CONNECTING) {
+          wsRef.current.addEventListener('open', () => { try { wsRef.current.close(); } catch (e) {} }, { once: true });
         }
       }
     };
@@ -547,242 +381,362 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
 
   const getStatus = (device) => {
     const data = deviceData[device.ma_thiet_bi] || {};
-    const rawLastSeen =
-      Number(data.last_seen ?? device.last_seen ?? data.timestamp ?? 0);
+    const rawLastSeen = Number(data.last_seen ?? device.last_seen ?? data.timestamp ?? 0);
     if (!rawLastSeen) return { status: 'offline', color: '#ef4444' };
-
-    // Nếu đã là ms thì giữ nguyên, nếu là giây thì nhân 1000
     const lastSeen = rawLastSeen > 1e12 ? rawLastSeen : rawLastSeen * 1000;
-    const now = Date.now();
-    const diffMinutes = (now - lastSeen) / 1000 / 60;
-
-    // Thresholds: online < 2min, warning 2-10min, offline > 10min
-    if (diffMinutes < 2) {
-      return { status: 'online', color: '#22c55e' };
-    } else if (diffMinutes < 10) {
-      return { status: 'warning', color: '#f59e0b' };
-    } else {
+    const diffMinutes = (Date.now() - lastSeen) / 1000 / 60;
+    if (diffMinutes < 2) return { status: 'online', color: '#22c55e' };
+    if (diffMinutes < 10) return { status: 'warning', color: '#f59e0b' };
       return { status: 'offline', color: '#ef4444' };
-    }
   };
 
   const getDeviceIcon = (loaiThietBi) => {
-    if (loaiThietBi === 'sensor') return Icon.sensor;
-    if (loaiThietBi === 'air_conditioner') return Icon.ac;
-    if (loaiThietBi === 'light') return Icon.light;
-    return Icon.default;
+    if (loaiThietBi === 'sensor') return 'memory';
+    if (loaiThietBi === 'air_conditioner') return 'ac_unit';
+    if (loaiThietBi === 'light') return 'lightbulb';
+    return 'sensors';
   };
 
-  // Computed stats for charts
   const chartStats = useMemo(() => {
-    const onlineCount = devices.filter(d => getStatus(d).status === 'online').length;
-    const offlineCount = devices.filter(d => getStatus(d).status === 'offline').length;
-    const warningCount = devices.filter(d => getStatus(d).status === 'warning').length;
-
-    // Get sensor data for temperature/humidity
-    let currentTemp = null;
-    let currentHumidity = null;
-    let tempHistory = [];
-
-    Object.values(deviceData).forEach(device => {
-      const data = device.data || {};
-      if (data.temperature) {
-        const val = typeof data.temperature === 'object' ? data.temperature.value : data.temperature;
-        if (val !== null && val !== undefined) currentTemp = parseFloat(val);
-      }
-      if (data.humidity) {
-        const val = typeof data.humidity === 'object' ? data.humidity.value : data.humidity;
-        if (val !== null && val !== undefined) currentHumidity = parseFloat(val);
-      }
-    });
-
-    // Device status pie data
+    const onlineCount = scopedDevices.filter(d => getStatus(d).status === 'online').length;
+    const offlineCount = scopedDevices.filter(d => getStatus(d).status === 'offline').length;
+    const warningCount = scopedDevices.filter(d => getStatus(d).status === 'warning').length;
     const pieData = [
       { name: 'Online', value: onlineCount, color: '#22c55e' },
       { name: 'Warning', value: warningCount, color: '#f59e0b' },
       { name: 'Offline', value: offlineCount, color: '#ef4444' },
     ].filter(d => d.value > 0);
+    return { onlineCount, offlineCount, warningCount, totalDevices: scopedDevices.length, pieData };
+  }, [scopedDevices, deviceData]);
 
-    return {
-      onlineCount,
-      offlineCount,
-      warningCount,
-      totalDevices: devices.length,
-      currentTemp,
-      currentHumidity,
-      pieData,
+  // Radial progress SVG helper
+  const RadialProgress = ({ value, max, color, size = 64, stroke = 6 }) => {
+    const r = (size - stroke) / 2;
+    const circ = 2 * Math.PI * r;
+    const pct = Math.min(value / max, 1);
+    const offset = circ * (1 - pct);
+    return (
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#1e293b" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+          strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
+      </svg>
+    );
+  };
+
+  // ── Derived metrics for overview stats ──
+  const overviewMsgs = useMemo(() => {
+    if (!Array.isArray(hourlyStats) || hourlyStats.length === 0) return 0;
+    for (let i = hourlyStats.length - 1; i >= 0; i--) {
+      const v = Number(hourlyStats[i]?.so_mau ?? hourlyStats[i]?.msg_count ?? hourlyStats[i]?.messages ?? 0);
+      if (v > 0) return v;
+    }
+    return 0;
+  }, [hourlyStats]);
+
+  const [activeAlertsCount, setActiveAlertsCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    if (!token) return undefined;
+    (async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/alerts`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { ...(effectiveWorkspaceId ? { workspace_id: effectiveWorkspaceId } : {}), trang_thai: 'new', limit: 1 }
+        });
+        if (!cancelled) setActiveAlertsCount(res.data?.new_count ?? res.data?.total ?? 0);
+      } catch (e) { if (!cancelled) setActiveAlertsCount(0); }
+    })();
+    return () => { cancelled = true; };
+  }, [token, workspaceContext, userInfo?.primary_nhom_id]);
+
+  // Listen for sidebar "Add new device" trigger
+  useEffect(() => {
+    const openAdd = () => {
+      setShowDeviceModal(true);
     };
-  }, [devices, deviceData]);
+    window.addEventListener('bdu-open-add-device', openAdd);
+    return () => window.removeEventListener('bdu-open-add-device', openAdd);
+  }, [token]);
+
+  const sparkMsgs = useMemo(() => {
+    if (!Array.isArray(hourlyStats) || hourlyStats.length === 0) return [];
+    return hourlyStats.map((s, i) => ({ i, v: Number(s.so_mau ?? s.msg_count ?? s.messages ?? 0) }));
+  }, [hourlyStats]);
 
   if (loading) {
     return (
-      <div className="loading-screen">
-        <div className="spinner neon"></div>
+      <div className="bdu-loading">
+        <div className="bdu-spinner" />
         <p>Đang tải dữ liệu...</p>
       </div>
     );
   }
 
-  return (
-    <div className="page-bg">
-      <div className="grid-overlay" />
-      <div className="pcb-lines">
-        <svg viewBox="0 0 200 200">
-          <path fill="none" stroke="#06b6d4" strokeWidth="1" d="M200,200 L150,200 L140,190 L140,150 L100,150 L80,130 M200,180 L160,180 L160,160 L120,160" />
-          <rect x="10" y="100" width="20" height="20" fill="none" stroke="#06b6d4" strokeWidth="1" />
-          <rect x="15" y="105" width="10" height="10" fill="#06b6d4" />
-        </svg>
-      </div>
+  const onlinePct = scopedDevices.length === 0 ? 0 : Math.round((chartStats.onlineCount / scopedDevices.length) * 100);
 
-      <div className="dashboard-shell">
-        <header className="header-bar">
-          <div className="brand">
-            <div className="brand-logo">
-              <img src="/bdu-logo.png" alt="BDU logo" />
+  return (
+    <div className="bdu-page">
+      <div className="bdu-grid-overlay" />
+      <div className="bdu-container">
+
+        {/* ── Overview Stats (4 cards) ── */}
+        <div className="bdu-overview-stats">
+          <div className="bdu-stat-overview">
+            <div className="bdu-stat-overview-head">
+              <div className="bdu-stat-overview-icon tone-cyan">
+                <span className="material-symbols-outlined">devices_other</span>
+              </div>
+              <span className="bdu-stat-overview-pill up">+{chartStats.onlineCount}</span>
             </div>
             <div>
-              <p className="eyebrow">BDU IoT</p>
-              <h1>BDU IoT Dashboard</h1>
+              <div className="bdu-stat-overview-value">
+                {chartStats.onlineCount}
+                <span className="bdu-stat-overview-unit">/ {scopedDevices.length}</span>
+              </div>
+              <div className="bdu-stat-overview-label">Online Devices · {onlinePct}%</div>
             </div>
-          </div>
-          <div className="header-right">
-            <div className={`pill ${wsConnected ? 'pill-online' : 'pill-offline'}`}>
-              <span className="dot" />
-              <span>{wsConnected ? 'Real-time' : 'Disconnected'}</span>
+            <div className="bdu-stat-overview-spark bdu-stat-overview-spark-corner">
+              <PieChart width={72} height={72}>
+                <Pie data={chartStats.pieData} dataKey="value" nameKey="name"
+                     cx="50%" cy="50%"
+                     innerRadius={20} outerRadius={32} paddingAngle={2} stroke="none">
+                  {chartStats.pieData.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{ background: 'var(--bdu-card)', border: '1px solid var(--bdu-card-border)', borderRadius: 8, fontSize: 12 }}
+                  formatter={(value, name) => [value, name]}
+                  />
+                </PieChart>
             </div>
-          </div>
-        </header>
+      </div>
 
-        {devices.length === 0 ? (
-          <div className="empty-state">
+          <div className="bdu-stat-overview">
+            <div className="bdu-stat-overview-head">
+              <div className="bdu-stat-overview-icon tone-amber">
+                <span className="material-symbols-outlined">meeting_room</span>
+              </div>
+              <span className="bdu-stat-overview-pill up">
+                {isAdmin ? 'Toàn hệ thống' : isTeacher ? 'Lớp của tôi' : workspaceContext === 'nhom' ? 'Nhóm' : 'Cá nhân'}
+              </span>
+            </div>
+            <div>
+              <div className="bdu-stat-overview-value">
+                {roomsCount}
+                <span className="bdu-stat-overview-unit">phòng</span>
+            </div>
+              <div className="bdu-stat-overview-label">Tổng số phòng</div>
+          </div>
+            <div className="bdu-stat-overview-spark bdu-stat-overview-spark-corner">
+              <span className="material-symbols-outlined bdu-overview-spark-icon">home_work</span>
+            </div>
+          </div>
+
+          <div className="bdu-stat-overview">
+            <div className="bdu-stat-overview-head">
+              <div className="bdu-stat-overview-icon tone-red">
+                <span className="material-symbols-outlined">notifications_active</span>
+          </div>
+              {activeAlertsCount > 0
+                ? <span className="bdu-stat-overview-pill down">Cần xử lý</span>
+                : <span className="bdu-stat-overview-pill up">Ổn định</span>}
+                </div>
+            <div>
+              <div className="bdu-stat-overview-value">
+                {activeAlertsCount}
+                <span className="bdu-stat-overview-unit">alerts</span>
+              </div>
+              <div className="bdu-stat-overview-label">Active Alerts</div>
+            </div>
+            <div className="bdu-stat-overview-spark" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+                const h = 8 + (i % 4) * 4;
+                return <span key={i} className={`bdu-alerts-bar ${i < activeAlertsCount ? 'active' : 'inactive'}`} style={{ flex: 1, height: h }} />;
+              })}
+                </div>
+              </div>
+
+          <div className="bdu-stat-overview">
+            <div className="bdu-stat-overview-head">
+              <div className="bdu-stat-overview-icon tone-purple">
+                <span className="material-symbols-outlined">speed</span>
+              </div>
+              <span className="bdu-stat-overview-pill up">Live</span>
+            </div>
+            <div>
+              <div className="bdu-stat-overview-value">
+                {overviewMsgs}
+                <span className="bdu-stat-overview-unit">msg</span>
+              </div>
+              <div className="bdu-stat-overview-label">Data Throughput · giờ gần nhất</div>
+            </div>
+            <div className="bdu-stat-overview-spark">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={sparkMsgs.length > 0 ? sparkMsgs : [{i:0,v:0},{i:1,v:0}]}>
+                  <Line type="monotone" dataKey="v" stroke="#a78bfa" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Overview Main Grid: Devices + LogStream ── */}
+        <div className="bdu-overview-grid">
+          <div>
+            <div className="bdu-section-header">
+              <h2 className="bdu-section-title">
+                <span className="material-symbols-outlined">memory</span>
+                Thiết bị gần đây
+              </h2>
+              <button className="bdu-section-link" onClick={() => {
+                const el = document.getElementById('bdu-all-devices');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}>
+                Xem tất cả
+                <span className="material-symbols-outlined">arrow_forward</span>
+              </button>
+            </div>
+            {scopedDevices.length === 0 ? (
+              <div className="bdu-device-list">
+                <div className="bdu-device-list-empty">Chưa có thiết bị nào.</div>
+              </div>
+            ) : (
+              <div className="bdu-device-list">
+                {scopedDevices.slice(0, 8).map((device) => {
+                  const data = deviceData[device.ma_thiet_bi] || {};
+                  const status = getStatus(device);
+                  const deviceKeys = data.data || {};
+                  // Lấy metric "đầu tiên" làm số hiển thị
+                  const firstKey = Object.keys(deviceKeys)[0];
+                  const firstVal = firstKey
+                    ? (typeof deviceKeys[firstKey] === 'object' ? deviceKeys[firstKey].value : deviceKeys[firstKey])
+                    : null;
+                  const firstUnit = firstKey && typeof deviceKeys[firstKey] === 'object' ? (deviceKeys[firstKey].don_vi || '') : '';
+                  return (
+                    <div
+                      key={device.id || device.ma_thiet_bi}
+                      className={`bdu-device-row status-${status.status}`}
+                      onClick={() => onOpenDevice?.(device.ma_thiet_bi)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter') onOpenDevice?.(device.ma_thiet_bi); }}
+                    >
+                      <div className={`bdu-row-icon status-${status.status}`}>
+                        <span className="material-symbols-outlined">{getDeviceIcon(device.loai_thiet_bi)}</span>
+                      </div>
+                      <div className="bdu-row-meta">
+                        <span className="bdu-row-name">{device.ten_thiet_bi || device.ma_thiet_bi}</span>
+                        <span className="bdu-row-sub">
+                          {device.ma_thiet_bi}
+                          {device.ten_phong ? ` · ${device.ten_phong}` : ''}
+                    </span>
+                </div>
+                      <div className="bdu-row-metric">
+                        {firstVal === null || firstVal === undefined ? '—' : `${typeof firstVal === 'number' ? firstVal.toFixed(1) : firstVal}${firstUnit}`}
+                      </div>
+                      <span className={`bdu-status-chip ${status.status}`}>
+                        <span className="bdu-status-dot" style={{ background: status.color }} />
+                        {status.status.toUpperCase()}
+                      </span>
+                      <span className="material-symbols-outlined bdu-row-arrow">chevron_right</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+              </div>
+
+          <div>
+            <div className="bdu-section-header">
+              <h2 className="bdu-section-title">
+                <span className="material-symbols-outlined">timeline</span>
+                Hoạt động hệ thống
+              </h2>
+            </div>
+            <LogStream token={token} wsUrl={WS_URL} devices={scopedDevices} maxEntries={80} />
+                </div>
+              </div>
+
+        {/* ── All Devices Section ── */}
+        <div id="bdu-all-devices" className="bdu-section-header" style={{ marginTop: 12 }}>
+          <h2 className="bdu-section-title">
+            <span className="material-symbols-outlined">grid_view</span>
+            Tất cả thiết bị
+          </h2>
+          <span className="bdu-section-link" style={{ color: 'var(--bdu-muted)' }}>
+            {scopedDevices.length} thiết bị
+          </span>
+            </div>
+
+        {/* ── Search Bar ── */}
+        {scopedDevices.length > 0 && (
+          <div className="bdu-search-bar">
+            <Icon name="search" className="bdu-search-icon" />
+              <input 
+                type="text" 
+              className="bdu-search-input"
+              placeholder="Tìm kiếm thiết bị (Tên / Mã)..."
+                value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+              />
+            </div>
+        )}
+
+        {/* ── Device Grid ── */}
+        {scopedDevices.length === 0 ? (
+          <div className="bdu-empty-state">
+            <Icon name="sensors_off" className="bdu-empty-icon" />
             <p>Chưa có thiết bị nào được đăng ký.</p>
           </div>
         ) : (
           <>
-            {/* Dashboard Charts Section */}
-            <div className="dashboard-charts">
-              {/* Stats Cards */}
-              <div className="chart-card stat-card">
-                <div className="stat-icon online">🟢</div>
-                <div className="stat-info">
-                  <span className="stat-value">{chartStats.onlineCount}</span>
-                  <span className="stat-label">Online</span>
-                </div>
-              </div>
-              <div className="chart-card stat-card">
-                <div className="stat-icon offline">🔴</div>
-                <div className="stat-info">
-                  <span className="stat-value">{chartStats.offlineCount + chartStats.warningCount}</span>
-                  <span className="stat-label">Offline/Warning</span>
-                </div>
-              </div>
-
-              {/* Removed Temp and Humidity Gauges */}
-
-              {/* Device Status Donut */}
-              <div className="chart-card donut-card">
-                <h4>Trạng thái thiết bị</h4>
-                <ResponsiveContainer width="100%" height={120}>
-                  <PieChart>
-                    <Pie
-                      data={chartStats.pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={30}
-                      outerRadius={50}
-                      paddingAngle={2}
-                      dataKey="value"
-                    >
-                      {chartStats.pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="donut-legend">
-                  {chartStats.pieData.map((entry, index) => (
-                    <span key={index} style={{ color: entry.color }}>
-                      ● {entry.name}: {entry.value}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Total Devices Card */}
-              <div className="chart-card stat-card total">
-                <div className="stat-icon total">📱</div>
-                <div className="stat-info">
-                  <span className="stat-value">{chartStats.totalDevices}</span>
-                  <span className="stat-label">Tổng thiết bị</span>
-                </div>
-              </div>
-
-
-            </div>
-
-            <div className="device-controls-bar" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'flex-start' }}>
-              <input 
-                type="text" 
-                className="device-search-input" 
-                style={{
-                  padding: '10px 15px', borderRadius: '8px', border: '1px solid #1f2a44',
-                  backgroundColor: '#0f172a', color: '#e2e8f0', width: '300px', fontSize: '14px',
-                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
-                }}
-                placeholder="🔍 Tìm kiếm thiết bị (Tên / Mã)..." 
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1);
-                }}
-              />
-            </div>
-
-            <div className="devices-grid neo-grid">
+            <div className="bdu-devices-grid">
               {(() => {
-                const filteredDevices = devices.filter(d => 
-                  (d.ten_thiet_bi || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                const filtered = scopedDevices.filter(d =>
+                  (d.ten_thiet_bi || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                   (d.ma_thiet_bi || '').toLowerCase().includes(searchQuery.toLowerCase())
                 );
-                const totalPages = Math.ceil(filteredDevices.length / devicesPerPage);
-                const validCurrentPage = Math.min(currentPage, Math.max(1, totalPages));
-                const indexOfLastDevice = validCurrentPage * devicesPerPage;
-                const indexOfFirstDevice = indexOfLastDevice - devicesPerPage;
-                const currentDevices = filteredDevices.slice(indexOfFirstDevice, indexOfLastDevice);
-
+                const totalPages = Math.ceil(filtered.length / devicesPerPage);
+                const validPage = Math.min(currentPage, Math.max(1, totalPages));
+                const start = (validPage - 1) * devicesPerPage;
+                const currentDevices = filtered.slice(start, start + devicesPerPage);
                 return currentDevices.map((device) => {
                 const data = deviceData[device.ma_thiet_bi] || {};
                 const status = getStatus(device);
                 const deviceKeys = data.data || {};
-
+                  const isOn = (getStateValue(deviceKeys) || '').toString().toUpperCase() === 'ON';
                 return (
-                  <div key={device.id || device.ma_thiet_bi} className="neo-card">
-                    <div className="card-header">
-                      <div className="icon-wrap">{getDeviceIcon(device.loai_thiet_bi)}</div>
-                      <div className="card-meta">
-                        <h3>{device.ten_thiet_bi || device.ma_thiet_bi}</h3>
-                        <p>{device.ma_thiet_bi}</p>
+                    <div
+                      key={device.id || device.ma_thiet_bi}
+                      className={`bdu-device-card ${status.status}`}
+                      onClick={() => onOpenDevice?.(device.ma_thiet_bi)}
+                      style={{ cursor: onOpenDevice ? 'pointer' : 'default' }}
+                    >
+                      {/* Top bar */}
+                      <div className="bdu-card-header">
+                        <div className="bdu-device-icon-wrap">
+                          <Icon name={getDeviceIcon(device.loai_thiet_bi)} className="bdu-device-icon" />
                       </div>
-                      <div className={`status-chip ${status.status}`}>
-                        <span className="status-dot" />
-                        {status.status}
+                        <div className="bdu-device-meta">
+                          <h3 className="bdu-device-name">{device.ten_thiet_bi || device.ma_thiet_bi}</h3>
+                          <span className="bdu-device-id">{device.ma_thiet_bi}</span>
                       </div>
-                      <button
-                        className="delete-device-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteDevice(device);
-                        }}
-                        title="Xóa thiết bị"
-                      >
-                        ×
+                        <div className={`bdu-status-chip ${status.status}`}>
+                          <span className="bdu-status-dot" style={{ background: status.color }} />
+                          {status.status.toUpperCase()}
+                        </div>
+                        <button className="bdu-delete-btn" onClick={(e) => { e.stopPropagation(); handleDeleteDevice(device); }} title="Xóa thiết bị">
+                          <Icon name="close" />
                       </button>
                     </div>
 
-                    <div className="card-body">
+                      {/* Metrics */}
+                      <div className="bdu-card-body">
                       {Object.keys(deviceKeys).length === 0 ? (
-                        <p className="no-data">Chưa có dữ liệu</p>
+                          <p className="bdu-no-data">Chưa có dữ liệu</p>
                       ) : (
                         Object.entries(deviceKeys)
                           .filter(([key]) => {
@@ -793,892 +747,95 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                           .map(([key, valueObj]) => {
                             const value = typeof valueObj === 'object' ? valueObj.value : valueObj;
                             const unit = typeof valueObj === 'object' ? valueObj.don_vi || '' : '';
-                            const label = key; // Luôn hiển thị tên key (temperature, humidity...) thay vì mo_ta
                             return (
-                              <div key={key} className="metric-row">
-                                <span className="label">{label}</span>
-                                <span className="value">{formatValue(value, unit)}</span>
+                                <div key={key} className="bdu-metric-row">
+                                  <span className="bdu-metric-label">{key}</span>
+                                  <span className="bdu-metric-value">{formatValue(value, unit)}</span>
                               </div>
                             );
                           })
                       )}
                     </div>
 
+                      {/* Controls */}
                     {(device.loai_thiet_bi === 'air_conditioner' || device.loai_thiet_bi === 'light') && (
-                      <div className="controls">
-                        <button
-                          className="btn"
-                          onClick={() => handleTogglePower(device)}
-                        >
-                          {(getStateValue(deviceKeys) || '').toString().toUpperCase() === 'ON' ? 'Tắt' : 'Bật'}
+                        <div className="bdu-card-controls">
+                          <button className={`bdu-power-btn ${isOn ? 'on' : 'off'}`} onClick={() => handleTogglePower(device)}>
+                            <Icon name="power_settings_new" />
+                            {isOn ? 'Tắt' : 'Bật'}
                         </button>
                         {device.loai_thiet_bi === 'light' && (
-                          <div className="slider">
-                            <label>Độ sáng</label>
-                            <input
-                              type="range"
-                              min="0"
-                              max="100"
-                              value={getBrightnessValue(deviceKeys)}
-                              onChange={(e) => handleBrightnessChange(device, e.target.value)}
-                            />
-                            <span>{getBrightnessValue(deviceKeys)}</span>
+                            <div className="bdu-brightness">
+                              <Icon name="brightness_6" className="bdu-bright-icon" />
+                              <input type="range" min="0" max="100" value={getBrightnessValue(deviceKeys)}
+                                onChange={(e) => handleBrightnessChange(device, e.target.value)} className="bdu-range" />
+                              <span className="bdu-bright-val">{getBrightnessValue(deviceKeys)}</span>
                           </div>
                         )}
                       </div>
                     )}
 
-                    <div className="card-footer">
-                      <span>{data.last_seen ? `Cập nhật: ${formatTime(data.last_seen)}` : 'Chưa có dữ liệu'}</span>
+                      {/* Footer */}
+                      <div className="bdu-card-footer">
+                        <span className="bdu-last-seen">
+                          <Icon name="schedule" className="bdu-footer-icon" />
+                          {data.last_seen ? `Cập nhật: ${formatTime(data.last_seen)}` : 'Chưa có dữ liệu'}
+                        </span>
                       {device.phong_id && (
-                        <span className="room">📍 {device.ten_phong || `Phòng ${device.phong_id}`}</span>
+                          <span className="bdu-room-tag">
+                            <Icon name="location_on" className="bdu-footer-icon" />
+                            {device.ten_phong || `Phòng ${device.phong_id}`}
+                          </span>
                       )}
                     </div>
-
-                    <button
-                      className="ghost-btn"
-                      onClick={() => {
-                        window.location.hash = `#/devices/${device.ma_thiet_bi}`;
-                      }}
-                    >
-                      Xem chi tiết
-                    </button>
                   </div>
                 );
                 });
               })()}
             </div>
 
+            {/* Pagination */}
             {(() => {
-              const filteredDevices = devices.filter(d => 
+              const filtered = scopedDevices.filter(d =>
                 (d.ten_thiet_bi || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                 (d.ma_thiet_bi || '').toLowerCase().includes(searchQuery.toLowerCase())
               );
-              const totalPages = Math.ceil(filteredDevices.length / devicesPerPage);
-              const validCurrentPage = Math.min(currentPage, Math.max(1, totalPages));
-              
-              if (totalPages > 1) {
+              const totalPages = Math.ceil(filtered.length / devicesPerPage);
+              const validPage = Math.min(currentPage, Math.max(1, totalPages));
+              if (totalPages <= 1) return null;
                 return (
-                  <div className="pagination-controls" style={{
-                    display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px', marginTop: '30px', marginBottom: '10px'
-                  }}>
-                    <button 
-                      className="btn"
-                      style={{ padding: '8px 16px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#cbd5e1', cursor: validCurrentPage === 1 ? 'not-allowed' : 'pointer', opacity: validCurrentPage === 1 ? 0.5 : 1 }}
-                      disabled={validCurrentPage === 1} 
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    >
-                      Trang trước
-                    </button>
-                    <span className="page-info" style={{ color: '#94a3b8', fontSize: '14px' }}>Trang {validCurrentPage} / {totalPages}</span>
-                    <button 
-                      className="btn"
-                      style={{ padding: '8px 16px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#cbd5e1', cursor: validCurrentPage === totalPages ? 'not-allowed' : 'pointer', opacity: validCurrentPage === totalPages ? 0.5 : 1 }}
-                      disabled={validCurrentPage === totalPages} 
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    >
-                      Trang sau
-                    </button>
+                <div className="bdu-pagination">
+                  <button className="bdu-page-btn" disabled={validPage === 1}
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}>‹ Trước</button>
+                  <span className="bdu-page-info">Trang {validPage} / {totalPages}</span>
+                  <button className="bdu-page-btn" disabled={validPage === totalPages}
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}>Sau ›</button>
                   </div>
                 );
-              }
-              return null;
             })()}
           </>
         )}
 
-        {/* FAB Button - Add device */}
-        <button
-          className="fab-btn"
-          onClick={() => {
-            setShowDiscoveryModal(true);
-            setDiscoveredDevices([]);
-            setDiscoverError('');
-            setImportedDeviceConfig(null);
-            setModalTab('provision');
-            setProvisionStep(1);
-            setProvisionResult(null);
-            // Load rooms
-            axios.get(`${API_BASE}/rooms`, { headers: { Authorization: `Bearer ${token}` } })
-              .then(res => setRooms(res.data.rooms || []))
-              .catch(err => console.error('Error loading rooms:', err));
-          }}
+        {/* ── FAB Button ── */}
+        <button className="bdu-fab"
+          onClick={() => setShowDeviceModal(true)}
           title="Thêm thiết bị mới"
         >
-          <svg viewBox="0 0 24 24" width="28" height="28">
-            <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-          </svg>
+          <Icon name="add" />
         </button>
 
-        {/* Device Modal - Provision/Discover */}
-        {showDiscoveryModal && (
-          <div className="modal-overlay" onClick={() => { setShowDiscoveryModal(false); setProvisionStep(1); setProvisionResult(null); setImportedDeviceConfig(null); setModalTab('provision'); }}>
-            <div className="modal-content modal-lg" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <div className="modal-tabs">
-                  <button
-                    className={`modal-tab ${modalTab === 'provision' ? 'active' : ''}`}
-                    onClick={() => setModalTab('provision')}
-                  >
-                    ➕ Tạo thiết bị
-                  </button>
-                  <button
-                    className={`modal-tab ${modalTab === 'discover' ? 'active' : ''}`}
-                    onClick={() => setModalTab('discover')}
-                  >
-                    🔍 Quét thiết bị
-                  </button>
-                  <button
-                    className={`modal-tab ${modalTab === 'import' ? 'active' : ''}`}
-                    onClick={() => setModalTab('import')}
-                  >
-                    📥 Nhập config
-                  </button>
-                </div>
-                <button className="modal-close" onClick={() => { setShowDiscoveryModal(false); setProvisionStep(1); setProvisionResult(null); setImportedDeviceConfig(null); setModalTab('provision'); }}>✕</button>
-              </div>
-              <div className="modal-body">
-
-                {/* TAB: Provision Device */}
-                {modalTab === 'provision' && (
-                  <div className="provision-wizard">
-                    {provisionStep === 1 && (
-                      <>
-                        <div className="form-group" style={{ marginBottom: '15px', background: '#334155', padding: '10px', borderRadius: '6px' }}>
-                          <label style={{ color: '#60a5fa' }}>⚡ Mẫu thiết bị (Chọn nhanh)</label>
-                          <select
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === 'smart_classroom') {
-                                setProvisionForm(prev => ({
-                                  ...prev,
-                                  device_type: 'sensor',
-                                  loai_thiet_bi: 'smart_classroom_energy',
-                                  protocol: 'mqtt',
-                                  data_keys: getDefaultKeysForDeviceType('smart_classroom_energy')
-                                }));
-                              } else if (val === 'custom') {
-                                setProvisionForm(prev => ({
-                                  ...prev,
-                                  device_type: 'sensor',
-                                  loai_thiet_bi: '',
-                                  protocol: 'mqtt',
-                                  data_keys: []
-                                }));
-                              }
-                            }}
-                            defaultValue="custom"
-                          >
-                            <option value="custom">Tùy chỉnh (Tự nhập)</option>
-                            <option value="smart_classroom">🏫 Lớp học thông minh (Smart Classroom)</option>
-                          </select>
-                        </div>
-
-                        <div className="form-group">
-                          <label>Tên thiết bị *</label>
-                          <input
-                            type="text"
-                            value={provisionForm.ten_thiet_bi}
-                            onChange={(e) => setProvisionForm({ ...provisionForm, ten_thiet_bi: e.target.value })}
-                            placeholder="VD: Công tơ điện A101"
-                          />
-                        </div>
-
-                        <div className="form-group">
-                          <label>Phòng *</label>
-                          <select
-                            value={provisionForm.phong_id}
-                            onChange={(e) => setProvisionForm({ ...provisionForm, phong_id: e.target.value })}
-                          >
-                            <option value="">-- Chọn phòng --</option>
-                            {rooms.map(r => <option key={r.id} value={r.id}>{r.ten_phong || r.ma_phong}</option>)}
-                          </select>
-                        </div>
-
-                        <div className="form-row">
-                          <div className="form-group">
-                            <label>Giao thức</label>
-                            <select
-                              value={provisionForm.protocol}
-                              onChange={(e) => setProvisionForm({ ...provisionForm, protocol: e.target.value })}
-                            >
-                              <option value="mqtt">MQTT</option>
-                              <option value="http">HTTP</option>
-                              <option value="both">Cả hai</option>
-                            </select>
-                          </div>
-
-                          <div className="form-group">
-                            <label>Loại thiết bị</label>
-                            <select
-                              value={provisionForm.device_type}
-                              onChange={(e) => setProvisionForm({ ...provisionForm, device_type: e.target.value })}
-                            >
-                              <option value="sensor">Cảm biến (Sensor)</option>
-                              <option value="controller">Bộ điều khiển (Controller)</option>
-                              <option value="gateway">Gateway</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="form-group">
-                          <label>Chi tiết loại (tùy chọn)</label>
-                          <input
-                            type="text"
-                            value={provisionForm.loai_thiet_bi}
-                            onChange={(e) => setProvisionForm({ ...provisionForm, loai_thiet_bi: e.target.value })}
-                            placeholder="VD: power_meter, temperature_sensor..."
-                          />
-                        </div>
-
-                        {provisionError && <div className="modal-error">{provisionError}</div>}
-
-                        <button
-                          className="register-btn-modal"
-                          onClick={async () => {
-                            if (!provisionForm.ten_thiet_bi || !provisionForm.phong_id) {
-                              setProvisionError('Vui lòng điền tên thiết bị và chọn phòng');
-                              return;
-                            }
-                            setProvisioning(true);
-                            setProvisionError('');
-                            try {
-                              const res = await axios.post(`${API_BASE}/devices/provision`, {
-                                ...provisionForm,
-                                phong_id: parseInt(provisionForm.phong_id)
-                              }, {
-                                headers: { Authorization: `Bearer ${token}` }
-                              });
-                              setProvisionResult(res.data);
-                              setProvisionStep(2);
-                            } catch (err) {
-                              setProvisionError('Lỗi: ' + (err.response?.data?.detail || err.message));
-                            } finally {
-                              setProvisioning(false);
-                            }
-                          }}
-                          disabled={provisioning}
-                        >
-                          {provisioning ? '⏳ Đang tạo...' : '🔧 Tạo thiết bị'}
-                        </button>
-                      </>
-                    )}
-
-                    {provisionStep === 2 && provisionResult && (
-                      <div className="provision-result">
-                        <div className="result-success">✅ Thiết bị đã được tạo thành công!</div>
-
-                        <div className="result-section">
-                          <h4>📋 Thông tin thiết bị</h4>
-                          <div className="result-item">
-                            <span className="label">Device ID:</span>
-                            <code className="value">{provisionResult.credentials?.device_id}</code>
-                            <button className="copy-btn" onClick={() => navigator.clipboard.writeText(provisionResult.credentials?.device_id)}>📋</button>
-                          </div>
-                          <div className="result-item">
-                            <span className="label">Tên:</span>
-                            <span className="value">{provisionResult.device?.ten_thiet_bi}</span>
-                          </div>
-                        </div>
-
-                        <div className="result-section credentials-section">
-                          <h4>🔐 Credentials (Lưu lại!)</h4>
-                          <div className="result-item">
-                            <span className="label">Secret Key:</span>
-                            <code className="value secret">{provisionResult.credentials?.secret_key}</code>
-                            <button className="copy-btn" onClick={() => navigator.clipboard.writeText(provisionResult.credentials?.secret_key)}>📋</button>
-                          </div>
-                          {provisionResult.credentials?.http_api_key && (
-                            <div className="result-item">
-                              <span className="label">HTTP API Key:</span>
-                              <code className="value secret">{provisionResult.credentials?.http_api_key}</code>
-                              <button className="copy-btn" onClick={() => navigator.clipboard.writeText(provisionResult.credentials?.http_api_key)}>📋</button>
-                            </div>
-                          )}
-                        </div>
-
-                        {provisionResult.mqtt_config && (
-                          <div className="result-section">
-                            <h4>📡 MQTT Config</h4>
-                            <div className="result-item">
-                              <span className="label">Broker:</span>
-                              <code className="value">{provisionResult.mqtt_config.broker}:{provisionResult.mqtt_config.port}</code>
-                            </div>
-                            <div className="result-item">
-                              <span className="label">Topic Data:</span>
-                              <code className="value">{provisionResult.mqtt_config.topic_data}</code>
-                              <button className="copy-btn" onClick={() => navigator.clipboard.writeText(provisionResult.mqtt_config.topic_data)}>📋</button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Detect Keys Section */}
-                        <div className="result-section detect-section">
-                          <h4>📊 Định nghĩa dữ liệu</h4>
-                          <p style={{ fontSize: '0.85rem', color: '#888', marginBottom: '12px' }}>
-                            Gửi dữ liệu từ thiết bị → Nhấn "Lắng nghe" để tự động detect
-                          </p>
-                          {detectedKeys.length > 0 && (
-                            <div className="detected-keys-list">
-                              {detectedKeys.map(k => (
-                                <div key={k.khoa} className="detected-key-item">
-                                  <span className="key-name">{k.khoa}</span>
-                                  <span className="key-unit">{k.don_vi}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          <button
-                            className="btn-detect"
-                            disabled={detecting}
-                            onClick={async () => {
-                              setDetecting(true);
-                              setDetectProgress(0);
-                              // Progress animation
-                              const interval = setInterval(() => {
-                                setDetectProgress(p => Math.min(p + 10, 95));
-                              }, 1000);
-                              try {
-                                const res = await axios.post(
-                                  `${API_BASE}/devices/${provisionResult.credentials?.device_id}/detect-keys?listen_seconds=10`,
-                                  {},
-                                  { headers: { Authorization: `Bearer ${token}` } }
-                                );
-                                setDetectedKeys(res.data.new_keys_added || []);
-                                if (res.data.new_keys_added?.length > 0) {
-                                  alert(`Đã phát hiện ${res.data.new_keys_added.length} keys mới: ${res.data.new_keys_added.map(k => k.khoa).join(', ')}`);
-                                } else if (res.data.message_count === 0) {
-                                  alert('Không nhận được data từ thiết bị. Hãy publish data từ MQTTBox trước.');
-                                } else {
-                                  alert('Không có keys mới (có thể đã được định nghĩa trước đó).');
-                                }
-                              } catch (err) {
-                                alert('Lỗi detect: ' + (err.response?.data?.detail || err.message));
-                              } finally {
-                                clearInterval(interval);
-                                setDetectProgress(100);
-                                setTimeout(() => setDetecting(false), 500);
-                              }
-                            }}
-                          >
-                            {detecting ? `⏳ Đang lắng nghe... ${detectProgress}%` : '📡 Lắng nghe & Detect (10s)'}
-                          </button>
-                        </div>
-
-                        {/* Control Lines Section */}
-                        <div className="result-section detect-section">
-                          <h4>🎮 Đường điều khiển (Relay/Output)</h4>
-                          <p style={{ fontSize: '0.85rem', color: '#888', marginBottom: '12px' }}>
-                            Thêm các đường relay/output → mỗi đường sẽ có lệnh ON/OFF riêng trong file config
-                          </p>
-
-                          {controlLines.map((line, idx) => (
-                            <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
-                              <span style={{ color: '#60a5fa', fontWeight: 'bold', minWidth: '60px' }}>Relay {line.relay_number}</span>
-                              <input
-                                type="text"
-                                value={line.ten_duong}
-                                onChange={(e) => {
-                                  const updated = [...controlLines];
-                                  updated[idx] = { ...updated[idx], ten_duong: e.target.value };
-                                  setControlLines(updated);
-                                  setControlLinesSaved(false);
-                                }}
-                                placeholder={`Tên đường ${line.relay_number} (VD: Đèn, Quạt...)`}
-                                style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0' }}
-                              />
-                              <button
-                                onClick={() => {
-                                  const updated = controlLines.filter((_, i) => i !== idx);
-                                  // Re-number relays
-                                  const renumbered = updated.map((l, i) => ({ ...l, relay_number: i + 1 }));
-                                  setControlLines(renumbered);
-                                  setControlLinesSaved(false);
-                                }}
-                                style={{ background: '#ef4444', border: 'none', color: 'white', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer' }}
-                                title="Xóa đường này"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ))}
-
-                          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                            <button
-                              onClick={() => {
-                                const nextNum = controlLines.length + 1;
-                                setControlLines([...controlLines, { relay_number: nextNum, ten_duong: '' }]);
-                                setControlLinesSaved(false);
-                              }}
-                              style={{ background: '#334155', border: '1px solid #475569', color: '#e2e8f0', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer' }}
-                            >
-                              ➕ Thêm đường
-                            </button>
-
-                            {controlLines.length > 0 && (
-                              <button
-                                disabled={savingControlLines}
-                                onClick={async () => {
-                                  setSavingControlLines(true);
-                                  try {
-                                    await axios.post(
-                                      `${API_BASE}/devices/${provisionResult.credentials?.device_id}/control-lines`,
-                                      { lines: controlLines },
-                                      { headers: { Authorization: `Bearer ${token}` } }
-                                    );
-                                    setControlLinesSaved(true);
-                                  } catch (err) {
-                                    alert('Lỗi lưu: ' + (err.response?.data?.detail || err.message));
-                                  } finally {
-                                    setSavingControlLines(false);
-                                  }
-                                }}
-                                style={{
-                                  background: controlLinesSaved ? '#22c55e' : '#3b82f6',
-                                  border: 'none', color: 'white', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer'
-                                }}
-                              >
-                                {savingControlLines ? '⏳ Đang lưu...' : controlLinesSaved ? '✅ Đã lưu' : '💾 Lưu đường điều khiển'}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="result-actions">
-                          <button
-                            className="btn-secondary"
-                            onClick={async () => {
-                              try {
-                                const deviceId = provisionResult.credentials?.device_id;
-                                
-                                // Cảnh báo nếu có control lines chưa lưu
-                                if (controlLines.length > 0 && !controlLinesSaved) {
-                                  const confirmDownload = window.confirm(
-                                    '⚠️ Bạn có đường điều khiển chưa lưu!\n\n' +
-                                    'Nhấn OK để tự động lưu và download config.\n' +
-                                    'Nhấn Cancel để quay lại.'
-                                  );
-                                  if (!confirmDownload) return;
-                                  
-                                  // Tự động lưu control lines trước
-                                  try {
-                                    await axios.post(
-                                      `${API_BASE}/devices/${deviceId}/control-lines`,
-                                      { lines: controlLines },
-                                      { headers: { Authorization: `Bearer ${token}` } }
-                                    );
-                                    setControlLinesSaved(true);
-                                  } catch (saveErr) {
-                                    alert('❌ Lỗi lưu đường điều khiển: ' + (saveErr.response?.data?.detail || saveErr.message));
-                                    return;
-                                  }
-                                }
-                                
-                                // Lấy full config từ backend
-                                setDownloadingConfig(true);
-                                const res = await axios.get(`${API_BASE}/devices/${deviceId}/full-config`, {
-                                  headers: { Authorization: `Bearer ${token}` },
-                                  timeout: 30000,
-                                });
-                                
-                                const configJson = JSON.stringify(res.data, null, 2);
-                                const blob = new Blob([configJson], { type: 'application/json' });
-                                const url = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = `device-${deviceId}.json`;
-                                a.click();
-                                URL.revokeObjectURL(url);
-                              } catch (err) {
-                                console.error('Download config error:', err);
-                                alert('❌ Lỗi tải config: ' + (err.response?.data?.detail || err.message) + '\n\nVui lòng thử lại hoặc liên hệ admin.');
-                              } finally {
-                                setDownloadingConfig(false);
-                              }
-                            }}
-                            disabled={downloadingConfig}
-                          >
-                            {downloadingConfig ? '⏳ Đang tải...' : '📥 Download Config'}
-                          </button>
-                          <button
-                            className="register-btn-modal"
-                            onClick={() => {
-                              setShowDiscoveryModal(false);
-                              setProvisionStep(1);
-                              setProvisionResult(null);
-                              setProvisionForm({ ten_thiet_bi: '', phong_id: '', protocol: 'mqtt', device_type: 'sensor', loai_thiet_bi: '', data_keys: [] });
-                              setDetectedKeys([]);
-                              setControlLines([]);
-                              setControlLinesSaved(false);
-                              loadLatestAll();
-                            }}
-                          >
-                            ✅ Hoàn tất
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* TAB: Import Config */}
-                {modalTab === 'import' && (
-                  <div style={{ padding: '10px 0' }}>
-                    <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '16px' }}>
-                      Tải lên file config JSON đã xuất trước đó để khôi phục thiết bị với cùng device_id, credentials và cấu hình — gateway không cần config lại.
-                    </p>
-
-                    {/* File upload area */}
-                    <div style={{
-                      border: '2px dashed #1e3a5f',
-                      borderRadius: '8px',
-                      padding: '32px',
-                      textAlign: 'center',
-                      marginBottom: '20px',
-                      background: '#0f172a',
-                    }}>
-                      <svg viewBox="0 0 24 24" width="40" height="40" style={{ marginBottom: '12px', color: '#60a5fa' }}>
-                        <path d="M9 16h6M9 13l3-3 3 3M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-                      </svg>
-                      <p style={{ color: '#94a3b8', marginBottom: '12px' }}>Kéo thả file config JSON hoặc nhấn nút bên dưới</p>
-                      <label
-                        htmlFor="import-config-file"
-                        style={{
-                          display: 'inline-block',
-                          padding: '8px 20px',
-                          background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
-                          borderRadius: '6px',
-                          color: '#0b1224',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          fontSize: '0.9rem',
-                        }}
-                      >
-                        Chọn file config
-                      </label>
-                      <input
-                        id="import-config-file"
-                        type="file"
-                        accept=".json"
-                        style={{ display: 'none' }}
-                        onChange={handleImportConfig}
-                      />
-                    </div>
-
-                    {/* Preview of imported config */}
-                    {importedDeviceConfig && (
-                      <div style={{
-                        background: '#1e293b',
-                        borderRadius: '8px',
-                        padding: '16px',
-                        marginBottom: '16px',
-                        border: '1px solid #334155',
-                      }}>
-                        <h4 style={{ color: '#60a5fa', margin: '0 0 12px 0', fontSize: '0.95rem' }}>
-                          Config đã nhập — {importedDeviceConfig.device?.device_id}
-                        </h4>
-
-                        {/* Device info */}
-                        <div style={{ marginBottom: '10px' }}>
-                          <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>Thiết bị</div>
-                          <div style={{ color: '#e2e8f0', fontSize: '0.85rem' }}>
-                            <strong>{importedDeviceConfig.device?.ten_thiet_bi}</strong> &nbsp;
-                            <span style={{ color: '#64748b' }}>({importedDeviceConfig.device?.device_type || 'sensor'} / {importedDeviceConfig.device?.protocol || 'mqtt'})</span>
-                          </div>
-                        </div>
-
-                        {/* Credentials */}
-                        {importedDeviceConfig.credentials && (
-                          <div style={{ marginBottom: '10px' }}>
-                            <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>Credentials</div>
-                            <div style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: '#86efac' }}>
-                              device_id: {importedDeviceConfig.credentials.device_id}<br />
-                              {importedDeviceConfig.credentials.secret_key && (
-                                <>secret_key: {importedDeviceConfig.credentials.secret_key.substring(0, 12)}...<br /></>
-                              )}
-                              {importedDeviceConfig.credentials.http_api_key && (
-                                <>http_api_key: {importedDeviceConfig.credentials.http_api_key.substring(0, 12)}...<br /></>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* MQTT topics */}
-                        {importedDeviceConfig.mqtt_config && (
-                          <div style={{ marginBottom: '10px' }}>
-                            <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>MQTT Topics</div>
-                            <div style={{ fontSize: '0.78rem', fontFamily: 'monospace', color: '#c4b5fd' }}>
-                              data: <span style={{ color: '#94a3b8' }}>{importedDeviceConfig.mqtt_config.topic_data || '—'}</span><br />
-                              status: <span style={{ color: '#94a3b8' }}>{importedDeviceConfig.mqtt_config.topic_status || '—'}</span><br />
-                              control: <span style={{ color: '#94a3b8' }}>{importedDeviceConfig.mqtt_config.topic_control || '—'}</span>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Data keys */}
-                        {importedDeviceConfig.data_keys && importedDeviceConfig.data_keys.length > 0 && (
-                          <div style={{ marginBottom: '10px' }}>
-                            <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>
-                              Data Keys ({importedDeviceConfig.data_keys.length})
-                            </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                              {importedDeviceConfig.data_keys.slice(0, 8).map((k, i) => (
-                                <span key={i} style={{
-                                  background: '#0f172a',
-                                  border: '1px solid #334155',
-                                  borderRadius: '4px',
-                                  padding: '2px 8px',
-                                  fontSize: '0.75rem',
-                                  color: '#e2e8f0',
-                                  fontFamily: 'monospace',
-                                }}>
-                                  {k.khoa} {k.don_vi ? `(${k.don_vi})` : ''}
-                                </span>
-                              ))}
-                              {importedDeviceConfig.data_keys.length > 8 && (
-                                <span style={{ fontSize: '0.75rem', color: '#64748b', alignSelf: 'center' }}>
-                                  +{importedDeviceConfig.data_keys.length - 8} more
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Relay control commands */}
-                        {importedDeviceConfig.control_commands && importedDeviceConfig.control_commands.length > 0 && (
-                          <div>
-                            <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '4px' }}>
-                              Relay Commands ({importedDeviceConfig.control_commands.length} relays)
-                            </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                              {importedDeviceConfig.control_commands.map((cmd, i) => (
-                                <span key={i} style={{
-                                  background: '#0f172a',
-                                  border: '1px solid #334155',
-                                  borderRadius: '4px',
-                                  padding: '2px 8px',
-                                  fontSize: '0.75rem',
-                                  color: '#fbbf24',
-                                }}>
-                                  Relay {cmd.relay}: {cmd.name || 'Relay'}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Editable fields */}
-                    {importedDeviceConfig && (
-                      <>
-                        <div className="form-group">
-                          <label>Tên thiết bị *</label>
-                          <input
-                            type="text"
-                            value={provisionForm.ten_thiet_bi}
-                            onChange={(e) => setProvisionForm({ ...provisionForm, ten_thiet_bi: e.target.value })}
-                            placeholder="Tên thiết bị"
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Phòng</label>
-                          <select
-                            value={provisionForm.phong_id}
-                            onChange={(e) => setProvisionForm({ ...provisionForm, phong_id: e.target.value })}
-                          >
-                            <option value="">-- Chọn phòng --</option>
-                            {rooms.map(r => <option key={r.id} value={r.id}>{r.ten_phong || r.ma_phong}</option>)}
-                          </select>
-                        </div>
-                      </>
-                    )}
-
-                    {discoverError && (
-                      <div style={{ color: '#f87171', fontSize: '0.85rem', marginBottom: '12px', padding: '8px', background: 'rgba(248,113,113,0.1)', borderRadius: '6px' }}>
-                        {discoverError}
-                      </div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '8px' }}>
-                      <button
-                        className="btn-ghost"
-                        onClick={() => {
-                          setImportedDeviceConfig(null);
-                          setProvisionForm({ ten_thiet_bi: '', phong_id: '', protocol: 'mqtt', device_type: 'sensor', loai_thiet_bi: '', data_keys: [] });
-                          setDiscoverError('');
-                        }}
-                        disabled={registering}
-                      >
-                        Hủy
-                      </button>
-                      <button
-                        className="register-btn-modal"
-                        onClick={handleRegisterImportedDevice}
-                        disabled={!importedDeviceConfig || !provisionForm.ten_thiet_bi || registering}
-                      >
-                        {registering ? '⏳ Đang đăng ký...' : '✅ Khôi phục thiết bị'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB: Discover Device */}
-                {modalTab === 'discover' && (
-                  <>
-                    <button
-                      className="scan-btn-modal"
-                      onClick={async () => {
-                        setScanning(true);
-                        setDiscoverError('');
-                        try {
-                          const res = await axios.get(`${API_BASE}/devices/discover`, {
-                            headers: { Authorization: `Bearer ${token}` }
-                          });
-                          const devs = res.data.discovered_devices || [];
-                          setDiscoveredDevices(devs);
-                          // Initialize selected devices using detected info
-                          const newSelected = {};
-                          devs.forEach(dev => {
-                            const deviceId = dev.device_id;
-                            const type = dev.suggested_type || 'sensor';
-                            const detectedFields = dev.detected_fields || [];
-
-                            // Build keys from detected fields
-                            const keys = detectedFields.map(field => {
-                              let unit = '';
-                              if (field === 'temperature') unit = '°C';
-                              else if (field === 'humidity') unit = '%';
-                              else if (field === 'brightness') unit = '%';
-                              else if (field === 'setpoint') unit = '°C';
-                              else if (field === 'power') unit = 'W';
-                              else if (field === 'voltage') unit = 'V';
-                              else if (field === 'current') unit = 'A';
-                              return { khoa: field, don_vi: unit };
-                            });
-
-                            newSelected[deviceId] = {
-                              device_id: deviceId,
-                              ten_thiet_bi: deviceId,
-                              loai_thiet_bi: type,
-                              phong_id: null,
-                              keys: keys.length > 0 ? keys : [{ khoa: 'value', don_vi: '' }]
-                            };
-                          });
-                          setSelectedDevices(newSelected);
-                          if (devs.length === 0) {
-                            setDiscoverError('Không tìm thấy thiết bị mới nào.');
-                          }
-                        } catch (err) {
-                          setDiscoverError('Lỗi khi quét: ' + (err.response?.data?.detail || err.message));
-                        } finally {
-                          setScanning(false);
-                        }
-                      }}
-                      disabled={scanning}
-                    >
-                      {scanning ? '⏳ Đang quét...' : '🔍 Quét thiết bị (10s)'}
-                    </button>
-
-                    {discoverError && <div className="modal-error">{discoverError}</div>}
-
-                    {discoveredDevices.length > 0 && (
-                      <div className="discovered-list">
-                        <h3>Tìm thấy {discoveredDevices.length} thiết bị:</h3>
-                        {discoveredDevices.map(dev => {
-                          const deviceId = dev.device_id;
-                          const selectedDev = selectedDevices[deviceId] || {};
-                          const detectedFields = dev.detected_fields || [];
-                          const sampleData = dev.sample_data || {};
-                          const suggestedType = dev.suggested_type || 'unknown';
-                          const typeIcons = {
-                            sensor: '📟',
-                            air_conditioner: '❄️',
-                            light: '💡',
-                            power_meter: '⚡',
-                            motion_sensor: '👁️',
-                            door_sensor: '🚪',
-                            unknown: '❓'
-                          };
-
-                          return (
-                            <div key={deviceId} className="discovered-item">
-                              <div className="discovered-header">
-                                <span className="discovered-icon">
-                                  {typeIcons[suggestedType] || '❓'}
-                                </span>
-                                <div className="discovered-title">
-                                  <span className="discovered-name">{deviceId}</span>
-                                  <span className="discovered-type">Loại: {suggestedType}</span>
-                                </div>
-                              </div>
-
-                              {/* Hiển thị các fields phát hiện được */}
-                              {detectedFields.length > 0 && (
-                                <div className="detected-fields">
-                                  <strong>Dữ liệu phát hiện:</strong>
-                                  <div className="fields-grid">
-                                    {detectedFields.map(field => (
-                                      <span key={field} className="field-tag">
-                                        {field}: {sampleData[field] !== undefined ?
-                                          (typeof sampleData[field] === 'number' ? sampleData[field].toFixed(2) : sampleData[field])
-                                          : 'N/A'}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="discovered-fields">
-                                <select
-                                  value={selectedDev.phong_id || ''}
-                                  onChange={(e) => setSelectedDevices(prev => ({
-                                    ...prev,
-                                    [deviceId]: { ...prev[deviceId], phong_id: e.target.value ? parseInt(e.target.value) : null }
-                                  }))}
-                                >
-                                  <option value="">-- Chọn phòng --</option>
-                                  {rooms.map(r => <option key={r.id} value={r.id}>{r.ten_phong || r.ma_phong}</option>)}
-                                </select>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        <button
-                          className="register-btn-modal"
-                          onClick={async () => {
-                            setRegistering(true);
-                            setDiscoverError('');
-                            try {
-                              const promises = Object.values(selectedDevices).map(dev =>
-                                axios.post(`${API_BASE}/devices/register`, dev, {
-                                  headers: { Authorization: `Bearer ${token}` }
-                                })
-                              );
-                              await Promise.all(promises);
-                              setShowDiscoveryModal(false);
-                              // Reload devices
-                              loadLatestAll();
-                            } catch (err) {
-                              setDiscoverError('Lỗi đăng ký: ' + (err.response?.data?.detail || err.message));
-                            } finally {
-                              setRegistering(false);
-                            }
-                          }}
-                          disabled={registering}
-                        >
-                          {registering ? '⏳ Đang đăng ký...' : '✅ Đăng ký tất cả'}
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+        {/* ── Device Modal (Portal) ── */}
+        {showDeviceModal && (
+          <AddDeviceModal
+            onClose={() => setShowDeviceModal(false)}
+            token={token}
+            onDeviceAdded={() => loadLatestAll()}
+            workspaceContext={workspaceContext}
+            userInfo={userInfo}
+          />
         )}
-      </div>
-    </div>
+                          </div>
+                          </div>
   );
 };
 

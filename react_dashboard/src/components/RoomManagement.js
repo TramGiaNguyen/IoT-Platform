@@ -2,7 +2,10 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { fetchRooms, fetchDevices, updateDeviceRoom, createRoom, updateRoom, deleteRoom } from '../services';
 import { API_BASE } from '../config/api';
 
-export default function RoomManagement({ token, onBack, workspaceContext = 'ca_nhan' }) {
+export default function RoomManagement({ token, onBack, workspaceContext = 'ca_nhan', userInfo = null }) {
+  // #region agent log (hypothesisId: H_render_mount)
+  fetch('http://127.0.0.1:7336/ingest/f2170468-c8de-41c8-b4d9-c82967e9e840',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7e9fdc'},body:JSON.stringify({sessionId:'7e9fdc',location:'RoomManagement.js:5',message:'RoomManagement mounted',data:{hasOnBack:typeof onBack,workspaceContext},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   const [rooms, setRooms] = useState([]);
   const [devices, setDevices] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -16,27 +19,28 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
   });
 
   const isGroupContext = workspaceContext === 'nhom';
+  const effectiveWorkspaceId = isGroupContext ? (userInfo?.primary_nhom_id || null) : null;
 
   // Đánh dấu khi đang có optimistic update để tránh ghi đè state
   const pendingRef = useRef(false);
 
   const loadRooms = useCallback(async () => {
     try {
-      const res = await fetchRooms(token, workspaceContext);
+      const res = await fetchRooms(token, effectiveWorkspaceId);
       setRooms(res.data.rooms || []);
     } catch (e) {
       console.error('Load rooms failed', e);
     }
-  }, [token, workspaceContext]);
+  }, [token, effectiveWorkspaceId]);
 
   const loadDevices = useCallback(async () => {
     try {
-      const res = await fetchDevices(token);
+      const res = await fetchDevices(token, { params: effectiveWorkspaceId ? { workspace_id: effectiveWorkspaceId } : {} });
       setDevices(res.data.devices || []);
     } catch (e) {
       console.error('Load devices failed', e);
     }
-  }, [token]);
+  }, [token, effectiveWorkspaceId]);
 
   useEffect(() => {
     loadRooms();
@@ -78,7 +82,7 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
       if (selectedRoom) {
         await updateRoom(selectedRoom.id, payload, token);
       } else {
-        await createRoom(payload, token);
+        await createRoom(payload, token, effectiveWorkspaceId);
       }
       resetForm();
       setFormVisible(false);
@@ -113,8 +117,8 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
       // 2. Refresh ngầm để đồng bộ với server (không block UI).
       //    Ghi đè state nếu server trả về khác; giữ nguyên nếu khớp.
       const [devList, roomList] = await Promise.all([
-        fetchDevices(token).then(r => r.data.devices || []).catch(() => null),
-        fetchRooms(token, workspaceContext).then(r => r.data.rooms || []).catch(() => null),
+        fetchDevices(token, { params: effectiveWorkspaceId ? { workspace_id: effectiveWorkspaceId } : {} }).then(r => r.data.devices || []).catch(() => null),
+        fetchRooms(token, effectiveWorkspaceId).then(r => r.data.rooms || []).catch(() => null),
       ]);
       pendingRef.current = false;
       if (devList) setDevices(devList);
@@ -348,39 +352,24 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
   return (
     <div className="rules-container">
       <div className="rules-header">
-        <div>
-          <h2>
-            {isGroupContext ? 'Phòng nhóm' : 'Quản lý phòng'}
-            {isGroupContext && <span className="room-badge-group">NHÓM</span>}
-          </h2>
-          <p className="muted">
-            {isGroupContext
-              ? 'Phòng làm việc chung của lớp - các thành viên có thể cùng xem và quản lý thiết bị'
-              : 'Tổ chức và gán thiết bị vào các phòng'}
-          </p>
-        </div>
+        <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại</button>
         <div className="rules-actions">
-          {!isGroupContext && (
-            <button className="primary-btn" onClick={handleOpenAdd}>Thêm phòng</button>
-          )}
-          <button className="secondary-btn" onClick={onBack}>Quay lại</button>
+          <button className="primary-btn" onClick={handleOpenAdd}>Thêm phòng</button>
         </div>
       </div>
 
       <div className="room-grid">
         {rooms.map((room) => {
-          const isGroupRoom = room.loai_phong === 'nhom';
           return (
           <div key={room.id} className="room-card">
             <div className="room-card-header">
               <div className="room-info">
                 <h3
-                  style={{ cursor: 'pointer', color: '#22d3ee' }}
+                  className="room-card-title"
                   title="Nhap vao de xem chi tiet phong"
                   onClick={() => window.location.hash = `#/rooms/${room.id}`}
                 >
                   {room.ten_phong}
-                  {isGroupRoom && <span className="room-badge-group">NHÓM</span>}
                 </h3>
                 <div className="room-meta">
                   {room.ma_phong && <span>Mã: {room.ma_phong}</span>}
@@ -394,16 +383,12 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
                 <button className="btn-icon" onClick={() => handleCopyApiUrl(room.id)} title="Copy API Data">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 </button>
-                {!isGroupRoom && (
-                  <button className="btn-icon" onClick={() => handleEditRoom(room)} title="Sửa">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                  </button>
-                )}
-                {!isGroupRoom && (
-                  <button className="btn-icon danger" onClick={() => handleDeleteRoom(room.id)} title="Xóa">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                  </button>
-                )}
+                <button className="btn-icon" onClick={() => handleEditRoom(room)} title="Sửa">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                </button>
+                <button className="btn-icon danger" onClick={() => handleDeleteRoom(room.id)} title="Xóa">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                </button>
               </div>
             </div>
 

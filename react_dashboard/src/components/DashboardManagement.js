@@ -10,7 +10,7 @@ const CONTEXT_LABELS = {
   none: 'Chung',
 };
 
-export default function DashboardManagement({ token, onBack, onDashboardsChange }) {
+export default function DashboardManagement({ token, onBack, onDashboardsChange, userInfo = null, workspaceContext = 'ca_nhan' }) {
   const [dashboards, setDashboards] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -28,11 +28,13 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
   const [rooms, setRooms] = useState([]);
   const [classes, setClasses] = useState([]);
 
+  const effectiveWorkspaceId = workspaceContext === 'nhom' ? (userInfo?.primary_nhom_id || null) : null;
+
   const loadDashboards = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetchDashboards(token);
+      const res = await fetchDashboards(token, effectiveWorkspaceId);
       setDashboards(res.data.dashboards || []);
     } catch (err) {
       console.error('Failed to load dashboards:', err);
@@ -40,12 +42,12 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, effectiveWorkspaceId]);
 
   const loadRoomsAndClasses = useCallback(async () => {
     try {
       const [r, c] = await Promise.all([
-        fetchRooms(token).catch(() => ({ data: { rooms: [] } })),
+        fetchRooms(token, effectiveWorkspaceId).catch(() => ({ data: { rooms: [] } })),
         fetchClasses(token).catch(() => ({ data: { classes: [] } })),
       ]);
       setRooms(r.data.rooms || r.data || []);
@@ -66,8 +68,8 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
   // Client-side filter theo context
   const filteredDashboards = dashboards.filter((d) => {
     if (contextFilter === 'all') return true;
-    if (contextFilter === 'mine') return d.phong_id && !d.lop_hoc_id && d.loai_phong === 'ca_nhan';
-    if (contextFilter === 'group') return d.phong_id && d.loai_phong === 'nhom';
+    if (contextFilter === 'mine') return d.phong_id && !d.lop_hoc_id && !d.nhom_id;
+    if (contextFilter === 'group') return d.nhom_id != null;
     if (contextFilter === 'class') return d.lop_hoc_id != null;
     return true;
   });
@@ -118,7 +120,8 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
       if (editingDashboard) {
         await updateDashboard(editingDashboard.id, payload, token);
       } else {
-        await createDashboard(payload, token);
+        const wsId = workspaceContext === 'nhom' ? (userInfo?.primary_nhom_id || null) : null;
+        await createDashboard(payload, token, wsId);
       }
       resetForm();
       setFormVisible(false);
@@ -191,39 +194,19 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
   return (
     <div className="rules-container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div>
-          <button onClick={onBack} style={{ marginBottom: '16px', padding: '8px 16px', background: '#1f2a44', border: '1px solid #22d3ee', color: '#22d3ee', borderRadius: '6px', cursor: 'pointer' }}>
-            ← Quay lại
-          </button>
-          <h1 style={{ color: '#e5e7eb', margin: 0 }}>Quản lý Dashboard</h1>
-          <p style={{ color: '#9ca3af', marginTop: '8px' }}>Tạo và quản lý các dashboard tùy chỉnh</p>
-        </div>
+        <button className="back-btn-ghost" onClick={onBack}>
+          ← Quay lại
+        </button>
         <button
           onClick={handleOpenAdd}
-          style={{
-            padding: '12px 24px',
-            background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
-            border: 'none',
-            borderRadius: '8px',
-            color: '#0b1224',
-            fontWeight: '600',
-            cursor: 'pointer',
-            fontSize: '14px'
-          }}
+          className="dm-create-btn"
         >
           + Tạo Dashboard Mới
         </button>
       </div>
 
       {error && (
-        <div style={{
-          padding: '12px',
-          background: 'rgba(239, 68, 68, 0.1)',
-          border: '1px solid rgba(239, 68, 68, 0.3)',
-          borderRadius: '8px',
-          color: '#fca5a5',
-          marginBottom: '16px'
-        }}>
+        <div className="dm-error-box">
           {error}
         </div>
       )}
@@ -232,23 +215,14 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
         {[
           { key: 'all', label: `Tất cả (${dashboards.length})` },
-          { key: 'mine', label: `Cá nhân (${dashboards.filter(d => d.phong_id && d.loai_phong === 'ca_nhan').length})` },
-          { key: 'group', label: `Nhóm (${dashboards.filter(d => d.phong_id && d.loai_phong === 'nhom').length})` },
+          { key: 'mine', label: `Cá nhân (${dashboards.filter(d => d.phong_id && !d.lop_hoc_id && !d.nhom_id).length})` },
+          { key: 'group', label: `Nhóm (${dashboards.filter(d => d.nhom_id != null).length})` },
           { key: 'class', label: `Lớp (${dashboards.filter(d => d.lop_hoc_id).length})` },
         ].map((chip) => (
           <button
             key={chip.key}
             onClick={() => setContextFilter(chip.key)}
-            style={{
-              padding: '6px 14px',
-              background: contextFilter === chip.key ? '#22d3ee' : '#111a2d',
-              color: contextFilter === chip.key ? '#0b1224' : '#9ca3af',
-              border: '1px solid ' + (contextFilter === chip.key ? '#22d3ee' : '#1f2a44'),
-              borderRadius: '999px',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: contextFilter === chip.key ? '600' : '400',
-            }}
+            className={`dm-filter-chip${contextFilter === chip.key ? ' active' : ''}`}
           >
             {chip.label}
           </button>
@@ -257,34 +231,14 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
 
       {/* Dashboard Form Modal */}
       {formVisible && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.7)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            background: '#0b1224',
-            border: '1px solid #1f2a44',
-            borderRadius: '12px',
-            padding: '24px',
-            width: '90%',
-            maxWidth: '500px',
-            maxHeight: '90vh',
-            overflow: 'auto'
-          }}>
-            <h2 style={{ color: '#e5e7eb', marginTop: 0 }}>
+        <div className="dm-modal-backdrop">
+          <div className="dm-modal">
+            <h2>
               {editingDashboard ? 'Chỉnh sửa Dashboard' : 'Tạo Dashboard Mới'}
             </h2>
             <form onSubmit={handleSave}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '14px' }}>
+              <div className="dm-form-row">
+                <label className="dm-form-label">
                   Tên Dashboard *
                 </label>
                 <input
@@ -292,86 +246,52 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
                   value={formData.ten_dashboard}
                   onChange={(e) => setFormData({ ...formData, ten_dashboard: e.target.value })}
                   required
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    background: '#111a2d',
-                    border: '1px solid #1f2a44',
-                    borderRadius: '6px',
-                    color: '#e5e7eb',
-                    fontSize: '14px'
-                  }}
+                  className="dm-form-input"
                   placeholder="Ví dụ: Lớp học thông minh"
                 />
               </div>
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '14px' }}>
+              <div className="dm-form-row">
+                <label className="dm-form-label">
                   Mô tả
                 </label>
                 <textarea
                   value={formData.mo_ta}
                   onChange={(e) => setFormData({ ...formData, mo_ta: e.target.value })}
                   rows={3}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    background: '#111a2d',
-                    border: '1px solid #1f2a44',
-                    borderRadius: '6px',
-                    color: '#e5e7eb',
-                    fontSize: '14px',
-                    resize: 'vertical'
-                  }}
+                  className="dm-form-textarea"
                   placeholder="Mô tả về dashboard này..."
                 />
               </div>
 
 
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '14px' }}>
+              <div className="dm-form-row">
+                <label className="dm-form-label">
                   Gắn với phòng (tuỳ chọn - để trống = cá nhân)
                 </label>
                 <select
                   value={formData.phong_id}
                   onChange={(e) => setFormData({ ...formData, phong_id: e.target.value, lop_hoc_id: '' })}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    background: '#111a2d',
-                    border: '1px solid #1f2a44',
-                    borderRadius: '6px',
-                    color: '#e5e7eb',
-                    fontSize: '14px'
-                  }}
+                  className="dm-form-select"
                 >
                   <option value="">-- Không gắn với phòng cụ thể --</option>
                   {rooms.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.loai_phong === 'nhom' ? `[${r.ten_nhom || 'Nhóm'}] ` : '[Cá nhân] '}
-                      {r.ten_phong || `Phòng #${r.id}`}
+                      [Cá nhân] {r.ten_phong || `Phòng #${r.id}`}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '14px' }}>
+              <div className="dm-form-row">
+                <label className="dm-form-label">
                   Gắn với lớp (tuỳ chọn - chia sẻ với cả lớp)
                 </label>
                 <select
                   value={formData.lop_hoc_id}
                   onChange={(e) => setFormData({ ...formData, lop_hoc_id: e.target.value, phong_id: '' })}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    background: '#111a2d',
-                    border: '1px solid #1f2a44',
-                    borderRadius: '6px',
-                    color: '#e5e7eb',
-                    fontSize: '14px'
-                  }}
+                  className="dm-form-select"
                 >
                   <option value="">-- Không gắn với lớp --</option>
                   {classes.map((c) => (
@@ -381,70 +301,41 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
                   ))}
                 </select>
               </div>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', color: '#9ca3af', marginBottom: '8px', fontSize: '14px' }}>
+              <div className="dm-form-row">
+                <label className="dm-form-label">
                   Màu sắc
                 </label>
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <div className="dm-form-color">
                   <input
                     type="color"
                     value={formData.mau_sac}
                     onChange={(e) => setFormData({ ...formData, mau_sac: e.target.value })}
-                    style={{
-                      width: '60px',
-                      height: '40px',
-                      border: '1px solid #1f2a44',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
+                    className="dm-form-color-picker"
                   />
                   <input
                     type="text"
                     value={formData.mau_sac}
                     onChange={(e) => setFormData({ ...formData, mau_sac: e.target.value })}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      background: '#111a2d',
-                      border: '1px solid #1f2a44',
-                      borderRadius: '6px',
-                      color: '#e5e7eb',
-                      fontSize: '14px'
-                    }}
+                    className="dm-form-color-text"
                     placeholder="#22d3ee"
                   />
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <div className="dm-form-actions">
                 <button
                   type="button"
                   onClick={() => {
                     resetForm();
                     setFormVisible(false);
                   }}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#111a2d',
-                    border: '1px solid #1f2a44',
-                    borderRadius: '6px',
-                    color: '#e5e7eb',
-                    cursor: 'pointer'
-                  }}
+                  className="dm-form-cancel"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  style={{
-                    padding: '10px 20px',
-                    background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
-                    border: 'none',
-                    borderRadius: '6px',
-                    color: '#0b1224',
-                    fontWeight: '600',
-                    cursor: 'pointer'
-                  }}
+                  className="dm-form-submit"
                 >
                   {editingDashboard ? 'Cập nhật' : 'Tạo'}
                 </button>
@@ -456,36 +347,21 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
 
       {/* Dashboards Grid */}
       {dashboards.length === 0 ? (
-        <div style={{
-          textAlign: 'center',
-          padding: '60px 20px',
-          background: 'rgba(15, 23, 42, 0.5)',
-          border: '1px dashed #1f2a44',
-          borderRadius: '12px',
-          color: '#9ca3af'
-        }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-          <h3 style={{ color: '#e5e7eb', marginBottom: '8px' }}>Chưa có dashboard nào</h3>
+        <div className="dm-empty">
+          <div className="dm-empty-icon">📊</div>
+          <h3>Chưa có dashboard nào</h3>
           <p>Bấm nút "Tạo Dashboard Mới" để bắt đầu</p>
         </div>
       ) : filteredDashboards.length === 0 ? (
-        <div style={{
-          textAlign: 'center',
-          padding: '40px 20px',
-          color: '#9ca3af',
-        }}>
+        <div className="dm-no-match">
           <p>Không có dashboard nào khớp với bộ lọc "{contextFilter}".</p>
         </div>
       ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-          gap: '20px'
-        }}>
+        <div className="dm-grid">
           {filteredDashboards.map(dashboard => {
             const contextType = dashboard.lop_hoc_id
               ? 'lop_hoc'
-              : dashboard.loai_phong === 'nhom'
+              : dashboard.nhom_id
                 ? 'nhom'
                 : dashboard.phong_id
                   ? 'ca_nhan'
@@ -494,81 +370,33 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
             const contextDetail = dashboard.ten_lop
               ? dashboard.ten_lop
               : dashboard.ten_phong
-                ? (dashboard.loai_phong === 'nhom'
-                    ? `[${dashboard.ten_nhom || 'Nhóm'}] ${dashboard.ten_phong}`
-                    : dashboard.ten_phong)
+                ? dashboard.ten_phong
                 : null;
             return (
-            <div
-              key={dashboard.id}
-              style={{
-                background: 'linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(9, 12, 24, 0.95))',
-                border: '1px solid #1f2a44',
-                borderRadius: '12px',
-                padding: '20px',
-                transition: 'all 0.2s',
-                cursor: 'pointer',
-                position: 'relative'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = '#22d3ee';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = '#1f2a44';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{
-                    fontSize: '32px',
-                    width: '48px',
-                    height: '48px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: `${dashboard.mau_sac}20`,
-                    borderRadius: '8px',
-                    border: `1px solid ${dashboard.mau_sac}40`
-                  }}>
+            <div key={dashboard.id} className="dm-card">
+              <div className="dm-card-head">
+                <div className="dm-card-head-left">
+                  <div
+                    className="dm-card-icon"
+                    style={{
+                      background: `${dashboard.mau_sac}20`,
+                      border: `1px solid ${dashboard.mau_sac}40`,
+                    }}
+                  >
                     {dashboard.ten_dashboard ? dashboard.ten_dashboard.charAt(0).toUpperCase() : 'D'}
                   </div>
                   <div>
-                    <h3 style={{ color: '#e5e7eb', margin: 0, fontSize: '18px' }}>
+                    <h3 className="dm-card-title">
                       {dashboard.ten_dashboard}
                     </h3>
                     {dashboard.mo_ta && (
-                      <p style={{ color: '#9ca3af', margin: '4px 0 0 0', fontSize: '13px' }}>
+                      <p className="dm-card-desc">
                         {dashboard.mo_ta}
                       </p>
                     )}
                     <span
                       title={contextDetail || ''}
-                      style={{
-                        display: 'inline-block',
-                        marginTop: '6px',
-                        padding: '2px 8px',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        borderRadius: '4px',
-                        background:
-                          contextType === 'lop_hoc' ? 'rgba(168, 85, 247, 0.15)' :
-                          contextType === 'nhom' ? 'rgba(34, 211, 238, 0.15)' :
-                          contextType === 'ca_nhan' ? 'rgba(74, 222, 128, 0.15)' :
-                          'rgba(156, 163, 175, 0.15)',
-                        color:
-                          contextType === 'lop_hoc' ? '#c4b5fd' :
-                          contextType === 'nhom' ? '#67e8f9' :
-                          contextType === 'ca_nhan' ? '#86efac' :
-                          '#9ca3af',
-                        border: '1px solid ' + (
-                          contextType === 'lop_hoc' ? 'rgba(168, 85, 247, 0.4)' :
-                          contextType === 'nhom' ? 'rgba(34, 211, 238, 0.4)' :
-                          contextType === 'ca_nhan' ? 'rgba(74, 222, 128, 0.4)' :
-                          'rgba(156, 163, 175, 0.4)'
-                        ),
-                      }}
+                      className={`dm-context-badge ${contextType}`}
                     >
                       {contextLabel}{contextDetail ? `: ${contextDetail}` : ''}
                     </span>
@@ -576,29 +404,13 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
                 </div>
               </div>
 
-              <div style={{
-                marginTop: '16px',
-                paddingTop: '16px',
-                borderTop: '1px solid #1f2a44',
-                display: 'flex',
-                gap: '8px',
-                justifyContent: 'flex-end'
-              }}>
+              <div className="dm-card-actions">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     handleBuild(dashboard.id);
                   }}
-                  style={{
-                    padding: '6px 12px',
-                    background: '#111a2d',
-                    border: '1px solid #22d3ee',
-                    borderRadius: '6px',
-                    color: '#22d3ee',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    fontWeight: '600'
-                  }}
+                  className="dm-action-btn"
                 >
                   🛠️ Build
                 </button>
@@ -607,15 +419,7 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
                     e.stopPropagation();
                     handleView(dashboard.id);
                   }}
-                  style={{
-                    padding: '6px 12px',
-                    background: '#111a2d',
-                    border: '1px solid #4ecdc4',
-                    borderRadius: '6px',
-                    color: '#4ecdc4',
-                    cursor: 'pointer',
-                    fontSize: '12px'
-                  }}
+                  className="dm-action-btn dm-action-teal"
                 >
                   Xem
                 </button>
@@ -624,15 +428,7 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
                     e.stopPropagation();
                     handleEdit(dashboard);
                   }}
-                  style={{
-                    padding: '6px 12px',
-                    background: '#111a2d',
-                    border: '1px solid #4ecdc4',
-                    borderRadius: '6px',
-                    color: '#4ecdc4',
-                    cursor: 'pointer',
-                    fontSize: '12px'
-                  }}
+                  className="dm-action-btn dm-action-teal"
                 >
                   Sửa
                 </button>
@@ -641,30 +437,13 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange 
                     e.stopPropagation();
                     handleDelete(dashboard.id);
                   }}
-                  style={{
-                    padding: '6px 12px',
-                    background: '#111a2d',
-                    border: '1px solid #ef4444',
-                    borderRadius: '6px',
-                    color: '#ef4444',
-                    cursor: 'pointer',
-                    fontSize: '12px'
-                  }}
+                  className="dm-action-btn dm-action-danger"
                 >
                   Xóa
                 </button>
               </div>
 
-              <div style={{
-                position: 'absolute',
-                top: '12px',
-                right: '12px',
-                fontSize: '11px',
-                color: '#6b7280',
-                background: '#111a2d',
-                padding: '4px 8px',
-                borderRadius: '4px'
-              }}>
+              <div className="dm-card-date">
                 {new Date(dashboard.ngay_tao).toLocaleDateString('vi-VN')}
               </div>
             </div>

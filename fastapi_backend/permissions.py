@@ -30,6 +30,10 @@ class UserContext:
     group_room_ids: list = field(default_factory=list)
     # Union for convenience
     visible_phong_ids: list = field(default_factory=list)
+    # Workspace: nhom_id when student is in workspace "Nhom"
+    nhom_id: Optional[int] = None
+    # All nhom_ids the user is a member of
+    nhom_ids: list = field(default_factory=list)
 
 
 def get_user_context(current_user_email: str) -> UserContext:
@@ -76,12 +80,13 @@ def get_user_context(current_user_email: str) -> UserContext:
 
             if ctx.class_ids:
                 placeholders = ",".join(["%s"] * len(ctx.class_ids))
-                # Group rooms of those classes
+                # Group rooms of those classes (via nhom)
                 cursor.execute(
-                    f"SELECT id FROM phong WHERE loai_phong='nhom' AND lop_hoc_id IN ({placeholders})",
+                    f"SELECT id FROM nhom WHERE lop_hoc_id IN ({placeholders})",
                     tuple(ctx.class_ids),
                 )
                 ctx.group_room_ids = [p["id"] for p in cursor.fetchall()]
+                ctx.nhom_ids = ctx.group_room_ids
         else:
             # Student: phong ca nhan + group rooms they're a member of
             cursor.execute(
@@ -92,13 +97,13 @@ def get_user_context(current_user_email: str) -> UserContext:
 
             cursor.execute(
                 """
-                SELECT pntv.phong_id FROM phong_nhom_thanh_vien pntv
-                JOIN phong p ON p.id = pntv.phong_id
-                WHERE pntv.user_id = %s AND p.loai_phong = 'nhom'
+                SELECT nhom_id FROM nhom_thanh_vien WHERE user_id = %s
                 """,
                 (ctx.user_id,),
             )
-            ctx.group_room_ids = [p["phong_id"] for p in cursor.fetchall()]
+            nhom_rows = cursor.fetchall()
+            ctx.group_room_ids = [p["nhom_id"] for p in nhom_rows]
+            ctx.nhom_ids = ctx.group_room_ids
 
         ctx.visible_phong_ids = list(set(ctx.personal_phong_ids) | set(ctx.group_room_ids))
         return ctx
@@ -116,11 +121,11 @@ def build_dashboard_filter_sql(ctx: UserContext, alias: str = "d") -> tuple[str,
 
     Returns (where_sql, params) - caller appends to existing WHERE.
 
-    Rules:
-    - admin: 1=1
-    - teacher: owner OR phong personal OR lop_hoc in their classes OR shared via dashboard_permissions
-    - student: owner OR phong personal OR phong in their group rooms OR lop_hoc = their class OR shared
-    - NULL phong_id/lop_hoc dashboards (legacy/global): visible to owner + shared (admin sees all)
+    Workspace separation:
+    - admin: 1=1 (all dashboards)
+    - teacher: owner OR lop_hoc in their classes OR shared via dashboard_permissions
+    - student in "Ca nhan" workspace: nhom_id IS NULL (personal dashboards only)
+    - student in "Nhom" workspace (ctx.nhom_id set): nhom_id = ctx.nhom_id (group dashboards only)
     """
     if ctx.role == "admin":
         return "1=1", []
@@ -128,37 +133,35 @@ def build_dashboard_filter_sql(ctx: UserContext, alias: str = "d") -> tuple[str,
     parts = []
     params: list = []
 
-    # Owner
+    # Owner - dashboard creator always sees their own dashboards (within current workspace)
     parts.append(f"{alias}.nguoi_tao_id = %s")
     params.append(ctx.user_id)
 
-    # Personal phong rooms (ca nhan) - everyone has at least their own
-    if ctx.personal_phong_ids:
-        placeholders = ",".join(["%s"] * len(ctx.personal_phong_ids))
-        parts.append(f"{alias}.phong_id IN ({placeholders})")
-        params.extend(ctx.personal_phong_ids)
-
-    # Class context (teacher: classes they teach, student: their class)
+    # Class context (teacher: classes they teach)
     if ctx.role == "teacher" and ctx.class_ids:
         placeholders = ",".join(["%s"] * len(ctx.class_ids))
         parts.append(f"{alias}.lop_hoc_id IN ({placeholders})")
         params.extend(ctx.class_ids)
-    elif ctx.role == "student" and ctx.lop_hoc_id is not None:
-        parts.append(f"{alias}.lop_hoc_id = %s")
-        params.append(ctx.lop_hoc_id)
 
-    # Group rooms (student only - teacher already covered by class_ids)
-    if ctx.role == "student" and ctx.group_room_ids:
-        placeholders = ",".join(["%s"] * len(ctx.group_room_ids))
-        parts.append(f"{alias}.phong_id IN ({placeholders})")
-        params.extend(ctx.group_room_ids)
+    # Workspace separation for students (strict: no cross-workspace leakage)
+    # - Workspace "Ca nhan" (ctx.nhom_id is None): dashboards with nhom_id = NULL
+    # - Workspace "Nhom" (ctx.nhom_id is set): dashboards with nhom_id = ctx.nhom_id
+    if ctx.role == "student":
+        if ctx.nhom_id is not None:
+            parts.append(f"{alias}.nhom_id = %s")
+            params.append(ctx.nhom_id)
+        else:
+            parts.append(f"({alias}.nhom_id IS NULL)")
 
-    # Explicit share via dashboard_permissions
-    parts.append(
-        f"EXISTS (SELECT 1 FROM dashboard_permissions p "
-        f"WHERE p.dashboard_id = {alias}.id AND p.nguoi_dung_id = %s)"
-    )
-    params.append(ctx.user_id)
+    # For students, shared dashboards must also respect workspace (nhom_id) context
+    # Simplified: skip dashboard_permissions for students to ensure strict workspace isolation
+    # (dashboard creator already covered by nguoi_tao_id above)
+    if ctx.role != "student":
+        parts.append(
+            f"EXISTS (SELECT 1 FROM dashboard_permissions p "
+            f"WHERE p.dashboard_id = {alias}.id AND p.nguoi_dung_id = %s)"
+        )
+        params.append(ctx.user_id)
 
     return "(" + " OR ".join(parts) + ")", params
 
@@ -195,10 +198,9 @@ def build_alert_filter_sql(ctx: UserContext, alias_tb: str = "tb") -> tuple[str,
             )
             personal_params.extend(ctx.class_ids)
 
-            # Devices in group rooms of teacher's classes
+            # Devices in group rooms of teacher's classes (join via thiet_bi.nhom_id)
             personal_conds.append(
-                f"{alias_tb}.phong_id IN (SELECT id FROM phong "
-                f"WHERE loai_phong='nhom' AND lop_hoc_id IN ({placeholders}))"
+                f"{alias_tb}.nhom_id IN (SELECT id FROM nhom WHERE lop_hoc_id IN ({placeholders}))"
             )
             personal_params.extend(ctx.class_ids)
 
@@ -207,9 +209,8 @@ def build_alert_filter_sql(ctx: UserContext, alias_tb: str = "tb") -> tuple[str,
     # Student: personal phong + group rooms they're a member of
     return (
         f"({alias_tb}.phong_id IN (SELECT id FROM phong WHERE nguoi_so_huu_id = %s) "
-        f"OR {alias_tb}.phong_id IN (SELECT id FROM phong "
-        f"WHERE loai_phong='nhom' AND id IN ("
-        f"SELECT phong_id FROM phong_nhom_thanh_vien WHERE user_id = %s)))",
+        f"OR {alias_tb}.nhom_id IN ("
+        f"SELECT nhom_id FROM nhom_thanh_vien WHERE user_id = %s))",
         [ctx.user_id, ctx.user_id],
     )
 

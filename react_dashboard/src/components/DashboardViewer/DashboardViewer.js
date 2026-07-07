@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Responsive, WidthProvider } from 'react-grid-layout';
+import GridLayout, { WidthProvider } from 'react-grid-layout';
 import { fetchDashboard } from '../../services';
 import WidgetRenderer from './WidgetRenderer';
 import { WS_URL } from '../../config/api';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
+import '../../styles/dashboard-builder.css';
 
-const ResponsiveGridLayout = WidthProvider(Responsive);
+const ResponsiveGridLayout = WidthProvider(GridLayout);
 
 export default function DashboardViewer({ dashboardId, token, onBack }) {
   const [dashboard, setDashboard] = useState(null);
@@ -113,7 +114,7 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
 
   if (loading) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: '#e5e7eb' }}>
+      <div className="db-viewer-loading">
         <p>Đang tải dashboard...</p>
       </div>
     );
@@ -121,20 +122,9 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
 
   if (error) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: '#e5e7eb' }}>
-        <p style={{ color: '#ef4444' }}>{error}</p>
-        <button
-          onClick={onBack}
-          style={{
-            marginTop: '20px',
-            padding: '10px 20px',
-            background: '#22d3ee',
-            border: 'none',
-            borderRadius: '6px',
-            color: '#0b1224',
-            cursor: 'pointer'
-          }}
-        >
+      <div className="db-viewer-loading">
+        <p className="db-viewer-error">{error}</p>
+        <button onClick={onBack} className="db-btn-primary" style={{ marginTop: '20px' }}>
           Quay lại
         </button>
       </div>
@@ -142,19 +132,17 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
   }
 
   // Convert widgets to grid layout format
-  const layouts = {
-    lg: widgets.map(w => ({
-      i: w.id.toString(),
-      x: w.vi_tri_x || 0,
-      y: w.vi_tri_y || 0,
-      w: w.chieu_rong || 4,
-      h: w.chieu_cao || 3,
-      minW: 2,
-      minH: 2,
-      static: !editMode, // Allow drag/resize only in edit mode
-      isBounded: false // Allow widgets to be placed anywhere
-    }))
-  };
+  const layout = widgets.map(w => ({
+    i: w.id.toString(),
+    x: w.vi_tri_x || 0,
+    y: w.vi_tri_y || 0,
+    w: w.chieu_rong || 4,
+    h: w.chieu_cao || 3,
+    minW: 2,
+    minH: 2,
+    static: !editMode,
+    isBounded: false
+  }));
 
   const handleLayoutChange = (layout) => {
     if (!editMode) return;
@@ -213,32 +201,18 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#090f1f' }}>
+    <div className="db-viewer">
       {/* Header */}
-      <div style={{
-        padding: '16px 24px',
-        background: '#0b1224',
-        borderBottom: '1px solid #1f2a44',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <div className="db-viewer-header">
+        <div className="db-viewer-header-left">
           <button
             onClick={onBack}
-            style={{
-              padding: '8px 16px',
-              background: '#111a2d',
-              border: '1px solid #1f2a44',
-              borderRadius: '6px',
-              color: '#22d3ee',
-              cursor: 'pointer'
-            }}
+            className="db-btn-secondary"
           >
             ← Quay lại
           </button>
           <div>
-            <h1 style={{ color: '#e5e7eb', margin: 0, fontSize: '20px' }}>
+            <h1 className="db-viewer-title">
               {dashboard?.icon && (
                 <span style={{ marginRight: '8px' }}>
                   {dashboard.icon === 'dashboard' && '📊'}
@@ -254,56 +228,30 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
               {dashboard?.ten_dashboard || 'Dashboard'}
             </h1>
             {dashboard?.mo_ta && (
-              <p style={{ color: '#9ca3af', margin: '4px 0 0 0', fontSize: '13px' }}>
-                {dashboard.mo_ta}
-              </p>
+              <p className="db-viewer-desc">{dashboard.mo_ta}</p>
             )}
           </div>
         </div>
-        
+
         {/* Edit Mode Controls */}
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <div className="db-viewer-header-right">
           {editMode ? (
             <>
               {hasUnsavedChanges && (
-                <span style={{
-                  color: '#fbbf24',
-                  fontSize: '13px',
-                  padding: '6px 12px',
-                  background: 'rgba(251, 191, 36, 0.1)',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(251, 191, 36, 0.3)'
-                }}>
+                <span className="db-unsaved-badge">
                   ⚠️ Có thay đổi chưa lưu
                 </span>
               )}
               <button
                 onClick={handleCancelEdit}
-                style={{
-                  padding: '8px 16px',
-                  background: '#111a2d',
-                  border: '1px solid #ef4444',
-                  borderRadius: '6px',
-                  color: '#ef4444',
-                  cursor: 'pointer',
-                  fontSize: '14px'
-                }}
+                className="db-btn-danger"
               >
                 Hủy
               </button>
               <button
                 onClick={handleSaveLayout}
                 disabled={!hasUnsavedChanges}
-                style={{
-                  padding: '8px 16px',
-                  background: hasUnsavedChanges ? 'linear-gradient(135deg, #10b981, #34d399)' : '#1f2a44',
-                  border: 'none',
-                  borderRadius: '6px',
-                  color: hasUnsavedChanges ? '#0b1224' : '#6b7280',
-                  cursor: hasUnsavedChanges ? 'pointer' : 'not-allowed',
-                  fontWeight: '600',
-                  fontSize: '14px'
-                }}
+                className={`db-btn-save-layout${!hasUnsavedChanges ? ' disabled' : ''}`}
               >
                 💾 Lưu Layout
               </button>
@@ -311,16 +259,7 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
           ) : (
             <button
               onClick={() => setEditMode(true)}
-              style={{
-                padding: '8px 16px',
-                background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
-                border: 'none',
-                borderRadius: '6px',
-                color: '#0b1224',
-                cursor: 'pointer',
-                fontWeight: '600',
-                fontSize: '14px'
-              }}
+              className="db-btn-primary"
             >
               ✏️ Chỉnh sửa Layout
             </button>
@@ -329,41 +268,25 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
       </div>
 
       {/* Canvas */}
-      <div style={{ padding: '20px' }}>
+      <div className="db-viewer-content">
         {editMode && (
-          <div style={{
-            marginBottom: '16px',
-            padding: '12px 16px',
-            background: 'rgba(34, 211, 238, 0.1)',
-            border: '1px solid rgba(34, 211, 238, 0.3)',
-            borderRadius: '8px',
-            color: '#22d3ee',
-            fontSize: '14px'
-          }}>
+          <div className="db-edit-mode-banner">
             <strong>📝 Chế độ chỉnh sửa:</strong> Kéo và thả các widget để sắp xếp lại. Kéo góc để thay đổi kích thước.
           </div>
         )}
-        
+
         {widgets.length === 0 ? (
-          <div style={{
-            textAlign: 'center',
-            padding: '60px 20px',
-            color: '#9ca3af',
-            background: 'rgba(15, 23, 42, 0.5)',
-            border: '1px dashed #1f2a44',
-            borderRadius: '12px'
-          }}>
+          <div className="db-viewer-empty">
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-            <h3 style={{ color: '#e5e7eb', marginBottom: '8px' }}>Dashboard trống</h3>
+            <h3 className="db-viewer-empty-title">Dashboard trống</h3>
             <p>Chưa có widget nào trong dashboard này</p>
           </div>
         ) : (
           <ResponsiveGridLayout
             className="layout"
-            layouts={layouts}
-            breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-            cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-            rowHeight={60}
+            layout={layout}
+            cols={24}
+            rowHeight={40}
             onLayoutChange={handleLayoutChange}
             isDraggable={editMode}
             isResizable={editMode}
@@ -373,15 +296,9 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
             style={{ minHeight: '100%' }}
           >
             {widgets.map(widget => (
-              <div 
-                key={widget.id} 
-                style={{ 
-                  background: 'transparent',
-                  cursor: editMode ? 'move' : 'default',
-                  border: editMode ? '2px dashed rgba(34, 211, 238, 0.3)' : 'none',
-                  borderRadius: '8px',
-                  transition: 'border 0.2s'
-                }}
+              <div
+                key={widget.id}
+                className={`db-viewer-widget${editMode ? ' edit' : ''}`}
               >
                 <WidgetRenderer
                   widget={widget}

@@ -1,4 +1,5 @@
 import React from 'react';
+import '../../styles/dashboard-builder.css';
 
 // SVG icon components
 const Icons = {
@@ -108,6 +109,114 @@ const Icons = {
       <circle cx="16" cy="12" r="3" fill="currentColor"/>
     </svg>
   ),
+  // === Blynk-style widgets ===
+  joystick: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="9" strokeDasharray="4 2"/>
+      <circle cx="12" cy="12" r="4" fill="currentColor" opacity="0.6"/>
+      <circle cx="15" cy="9" r="2" fill="currentColor"/>
+    </svg>
+  ),
+  rgb_control: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" strokeWidth="1.8">
+      <defs>
+        <linearGradient id="rgbGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#ff0000"/>
+          <stop offset="33%" stopColor="#00ff00"/>
+          <stop offset="66%" stopColor="#0000ff"/>
+          <stop offset="100%" stopColor="#ff0000"/>
+        </linearGradient>
+      </defs>
+      <rect x="3" y="6" width="18" height="12" rx="3" fill="url(#rgbGrad)" opacity="0.8"/>
+      <rect x="3" y="6" width="18" height="12" rx="3" stroke="currentColor"/>
+    </svg>
+  ),
+  lcd_display: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="2" y="4" width="20" height="16" rx="2" fill="#1a3a2a"/>
+      <text x="5" y="10" fontSize="5" fill="#00ff88" fontFamily="monospace">LCD</text>
+      <text x="5" y="16" fontSize="5" fill="#00ff88" fontFamily="monospace">TEXT</text>
+    </svg>
+  ),
+  video_stream: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="2" y="5" width="16" height="14" rx="2"/>
+      <polygon points="18,9 22,12 18,15" fill="currentColor"/>
+      <circle cx="6" cy="7" r="1.5" fill="#ef4444"/>
+    </svg>
+  ),
+  map_widget: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <polygon points="3,6 3,20 12,24 21,20 21,6 12,2" fill="currentColor" opacity="0.2"/>
+      <polygon points="3,6 3,20 12,24 21,20 21,6 12,2"/>
+      <line x1="12" y1="2" x2="12" y2="24"/>
+      <line x1="3" y1="6" x2="21" y2="6"/>
+    </svg>
+  ),
+  image_gallery: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3" y="4" width="8" height="8" rx="1" fill="currentColor" opacity="0.3"/>
+      <rect x="13" y="4" width="8" height="8" rx="1" fill="currentColor" opacity="0.5"/>
+      <rect x="3" y="14" width="8" height="8" rx="1" fill="currentColor" opacity="0.5"/>
+      <rect x="13" y="14" width="8" height="8" rx="1" fill="currentColor" opacity="0.3"/>
+    </svg>
+  ),
+  dropdown_menu: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3" y="6" width="18" height="14" rx="2"/>
+      <line x1="3" y1="10" x2="21" y2="10"/>
+      <polyline points="16,14 12,18 8,14" fill="none" strokeWidth="2"/>
+    </svg>
+  ),
+  text_input: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="2" y="6" width="20" height="12" rx="2"/>
+      <line x1="5" y1="12" x2="12" y2="12" strokeWidth="1.5"/>
+      <line x1="5" y1="15" x2="9" y2="15" strokeWidth="1.5" opacity="0.5"/>
+    </svg>
+  ),
+  level_display: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="4" y="4" width="4" height="16" rx="1" fill="currentColor" opacity="0.8"/>
+      <rect x="10" y="8" width="4" height="12" rx="1" fill="currentColor" opacity="0.6"/>
+      <rect x="16" y="12" width="4" height="8" rx="1" fill="currentColor" opacity="0.4"/>
+    </svg>
+  ),
+  led_indicator: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="6" fill="#22c55e" opacity="0.8"/>
+      <circle cx="12" cy="12" r="6"/>
+      <circle cx="10" cy="10" r="2" fill="white" opacity="0.4"/>
+    </svg>
+  ),
+  gradient_ramp: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
+      <defs>
+        <linearGradient id="rampGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#22d3ee"/>
+          <stop offset="50%" stopColor="#8b5cf6"/>
+          <stop offset="100%" stopColor="#ec4899"/>
+        </linearGradient>
+      </defs>
+      <rect x="2" y="9" width="20" height="6" rx="3" fill="url(#rampGrad)"/>
+    </svg>
+  ),
+  numeric_input: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="2" y="5" width="20" height="14" rx="2"/>
+      <text x="12" y="15" textAnchor="middle" fontSize="8" fill="currentColor" fontWeight="bold">123</text>
+      <line x1="6" y1="9" x2="6" y2="11" strokeWidth="1.5"/>
+      <line x1="9" y1="9" x2="9" y2="11" strokeWidth="1.5"/>
+    </svg>
+  ),
+  segmented_switch: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="2" y="8" width="20" height="8" rx="2"/>
+      <rect x="3" y="9" width="8" height="6" rx="1" fill="currentColor" opacity="0.8"/>
+      <line x1="10" y1="8" x2="10" y2="16"/>
+      <line x1="14" y1="8" x2="14" y2="16"/>
+    </svg>
+  ),
 };
 
 const WIDGET_TYPES = [
@@ -189,65 +298,116 @@ const WIDGET_TYPES = [
     description: 'Nút điều khiển relay dạng toggle. Hiển thị trạng thái realtime qua WebSocket và bật/tắt trực tiếp.',
     defaultSize: { w: 3, h: 2 }
   },
+  // === Blynk-style Control Widgets ===
+  {
+    type: 'joystick',
+    name: 'Joystick',
+    description: 'Bộ điều khiển 2 trục X/Y. Dùng để điều khiển robot, drone, hoặc thiết bị di chuyển.',
+    defaultSize: { w: 3, h: 3 }
+  },
+  {
+    type: 'rgb_control',
+    name: 'RGB Light',
+    description: 'Điều khiển đèn LED RGB với bảng màu và độ sáng. Hỗ trợ presets và hiệu ứng chuyển màu.',
+    defaultSize: { w: 3, h: 4 }
+  },
+  {
+    type: 'segmented_switch',
+    name: 'Segmented Switch',
+    description: 'Công tắc phân đoạn với nhiều tùy chọn. Dùng để chọn chế độ hoạt động.',
+    defaultSize: { w: 4, h: 2 }
+  },
+  {
+    type: 'numeric_input',
+    name: 'Numeric Input',
+    description: 'Ô nhập số với các nút tăng/giảm. Dùng để cài đặt giá trị cho thiết bị.',
+    defaultSize: { w: 3, h: 2 }
+  },
+  {
+    type: 'dropdown_menu',
+    name: 'Dropdown Menu',
+    description: 'Menu dropdown để chọn một tùy chọn từ danh sách. Dùng cho cấu hình thiết bị.',
+    defaultSize: { w: 4, h: 2 }
+  },
+  {
+    type: 'text_input',
+    name: 'Text Input',
+    description: 'Ô nhập văn bản để gửi message xuống thiết bị. Hỗ trợ string commands.',
+    defaultSize: { w: 4, h: 2 }
+  },
+  // === Blynk-style Display Widgets ===
+  {
+    type: 'lcd_display',
+    name: 'LCD Display',
+    description: 'Màn hình LCD hiển thị text nhiều dòng. Phong cách retro, tốt cho thông tin cảm biến.',
+    defaultSize: { w: 6, h: 4 }
+  },
+  {
+    type: 'led_indicator',
+    name: 'LED Indicator',
+    description: 'Đèn LED indicator hiển thị trạng thái ON/OFF. Dùng để báo hiệu trạng thái thiết bị.',
+    defaultSize: { w: 2, h: 2 }
+  },
+  {
+    type: 'level_display',
+    name: 'Level Display',
+    description: 'Thanh mức độ hiển thị giá trị dạng thanh ngang/dọc. Tốt cho pin, volume, cường độ.',
+    defaultSize: { w: 4, h: 2 }
+  },
+  {
+    type: 'gradient_ramp',
+    name: 'Gradient Ramp',
+    description: 'Thanh gradient hiển thị giá trị với màu sắc chuyển tiếp. Dùng cho temperature gradient.',
+    defaultSize: { w: 6, h: 2 }
+  },
+  // === Blynk-style Media Widgets ===
+  {
+    type: 'video_stream',
+    name: 'Video Stream',
+    description: 'Stream video từ camera IP/MJPEG. Hiển thị feed camera trực tiếp trên dashboard.',
+    defaultSize: { w: 8, h: 6 }
+  },
+  {
+    type: 'image_gallery',
+    name: 'Image Gallery',
+    description: 'Thư viện ảnh slideshow từ URLs. Hiển thị ảnh chụp từ camera hoặc hình ảnh thiết bị.',
+    defaultSize: { w: 6, h: 4 }
+  },
+  // === Blynk-style Map Widget ===
+  {
+    type: 'map_widget',
+    name: 'Map Widget',
+    description: 'Bản đồ hiển thị vị trí thiết bị. Dùng cho tracking GPS, fleet management.',
+    defaultSize: { w: 8, h: 6 }
+  },
 ];
 
 export default function Toolbar({ onAddWidget }) {
-  return (
-    <div style={{
-      width: '210px',
-      background: '#0b1224',
-      borderRight: '1px solid #1f2a44',
-      padding: '16px',
-      height: '100%',
-      overflowY: 'auto'
-    }}>
-      <h3 style={{ color: '#e5e7eb', marginTop: 0, marginBottom: '16px', fontSize: '14px' }}>
-        Widgets
-      </h3>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        {WIDGET_TYPES.map(widget => (
-          <button
-            key={widget.type}
-            onClick={() => onAddWidget(widget)}
-            title={widget.description}
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              background: '#111a2d',
-              border: '1px solid #1f2a44',
-              borderRadius: '8px',
-              color: '#e5e7eb',
-              cursor: 'pointer',
-              textAlign: 'left',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = '#22d3ee';
-              e.currentTarget.style.background = '#1a2332';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = '#1f2a44';
-              e.currentTarget.style.background = '#111a2d';
-            }}
-          >
-            <span style={{ color: '#22d3ee', flexShrink: 0 }}>
-              {Icons[widget.type]}
-            </span>
-            <div>
-              <div style={{ fontWeight: '500', fontSize: '13px' }}>{widget.name}</div>
-              <div style={{ fontSize: '10px', color: '#9ca3af' }}>
-                {widget.defaultSize.w}×{widget.defaultSize.h}
-              </div>
-            </div>
-          </button>
-        ))}
+  const renderWidgetCard = (widget) => (
+    <button
+      key={widget.type}
+      onClick={() => onAddWidget(widget)}
+      title={widget.description}
+      className="db-widget-card"
+    >
+      <span className="db-widget-card-icon">{Icons[widget.type]}</span>
+      <div className="db-widget-card-info">
+        <p className="db-widget-card-name">{widget.name}</p>
+        <p className="db-widget-card-desc">
+          {widget.defaultSize.w}×{widget.defaultSize.h}
+        </p>
       </div>
+    </button>
+  );
 
-      <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #1f2a44' }}>
-        <p style={{ color: '#9ca3af', fontSize: '11px', margin: 0 }}>
+  return (
+    <div className="db-toolbar">
+      <h3 className="db-toolbar-title">Widgets</h3>
+      <div className="db-toolbar-section">
+        {WIDGET_TYPES.map(renderWidgetCard)}
+      </div>
+      <div className="db-toolbar-section">
+        <p className="db-widget-card-desc" style={{ margin: 0 }}>
           💡 Click để thêm widget. Hover để xem mô tả.
         </p>
       </div>

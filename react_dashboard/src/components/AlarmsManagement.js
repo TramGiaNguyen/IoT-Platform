@@ -44,7 +44,7 @@ function formatDataContext(raw) {
   return String(raw);
 }
 
-export default function AlarmsManagement({ token, onBack }) {
+export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca_nhan', userInfo = null }) {
   const [alerts, setAlerts] = useState([]);
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +61,8 @@ export default function AlarmsManagement({ token, onBack }) {
   const [resolveNote, setResolveNote] = useState('');
   const [detailModal, setDetailModal] = useState(null);
 
+  const effectiveWorkspaceId = workspaceContext === 'nhom' ? (userInfo?.primary_nhom_id || null) : null;
+
   const loadAlerts = useCallback(async () => {
     try {
       const params = {
@@ -69,6 +71,7 @@ export default function AlarmsManagement({ token, onBack }) {
       };
       if (filterStatus) params.trang_thai = filterStatus;
       if (filterDevice) params.device_id = filterDevice;
+      if (effectiveWorkspaceId) params.workspace_id = effectiveWorkspaceId;
       const res = await fetchAlerts(token, params);
       let rows = res.data.alerts || [];
       // Client-side filter theo phong/lop_hoc (server da scope theo role)
@@ -95,25 +98,25 @@ export default function AlarmsManagement({ token, onBack }) {
     } finally {
       setLoading(false);
     }
-  }, [token, filterStatus, filterDevice, filterRoom, filterClass, currentPage]);
+  }, [token, filterStatus, filterDevice, filterRoom, filterClass, currentPage, effectiveWorkspaceId]);
 
   const loadDevices = useCallback(async () => {
     try {
-      const res = await fetchDevices(token);
+      const res = await fetchDevices(token, { params: effectiveWorkspaceId ? { workspace_id: effectiveWorkspaceId } : {} });
       setDevices(res.data.devices || []);
     } catch (e) {
       console.error('Load devices failed', e);
     }
-  }, [token]);
+  }, [token, effectiveWorkspaceId]);
 
   const loadRooms = useCallback(async () => {
     try {
-      const res = await fetchRooms(token);
+      const res = await fetchRooms(token, effectiveWorkspaceId);
       setRooms(res.data.rooms || res.data || []);
     } catch (e) {
       console.error('Load rooms failed', e);
     }
-  }, [token]);
+  }, [token, effectiveWorkspaceId]);
 
   const loadClasses = useCallback(async () => {
     try {
@@ -186,18 +189,8 @@ export default function AlarmsManagement({ token, onBack }) {
   return (
     <div className="rules-container">
       <div className="rules-header">
-        <div>
-          <h2>Quản lý cảnh báo</h2>
-          <p className="muted">
-            Danh sách cảnh báo từ rule, thiết bị offline và ngưỡng.{' '}
-            {showNewBadge && <span className="badge-new">{newCount} mới</span>}
-          </p>
-          <p className="muted alerts-hint">Bấm vào một dòng để xem đầy đủ tin nhắn và dữ liệu kèm theo.</p>
-        </div>
+        <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại</button>
         <div className="rules-actions">
-          <button type="button" className="secondary-btn" onClick={onBack}>
-            Quay lại
-          </button>
         </div>
       </div>
 
@@ -220,7 +213,6 @@ export default function AlarmsManagement({ token, onBack }) {
           <option value="">Tất cả phòng</option>
           {rooms.map((r) => (
             <option key={r.id} value={r.id}>
-              {r.loai_phong === 'nhom' ? `[${r.ten_nhom || 'Nhóm'}] ` : ''}
               {r.ten_phong || `Phòng #${r.id}`}
             </option>
           ))}
@@ -394,10 +386,7 @@ export default function AlarmsManagement({ token, onBack }) {
                 {detailModal.ten_phong && (
                   <>
                     <dt>Phòng</dt>
-                    <dd>
-                      {detailModal.loai_phong === 'nhom' ? `[Nhóm] ` : ''}
-                      {detailModal.ten_phong}
-                    </dd>
+                    <dd>{detailModal.ten_phong}</dd>
                   </>
                 )}
                 {detailModal.ten_lop && (

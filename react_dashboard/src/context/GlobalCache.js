@@ -15,14 +15,20 @@ const INITIAL_CACHE = {
 };
 
 const CACHE_TTL_MS = 60_000; // 60 seconds
-const STORAGE_KEY = 'gc:v1';
+const PREFIX = 'gc:v1';
 const SAVE_DEBOUNCE_MS = 1000;
+
+const _storageKey = (token) => {
+  if (!token) return `${PREFIX}:anon`;
+  try { return `${PREFIX}:${btoa(token).replace(/=/g, '')}`; } catch (_) { return `${PREFIX}:anon`; }
+};
 
 // ── localStorage helpers ───────────────────────────────────────────────────────
 
-const loadFromStorage = () => {
+const loadFromStorage = (token) => {
+  const key = _storageKey(token);
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const { data, ts } = JSON.parse(raw);
     if (data && Date.now() - ts < CACHE_TTL_MS) return data;
@@ -31,19 +37,19 @@ const loadFromStorage = () => {
 };
 
 let _saveTimer = null;
-const saveToStorage = (data) => {
+const saveToStorage = (token, data) => {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ data, ts: Date.now() }));
+      localStorage.setItem(_storageKey(token), JSON.stringify({ data, ts: Date.now() }));
     } catch (e) {
       // localStorage full or unavailable — ignore silently
     }
   }, SAVE_DEBOUNCE_MS);
 };
 
-const clearStorage = () => {
-  try { localStorage.removeItem(STORAGE_KEY); } catch {}
+const clearStorage = (token) => {
+  try { localStorage.removeItem(_storageKey(token)); } catch {}
 };
 
 // ── Provider ───────────────────────────────────────────────────────────────────
@@ -53,29 +59,44 @@ export function GlobalCacheProvider({ children, token }) {
   const [cacheTimestamp, setCacheTimestamp] = useState(0);
   const initialized = useRef(false);
   const initializing = useRef(false);
+  const abortRef = useRef(null);
 
   const isCacheFresh = cacheTimestamp && (Date.now() - cacheTimestamp < CACHE_TTL_MS);
 
   // ── fetchFreshData: gọi API, cập nhật state + localStorage ─────────────────
 
   const fetchFreshData = useCallback(async (options = {}) => {
-    const { context = null } = options;
+    const { context = null, userInfo = null } = options;
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = new AbortController();
     initializing.current = true;
+
+    // Compute workspace-aware IDs from context string
+    let workspaceId = null;
+    if (context === 'nhom') {
+      workspaceId = userInfo?.primary_nhom_id || null;
+    }
+
     try {
       const results = await Promise.allSettled([
-        fetchDevices(token),
-        fetchDashboards(token),
-        fetchRooms(token, context),
-        fetchRules(token),
+        fetchDevices(token, {
+          signal: abortRef.current.signal,
+          params: context ? { scope: context } : {},
+        }),
+        fetchDashboards(token, workspaceId, { signal: abortRef.current.signal }),
+        fetchRooms(token, workspaceId, { signal: abortRef.current.signal }),
+        fetchRules(token, undefined, workspaceId, { signal: abortRef.current.signal }),
         axios.get(`${API_BASE}/stats/hourly`, {
           headers: { Authorization: `Bearer ${token}` },
-          params: { hours: 24 },
+          params: { hours: 24, ...(workspaceId ? { workspace_id: workspaceId } : {}) },
           timeout: 5000,
+          signal: abortRef.current.signal,
         }).catch(() => ({ data: { stats: [] } })),
         axios.get(`${API_BASE}/stats/daily`, {
           headers: { Authorization: `Bearer ${token}` },
-          params: { days: 7 },
+          params: { days: 7, ...(workspaceId ? { workspace_id: workspaceId } : {}) },
           timeout: 5000,
+          signal: abortRef.current.signal,
         }).catch(() => ({ data: { stats: [] } })),
       ]);
 
@@ -97,11 +118,15 @@ export function GlobalCacheProvider({ children, token }) {
         dailyStats:  dailyRes.status     === 'fulfilled' ? (dailyRes.value.data?.stats     || []) : [],
         workspaceContext: context,
       };
-
+      // #region agent log
+      if (typeof window !== 'undefined' && window.__ca9780_debug) {
+        fetch('http://127.0.0.1:7336/ingest/f2170468-c8de-41c8-b4d9-c82967e9e840', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ca9780' }, body: JSON.stringify({ sessionId: 'ca9780', runId: 'reload-debug', hypothesisId: 'H6', location: 'GlobalCache.js:121', message: 'fetchFreshData sets cache', data: { context, devicesLen: next.devices.length, devicesSample: next.devices.slice(0, 3).map(d => ({ id: d.ma_thiet_bi || d.device_id, owner: d.nguoi_so_huu_id, creator: d.nguoi_tao_id, nhom: d.nhom_id })), cachedWorkspaceContext: next.workspaceContext ?? null }, timestamp: Date.now() }) }).catch(() => {});
+      }
+      // #endregion
       setCache(next);
       setCacheTimestamp(Date.now());
       initialized.current = true;
-      saveToStorage(next);
+      saveToStorage(token, next);
     } catch (err) {
       console.error('[GlobalCache] initialize failed:', err);
     } finally {
@@ -113,26 +138,28 @@ export function GlobalCacheProvider({ children, token }) {
 
   const initialize = useCallback(async () => {
     if (!token || initializing.current) return;
-    if (isCacheFresh && initialized.current) return;
-
-    // BƯỚC 1: Hydrate từ localStorage — tức thì, không đợi network
-    const fromStorage = loadFromStorage();
-    console.debug('[DEBUG-B4BD18] GlobalCache initialize: fromStorage', {
-      hasData: !!fromStorage,
-      'fromStorage.devices length': fromStorage?.devices?.length,
-      isCacheFresh,
-      initialized: initialized.current,
-    });
-    if (fromStorage && initialized.current) {
-      setCache(fromStorage);
-      setCacheTimestamp(Date.now());
-      // BƯỚC 2: Refresh background song song
-      fetchFreshData();
-      return;
+    if (!isCacheFresh || !initialized.current) {
+      const fromStorage = loadFromStorage(token);
+      console.debug('[DEBUG-B4BD18] GlobalCache initialize: fromStorage', {
+        hasData: !!fromStorage,
+        'fromStorage.devices length': fromStorage?.devices?.length,
+        isCacheFresh,
+        initialized: initialized.current,
+      });
+      if (fromStorage && !initialized.current) {
+        console.log('[DBG-ca9780] GlobalCache.initialize fromStorage', { devicesLen: fromStorage.devices?.length, devicesSample: fromStorage.devices?.slice(0,2).map(d=>({id:d.ma_thiet_bi||d.device_id,nhom:d.nhom_id,owner:d.nguoi_so_huu_id})), storedContext: fromStorage.workspaceContext });
+        // #region agent log
+        if (typeof window !== 'undefined' && window.__ca9780_debug) {
+          fetch('http://127.0.0.1:7336/ingest/f2170468-c8de-41c8-b4d9-c82967e9e840', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ca9780' }, body: JSON.stringify({ sessionId: 'ca9780', runId: 'reload-debug', hypothesisId: 'H6', location: 'GlobalCache.js:initialize', message: 'initialize from localStorage', data: { fromStorageDevicesLen: fromStorage.devices?.length, fromStorageWorkspaceContext: fromStorage.workspaceContext ?? null }, timestamp: Date.now() }) }).catch(() => {});
+        }
+        // #endregion
+        setCache(fromStorage);
+        setCacheTimestamp(Date.now());
+        fetchFreshData();
+        return;
+      }
+      await fetchFreshData();
     }
-
-    // Chưa có cache → fetch bình thường
-    await fetchFreshData();
   }, [token, isCacheFresh, fetchFreshData]);
 
   // Initialize on mount if token available and not yet initialized
@@ -153,11 +180,11 @@ export function GlobalCacheProvider({ children, token }) {
         'patch.devices[0]': patch.devices?.[0],
         'next.devices length': next.devices?.length,
       });
-      saveToStorage(next);
+      saveToStorage(token, next);
       return next;
     });
     setCacheTimestamp(Date.now());
-  }, []);
+  }, [token]);
 
   // ── refetch: gọi lại API với options mới (vd đổi workspace context) ─────────
   const refetch = useCallback(async (options = {}) => {
@@ -172,8 +199,8 @@ export function GlobalCacheProvider({ children, token }) {
     setCacheTimestamp(0);
     initialized.current = false;
     initializing.current = false;
-    clearStorage();
-  }, []);
+    clearStorage(token);
+  }, [token]);
 
   const value = {
     cache,

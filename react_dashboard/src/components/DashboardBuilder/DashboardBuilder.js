@@ -3,6 +3,7 @@ import { fetchDashboard, fetchDevices, fetchMe, createWidget, updateWidget, dele
 import Toolbar, { WIDGET_TYPES } from './Toolbar';
 import Canvas from './Canvas';
 import WidgetEditor from './WidgetEditor';
+import '../../styles/dashboard-builder.css';
 
 export default function DashboardBuilder({ dashboardId, token, onBack, onSave }) {
   const [dashboard, setDashboard] = useState(null);
@@ -179,84 +180,51 @@ export default function DashboardBuilder({ dashboardId, token, onBack, onSave })
 
   if (loading) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: '#e5e7eb' }}>
+      <div className="db-builder-loading">
         <p>Đang tải...</p>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#090f1f' }}>
+    <div className="db-builder">
       {/* Toolbar */}
       {canEdit && <Toolbar onAddWidget={handleAddWidget} />}
 
       {/* Canvas */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div className="db-builder-main">
         {/* Header */}
-        <div style={{
-          padding: '16px 20px',
-          background: '#0b1224',
-          borderBottom: '1px solid #1f2a44',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
+        <div className="db-builder-header">
           {!canEdit && (
-            <span style={{
-              background: 'rgba(251, 191, 36, 0.1)',
-              color: '#fbbf24',
-              border: '1px solid rgba(251, 191, 36, 0.3)',
-              padding: '4px 12px',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: '600',
-            }}>
+            <span className="db-view-only-badge">
               Chỉ xem (không có quyền chỉnh sửa)
             </span>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, marginLeft: canEdit ? 0 : '12px' }}>
+          <div className="db-builder-header-left">
             <button
               onClick={onBack}
-              style={{
-                marginRight: '16px',
-                padding: '8px 16px',
-                background: '#111a2d',
-                border: '1px solid #1f2a44',
-                borderRadius: '6px',
-                color: '#22d3ee',
-                cursor: 'pointer'
-              }}
+              className="db-btn-secondary"
             >
               ← Quay lại
             </button>
-            <h2 style={{ display: 'inline', color: '#e5e7eb', margin: 0 }}>
+            <h2 className="db-builder-title">
               {dashboard?.ten_dashboard || 'Dashboard Builder'}
             </h2>
           </div>
-          <div>
-            {saving && <span style={{ color: '#9ca3af', marginRight: '16px' }}>Đang lưu...</span>}
+          <div className="db-builder-header-right">
+            {saving && <span className="db-saving-text">Đang lưu...</span>}
             {canEdit ? (
               <button
                 onClick={() => {
                   if (onSave) onSave();
                   else onBack();
                 }}
-                style={{
-                  padding: '10px 20px',
-                  background: 'linear-gradient(135deg, #0ea5e9, #22d3ee)',
-                  border: 'none',
-                  borderRadius: '6px',
-                  color: '#0b1224',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
+                className="db-btn-primary"
               >
                 Lưu Dashboard
               </button>
             ) : (
-              <span style={{ color: '#6b7280', fontSize: '14px' }}>
-                Chỉ xem
-              </span>
+              <span className="db-view-only-text">Chỉ xem</span>
             )}
           </div>
         </div>

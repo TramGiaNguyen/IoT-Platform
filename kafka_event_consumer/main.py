@@ -45,6 +45,44 @@ MYSQL_CONFIG = {
 }
 
 FLUSH_INTERVAL_SEC = 5
+MAX_RETRIES = 10
+BASE_DELAY = 1
+
+
+# ===== Redis connection with retry =====
+def _create_redis_connection(max_retries=MAX_RETRIES, base_delay=BASE_DELAY):
+    """Create Redis connection with exponential backoff retry."""
+    for attempt in range(max_retries):
+        try:
+            r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+            r.ping()
+            return r
+        except redis.ConnectionError as e:
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                print(f"[KAFKA-CONSUMER] Redis not ready, retrying in {delay}s... ({attempt+1}/{max_retries})")
+                time.sleep(delay)
+            else:
+                raise redis.ConnectionError(f"Failed to connect to Redis after {max_retries} attempts") from e
+
+
+def _redis_publish_with_retry(r, channel, payload, max_retries=3):
+    """Publish to Redis with retry and reconnection logic."""
+    for attempt in range(max_retries):
+        try:
+            r.publish(channel, payload)
+            r.lpush(WS_LATEST_KEY, payload)
+            r.ltrim(WS_LATEST_KEY, 0, WS_LATEST_MAX - 1)
+            return True
+        except redis.ConnectionError:
+            if attempt < max_retries - 1:
+                delay = 0.5 * (2 ** attempt)
+                time.sleep(delay)
+                r = _create_redis_connection(max_retries=3, base_delay=0.5)
+            else:
+                print(f"[KAFKA-CONSUMER] Redis publish failed after {max_retries} attempts")
+                return False
+    return False
 
 
 # ===== MySQL batch update (mirror kafka_consumer._flush_last_seen_updates) =====
@@ -107,9 +145,7 @@ atexit.register(_flush_last_seen_updates)
 
 # ===== Main consume loop =====
 def consume_loop() -> None:
-    r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-    # Ping de fail-fast neu Redis chua san sang
-    r.ping()
+    r = _create_redis_connection()
 
     consumer = Consumer({
         "bootstrap.servers": KAFKA_BOOTSTRAP,
@@ -150,14 +186,8 @@ def consume_loop() -> None:
                 _flush_last_seen_updates()
 
             # Publish len Redis Pub/Sub cho WS bridge cua moi FastAPI worker
-            try:
-                payload = json.dumps(event)
-                r.publish(WS_CHANNEL, payload)
-                # Cache vao list de WS moi ket noi lay initial state
-                r.lpush(WS_LATEST_KEY, payload)
-                r.ltrim(WS_LATEST_KEY, 0, WS_LATEST_MAX - 1)
-            except Exception as pub_err:
-                print(f"[KAFKA-CONSUMER] Redis publish failed: {pub_err}")
+            payload = json.dumps(event)
+            _redis_publish_with_retry(r, WS_CHANNEL, payload)
     except KeyboardInterrupt:
         print("[KAFKA-CONSUMER] Shutting down...")
     finally:

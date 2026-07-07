@@ -126,7 +126,7 @@ function buildCronFromPicker({ mode, hour, minute, dayOfWeek, intervalMinutes, i
   return `${min} ${hr} * * *`; // every day
 }
 
-export default function RulesManagement({ token, onBack }) {
+export default function RulesManagement({ token, onBack, userInfo = null, workspaceContext = 'ca_nhan' }) {
   const [loading, setLoading] = useState(false);
   // Global cache — rooms/rules đọc NGAY, không cần chờ fetch
   const { cache, updateCache } = useGlobalCache();
@@ -236,23 +236,25 @@ export default function RulesManagement({ token, onBack }) {
     actions: [emptyAction],
   });
 
+  const effectiveWorkspaceId = workspaceContext === 'nhom' ? (userInfo?.primary_nhom_id || null) : null;
+
   const loadRooms = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetchRooms(token);
+      const res = await fetchRooms(token, effectiveWorkspaceId);
       const roomList = res.data?.rooms || res.data || [];
       setRooms(roomList);
       updateCache({ rooms: roomList });
     } catch (e) {
       console.error('Load rooms failed', e);
     }
-  }, [token, updateCache]);
+  }, [token, effectiveWorkspaceId, updateCache]);
 
   const loadRules = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetchRules(token);
+      const res = await fetchRules(token, undefined, effectiveWorkspaceId);
       const ruleList = res.data?.rules || [];
       setRules(ruleList);
       updateCache({ rules: ruleList });
@@ -262,7 +264,7 @@ export default function RulesManagement({ token, onBack }) {
     } finally {
       setLoading(false);
     }
-  }, [token, updateCache]);
+  }, [token, effectiveWorkspaceId, updateCache]);
 
   const loadDevicesByRoom = async (roomId) => {
     if (!roomId) {
@@ -799,10 +801,7 @@ export default function RulesManagement({ token, onBack }) {
   return (
     <div className="rules-page">
       <div className="rules-header">
-        <div>
-          <h2>Quản lý Rule</h2>
-          <p>Tạo/sửa/xóa rule, lọc theo phòng · Rule theo lịch (cron)</p>
-        </div>
+        <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại</button>
         <div className="rules-actions">
           <div className="tab-buttons">
             <button className={activeTab === 'rules' ? 'active' : ''} onClick={() => setActiveTab('rules')}>Rule điều kiện</button>
@@ -824,7 +823,6 @@ export default function RulesManagement({ token, onBack }) {
           {activeTab === 'scheduled' && (
             <button onClick={() => { setEditScheduledId(null); setScheduledForm({ ten_rule: '', phong_id: '', cron_expression: '0 7 * * *', device_id: '', action_command: 'turn_on', action_params: '', trang_thai: 'enabled' }); setCronMode('preset'); setCronPicker({ mode: 'daily', hour: 7, minute: 0, dayOfWeek: 'everyday', intervalMinutes: 15, intervalHours: 1 }); setScheduledFormVisible(true); }}>+ Tạo rule theo lịch</button>
           )}
-          <button onClick={onBack}>← Về dashboard</button>
         </div>
       </div>
 

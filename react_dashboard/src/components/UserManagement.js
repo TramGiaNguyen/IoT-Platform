@@ -134,14 +134,13 @@ export default function UserManagement({ token, onBack }) {
         a.click();
     };
 
-    const handleFilterChange = (filter, value) => {
-        if (filter === 'role') setRoleFilter(value);
-        if (filter === 'search') setSearchQuery(value);
-        setCurrentPage(1);
-    };
-
     // Debounce search
     const [searchTimeout, setSearchTimeout] = useState(null);
+    useEffect(() => {
+        return () => {
+            if (searchTimeout) clearTimeout(searchTimeout);
+        };
+    }, [searchTimeout]);
     const handleSearchInput = (e) => {
         const val = e.target.value;
         setSearchQuery(val);
@@ -159,14 +158,10 @@ export default function UserManagement({ token, onBack }) {
     return (
         <div className="rules-container">
             <div className="rules-header">
-                <div>
-                    <h2>Quan ly nguoi dung</h2>
-                    <p className="muted">Them, sua, xoa va phan quyen nguoi dung</p>
-                </div>
+                <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại</button>
                 <div className="rules-actions">
-                    <button className="secondary-btn" onClick={() => setBulkImportVisible(true)}>Nhap file .xlsx</button>
-                    <button className="primary-btn" onClick={handleOpenAdd}>+ Them nguoi dung</button>
-                    <button className="secondary-btn" onClick={onBack}>Quay lai</button>
+                    <button className="secondary-btn" onClick={() => setBulkImportVisible(true)}>Nhập file .xlsx</button>
+                    <button className="primary-btn" onClick={handleOpenAdd}>+ Thêm người dùng</button>
                 </div>
             </div>
 
@@ -178,7 +173,7 @@ export default function UserManagement({ token, onBack }) {
                     value={searchQuery}
                     onChange={handleSearchInput}
                 />
-                <select value={roleFilter} onChange={e => { setRoleFilter(e.target.value); loadUsers(1); }}>
+                <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
                     <option value="">Tat ca vai tro</option>
                     <option value="admin">Admin</option>
                     <option value="teacher">Teacher</option>

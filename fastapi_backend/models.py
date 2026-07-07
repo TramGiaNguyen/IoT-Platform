@@ -33,6 +33,7 @@ class DashboardCreateRequest(BaseModel):
     mau_sac: Optional[str] = "#22d3ee"
     phong_id: Optional[int] = None  # Phase 5: scope to phong (ca nhan or nhom)
     lop_hoc_id: Optional[int] = None  # Phase 5: scope to lop_hoc
+    nhom_id: Optional[int] = None  # Phase 5: scope to workspace Nhom
     widgets: Optional[List[Dict[str, Any]]] = []  # Optional widgets to create with dashboard
 
 

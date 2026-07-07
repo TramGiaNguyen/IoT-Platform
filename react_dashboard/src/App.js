@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { fetchDevices, fetchDashboards, refreshToken, fetchMe, changePassword } from './services';
+import axios from 'axios';
+import { fetchDevices, fetchDashboards, refreshToken, fetchMe, changePassword, fetchTeacherDevices } from './services';
 import Login from './components/Login';
 import ActivityTracker from './components/ActivityTracker';
 import DeviceSetupWizard from './components/DeviceSetupWizard';
 import Dashboard from './components/Dashboard';
+import AppHeader from './components/AppHeader';
 import DeviceDetail from './components/DeviceDetail';
 import RulesManagement from './components/RulesManagement';
 import RoomManagement from './components/RoomManagement';
@@ -52,6 +54,10 @@ const REFRESH_BEFORE_SECS = 10 * 60; // refresh when < 10 minutes left
 const PROACTIVE_CHECK_INTERVAL_MS = 60 * 1000; // check every 60s
 
 function App() {
+  // DEBUG: enable runtime logging when ?debug=ca9780 in URL
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'ca9780') {
+    window.__ca9780_debug = true;
+  }
   const [token, setToken] = useState(() => localStorage.getItem('token') || '');
   const [devices, setDevices] = useState([]);
   const savedToken = localStorage.getItem('token');
@@ -73,9 +79,19 @@ function App() {
   const [workspaceContext, setWorkspaceContext] = useState(
     () => localStorage.getItem('workspaceContext') || 'ca_nhan'
   );
+  const [teacherRooms, setTeacherRooms] = useState([]); // [{id, name}, ...]
   // Password change enforcement
   const [requirePasswordChange, setRequirePasswordChange] = useState(false);
   const [pendingAuth, setPendingAuth] = useState(null); // { token, refreshToken, vai_tro, pages, phai_doi_mat_khau, userId }
+
+  // Header / global UI state
+  const [wsConnected, setWsConnected] = useState(false);
+  const [theme, setTheme] = useState(() => {
+    const t = localStorage.getItem('theme');
+    return t === 'dark' ? 'dark' : 'light';
+  });
+  const [headerSearch, setHeaderSearch] = useState('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const isAdmin = userRole === 'admin';
 
@@ -138,24 +154,30 @@ function App() {
     if (!tk) return;
     try {
       const res = await fetchMe(tk);
-      setUserInfo(res.data);
+      const info = { ...res.data };
+      // Derive group info from /auth/me response
+      // group_nhom_ids is now returned directly by backend
+      const groupNhomIds = info.group_nhom_ids || [];
+      info.group_nhom_ids = groupNhomIds;
+      info.primary_nhom_id = groupNhomIds.length > 0 ? groupNhomIds[0] : null;
+      setUserInfo(info);
     } catch (err) {
       console.error('Failed to fetch user info:', err);
       setUserInfo(null);
     }
   }, [token]);
 
-  const loadCustomDashboards = async (authToken = null) => {
+  const loadCustomDashboards = useCallback(async (authToken = null, workspaceId = null) => {
     const tokenToUse = authToken || token;
     if (!tokenToUse) return;
     try {
-      const res = await fetchDashboards(tokenToUse);
+      const res = await fetchDashboards(tokenToUse, workspaceId);
       setCustomDashboards(res.data.dashboards || []);
     } catch (err) {
       console.error('Failed to load custom dashboards:', err);
       setCustomDashboards([]);
     }
-  };
+  }, [token]);
 
   const handleLoginSuccess = async (accessToken, refreshTk, vai_tro, pages, phaiDoiMatKhau, userId) => {
     setToken(accessToken);
@@ -184,14 +206,26 @@ function App() {
     setUserRole(vai_tro || '');
     setAllowedPages(pages || []);
     setIsLoggedIn(true);
-    setWorkspaceContext('ca_nhan');
-    localStorage.setItem('workspaceContext', 'ca_nhan');
+    // Giữ nguyên workspaceContext đang chọn (nếu có trong localStorage) để không reset khi login
+    const storedWs = localStorage.getItem('workspaceContext');
+    const nextWs = storedWs === 'nhom' || storedWs === 'ca_nhan' ? storedWs : 'ca_nhan';
+    setWorkspaceContext(nextWs);
     localStorage.setItem('refreshToken', refreshTk || '');
     localStorage.setItem('userRole', vai_tro || '');
     localStorage.setItem('allowedPages', JSON.stringify(pages || []));
     localStorage.setItem('userId', userId || '');
     await loadCustomDashboards(accessToken);
     await fetchUserInfo(accessToken);
+    await loadDevices(accessToken);
+    if (vai_tro === 'teacher') {
+      try {
+        const res = await fetchTeacherDevices(accessToken);
+        setTeacherRooms(res.data?.roomIds || []);
+      } catch (e) {
+        console.error('Failed to load teacher devices:', e);
+        setTeacherRooms([]);
+      }
+    }
   };
 
   // Minimal logout: only clears auth state (used by refreshTokenSilently on token expiry)
@@ -202,11 +236,13 @@ function App() {
     localStorage.removeItem('userRole');
     localStorage.removeItem('allowedPages');
     localStorage.removeItem('workspaceContext');
+    localStorage.removeItem('user');
     setToken('');
     setRefreshTokenValue('');
     setUserRole('');
     setAllowedPages([]);
     setIsLoggedIn(false);
+    setTeacherRooms([]);
     setDevices([]);
     setCustomDashboards([]);
     setUserInfo(null);
@@ -221,6 +257,9 @@ function App() {
     if (token && isLoggedIn) {
       loadCustomDashboards(token);
       fetchUserInfo(token);
+      if (userRole === 'teacher') {
+        fetchTeacherDevices(token).then(res => setTeacherRooms(res.data?.roomIds || [])).catch(() => setTeacherRooms([]));
+      }
     }
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
@@ -300,8 +339,10 @@ function App() {
           setUserRole(auth.vai_tro || '');
           setAllowedPages(auth.pages || []);
           setIsLoggedIn(true);
-          setWorkspaceContext('ca_nhan');
-          localStorage.setItem('workspaceContext', 'ca_nhan');
+          // Giữ nguyên workspaceContext đang chọn
+          const storedWs = localStorage.getItem('workspaceContext');
+          const nextWs = storedWs === 'nhom' || storedWs === 'ca_nhan' ? storedWs : 'ca_nhan';
+          setWorkspaceContext(nextWs);
           localStorage.setItem('refreshToken', auth.refreshToken || '');
           localStorage.setItem('userRole', auth.vai_tro || '');
           localStorage.setItem('allowedPages', JSON.stringify(auth.pages || []));
@@ -318,8 +359,10 @@ function App() {
           setRefreshTokenValue(auth.refreshToken || '');
           setUserRole(auth.vai_tro || '');
           setAllowedPages(auth.pages || []);
-          setWorkspaceContext('ca_nhan');
-          localStorage.setItem('workspaceContext', 'ca_nhan');
+          // Giữ nguyên workspaceContext đang chọn
+          const storedWsSkip = localStorage.getItem('workspaceContext');
+          const nextWsSkip = storedWsSkip === 'nhom' || storedWsSkip === 'ca_nhan' ? storedWsSkip : 'ca_nhan';
+          setWorkspaceContext(nextWsSkip);
           localStorage.setItem('refreshToken', auth.refreshToken || '');
           localStorage.setItem('userRole', auth.vai_tro || '');
           localStorage.setItem('allowedPages', JSON.stringify(auth.pages || []));
@@ -337,6 +380,8 @@ function App() {
     <GlobalCacheProvider token={token}>
       <AppContentWithTracker
         token={token}
+        sidebarCollapsed={sidebarCollapsed}
+        setSidebarCollapsed={setSidebarCollapsed}
         devices={devices}
         setDevices={setDevices}
         currentView={currentView}
@@ -358,6 +403,15 @@ function App() {
         setUserRole={setUserRole}
         setAllowedPages={setAllowedPages}
         setCustomDashboards={setCustomDashboards}
+        teacherRooms={teacherRooms}
+        setTeacherRooms={setTeacherRooms}
+        wsConnected={wsConnected}
+        setWsConnected={setWsConnected}
+        theme={theme}
+        setTheme={setTheme}
+        headerSearch={headerSearch}
+        setHeaderSearch={setHeaderSearch}
+        loadCustomDashboards={loadCustomDashboards}
       />
     </GlobalCacheProvider>
   );
@@ -371,11 +425,22 @@ function AppContentWithTracker({
   userInfo, setUserInfo, workspaceContext, setWorkspaceContext, fetchUserInfo,
   setIsLoggedIn, setToken, setRefreshTokenValue, setUserRole, setAllowedPages,
   setCustomDashboards,
+  teacherRooms, setTeacherRooms,
+  wsConnected, setWsConnected, theme, setTheme, headerSearch, setHeaderSearch,
+  sidebarCollapsed, setSidebarCollapsed,
+  loadCustomDashboards,
 }) {
   const { updateCache, refetch, clearCache } = useGlobalCache();
 
-  // Clear GlobalCache + all App state on logout (Phase 5: fix stale device cache)
+  // Chỉ student mới có 2 workspace (cá nhân / nhóm). Admin và teacher quản lý
+  // toàn bộ trong phạm vi quyền hạn của họ, không phân biệt personal/group.
+  const isTeacher = userRole === 'teacher';
+  const isStudent = userRole === 'student';
+  const showWorkspaceSwitcher = isStudent && userInfo && userInfo.group_nhom_ids && userInfo.group_nhom_ids.length > 0;
+
+  // Clear GlobalCache + all App state on logout
   const onLogout = useCallback(() => {
+    axios.post('/auth/logout').catch(() => {});  // notify backend
     clearCache();
     setIsLoggedIn(false);
     setToken('');
@@ -386,28 +451,32 @@ function AppContentWithTracker({
     setCustomDashboards([]);
     setUserInfo(null);
     setWorkspaceContext('ca_nhan');
+    setTeacherRooms([]);
     localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('userRole');
     localStorage.removeItem('allowedPages');
     localStorage.removeItem('workspaceContext');
+    localStorage.removeItem('user');
     window.location.hash = '';
   }, [clearCache, setIsLoggedIn, setToken, setRefreshTokenValue, setUserRole, setAllowedPages, setDevices, setCustomDashboards, setUserInfo, setWorkspaceContext]);
 
-  // Refetch khi đổi workspace context
+  // Refetch khi đổi workspace context (devices via refetch, dashboards directly)
   useEffect(() => {
     if (refetch) {
-      refetch({ context: workspaceContext });
+      refetch({ context: workspaceContext, userInfo });
     }
-  }, [workspaceContext, refetch]);
+    // Reload dashboards with workspace awareness
+    const wsId = workspaceContext === 'nhom' ? userInfo?.primary_nhom_id : null;
+    loadCustomDashboards(token, wsId);
+  }, [workspaceContext, refetch, userInfo, loadCustomDashboards]);
 
-  // Sync devices + dashboards into global cache when App.js finishes loading
-  useEffect(() => {
-    if (devices.length > 0) {
-      updateCache({ devices });
-    }
-  }, [devices]);
-
+  // Sync dashboards into global cache when App.js finishes loading.
+  // NOTE [DBG-ca9780]: KHONG dong bo `devices` tu App.js devicesState vao cache.
+  //   App.js load devices qua `loadDevices(token)` (API personal only, khong
+  //   phan biet workspace context), nen se ghi de devices workspace-aware trong cache
+  //   khi user chuyen workspaceContext. GlobalCache tu quan ly devices qua
+  //   fetchFreshData(context, userInfo) nen can de no lam chu quan ly.
   useEffect(() => {
     if (customDashboards.length > 0) {
       updateCache({ dashboards: customDashboards });
@@ -419,6 +488,57 @@ function AppContentWithTracker({
     setCurrentView('dashboard');
     setSelectedDeviceId(null);
   };
+
+  const openDevice = (deviceId) => {
+    if (!deviceId) return;
+    window.location.hash = `#/devices/${deviceId}`;
+    setSelectedDeviceId(String(deviceId));
+    setCurrentView('device-detail');
+  };
+
+  const headerTitleForView = (() => {
+    if (currentView === 'device-detail') return 'Chi tiết thiết bị';
+    if (currentView === 'rules') return 'Quản lý rule';
+    if (currentView === 'rooms') return 'Quản lý phòng';
+    if (currentView === 'room-detail') return 'Chi tiết phòng';
+    if (currentView === 'alerts') return 'Quản lý cảnh báo';
+    if (currentView === 'device-profiles') return 'Device Profiles';
+    if (currentView === 'dashboards-manage') return 'Quản lý Dashboard';
+    if (currentView === 'dashboard-viewer') return 'Dashboard';
+    if (currentView === 'users') return 'Quản lý người dùng';
+    if (currentView === 'classes') return 'Quản lý lớp học';
+    if (currentView === 'classroom') return 'Lớp học';
+    if (currentView === 'device-setup') return 'Thiết lập thiết bị';
+    return 'Tổng quan';
+  })();
+
+  const headerSubtitleForView = (() => {
+    if (currentView === 'dashboard') return 'Giám sát & điều khiển thiết bị thời gian thực';
+    if (currentView === 'device-detail') return 'Xem chi tiết dữ liệu, lịch sử và điều khiển thiết bị';
+    if (currentView === 'rules') return 'Cấu hình rule tự động hóa cho thiết bị';
+    if (currentView === 'rooms') return 'Quản lý các phòng và thiết bị trong phòng';
+    if (currentView === 'alerts') return 'Theo dõi và xử lý cảnh báo hệ thống';
+    if (currentView === 'users') return 'Quản lý tài khoản người dùng';
+    if (currentView === 'classes') return 'Quản lý lớp học và sinh viên';
+    return '';
+  })();
+
+  const handleHeaderSearch = useCallback((val) => {
+    setHeaderSearch(val);
+  }, []);
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (theme === 'light') document.body.setAttribute('data-theme', 'light');
+    else document.body.removeAttribute('data-theme');
+  }, [theme]);
 
   const openRules = () => {
     window.location.hash = '#/rules';
@@ -512,54 +632,61 @@ function AppContentWithTracker({
     content = <DeviceDetail deviceId={selectedDeviceId} token={token} onBack={handleBackToDashboard} />;
     activeTab = 'dashboard';
   } else if (currentView === 'rules') {
-    content = <RulesManagement token={token} onBack={handleBackToDashboard} />;
+    content = <RulesManagement token={token} onBack={handleBackToDashboard} userInfo={userInfo} workspaceContext={workspaceContext} />;
     activeTab = 'rules';
   } else if (currentView === 'rooms') {
-    content = <RoomManagement token={token} onBack={handleBackToDashboard} workspaceContext={workspaceContext} />;
+    content = <RoomManagement token={token} onBack={handleBackToDashboard} workspaceContext={workspaceContext} userInfo={userInfo} />;
     activeTab = 'rooms';
   } else if (currentView === 'room-detail' && selectedDeviceId) {
     content = <RoomDetail roomId={selectedDeviceId} token={token} workspaceContext={workspaceContext} />;
     activeTab = 'rooms';
   } else if (currentView === 'alerts') {
-    content = <AlarmsManagement token={token} onBack={handleBackToDashboard} />;
+    content = <AlarmsManagement token={token} onBack={handleBackToDashboard} workspaceContext={workspaceContext} userInfo={userInfo} />;
     activeTab = 'alerts';
   } else if (currentView === 'device-profiles') {
-    content = <DeviceProfilesManagement token={token} onBack={handleBackToDashboard} />;
+    content = <DeviceProfilesManagement token={token} onBack={handleBackToDashboard} workspaceContext={workspaceContext} userInfo={userInfo} />;
     activeTab = 'device-profiles';
   } else if (currentView === 'users') {
     if (isAdmin) {
       content = <UserManagement token={token} onBack={handleBackToDashboard} />;
       activeTab = 'users';
     } else {
-      content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onOpenRooms={openRooms} />;
+      content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onOpenRooms={openRooms} workspaceContext={workspaceContext} userInfo={userInfo} userRole={userRole} isAdmin={isAdmin} isTeacher={isTeacher} teacherRooms={teacherRooms} />;
       activeTab = 'dashboard';
     }
   } else if (currentView === 'classes') {
     if (isAdmin || userRole === 'teacher') {
-      content = <ClassManagement token={token} onBack={handleBackToDashboard} onClassChanged={fetchUserInfo} />;
+      content = <ClassManagement token={token} onBack={handleBackToDashboard} onClassChanged={fetchUserInfo} workspaceContext={workspaceContext} userInfo={userInfo} />;
       activeTab = 'classes';
     } else {
-      content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onOpenRooms={openRooms} />;
+      content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onOpenRooms={openRooms} workspaceContext={workspaceContext} userInfo={userInfo} userRole={userRole} isAdmin={isAdmin} isTeacher={isTeacher} teacherRooms={teacherRooms} />;
       activeTab = 'dashboard';
     }
   } else if (currentView === 'dashboards-manage') {
-    content = <DashboardManagement token={token} onBack={handleBackToDashboard} />;
+    content = <DashboardManagement token={token} onBack={handleBackToDashboard} userInfo={userInfo} workspaceContext={workspaceContext} onDashboardsChange={() => loadCustomDashboards(token, workspaceContext === 'nhom' ? userInfo?.primary_nhom_id : null)} />;
     activeTab = 'dashboards-manage';
   } else if (currentView === 'dashboard-viewer' && selectedDeviceId) {
     content = <DashboardViewer dashboardId={parseInt(selectedDeviceId)} token={token} onBack={handleBackToDashboard} />;
     activeTab = 'dashboards-manage';
   } else {
-    content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onOpenRooms={openRooms} />;
-    activeTab = 'dashboard';
-  }
+    const isTeacher = userRole === 'teacher';
+content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onOpenRooms={openRooms} workspaceContext={workspaceContext} userInfo={userInfo} userRole={userRole} isAdmin={isAdmin} isTeacher={isTeacher} teacherRooms={teacherRooms} onOpenDevice={openDevice} onOpenAlerts={openAlerts} onWsStatusChange={setWsConnected} headerSearch={headerSearch} />;
+      activeTab = 'dashboard';
+    }
 
   return (
     <>
       {isLoggedIn && <ActivityTracker onIdleTimeout={onLogout} />}
       <div className="app-shell">
-        <aside className="app-sidebar">
-          <div className="sidebar-logo">BDU IoT</div>
-        {userInfo && userInfo.group_room_id && (
+        <aside className={`app-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+          <div className="sidebar-brand">
+            <span className="sidebar-brand-icon">BDU</span>
+            <div className="sidebar-brand-text">
+              <span className="sidebar-logo-text">BDU IoT</span>
+              <span className="sidebar-brand-sub">Platform</span>
+            </div>
+          </div>
+        {showWorkspaceSwitcher && (
           <div className="workspace-switcher">
             <button
               className={`workspace-tab ${workspaceContext === 'ca_nhan' ? 'active' : ''}`}
@@ -577,93 +704,115 @@ function AppContentWithTracker({
         )}
         <nav className="sidebar-nav">
           {canAccess('dashboard') && (
-            <button className={activeTab === 'dashboard' ? 'active' : ''} onClick={handleBackToDashboard}>
-              Dashboard
+            <button className={`sidebar-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={handleBackToDashboard}>
+              <span className="material-symbols-outlined sidebar-icon">dashboard</span>
+              <span>Dashboard</span>
             </button>
           )}
           {canAccess('rooms') && (
-            <button className={activeTab === 'rooms' ? 'active' : ''} onClick={openRooms}>
-              Quản lý phòng
+            <button className={`sidebar-item ${activeTab === 'rooms' ? 'active' : ''}`} onClick={openRooms}>
+              <span className="material-symbols-outlined sidebar-icon">meeting_room</span>
+              <span>Quản lý phòng</span>
             </button>
           )}
           {canAccess('rules') && (
-            <button className={activeTab === 'rules' ? 'active' : ''} onClick={openRules}>
-              Quản lý rule
+            <button className={`sidebar-item ${activeTab === 'rules' ? 'active' : ''}`} onClick={openRules}>
+              <span className="material-symbols-outlined sidebar-icon">rule</span>
+              <span>Quản lý rule</span>
             </button>
           )}
           {canAccess('alerts') && (
-            <button className={activeTab === 'alerts' ? 'active' : ''} onClick={openAlerts}>
-              Quản lý cảnh báo
+            <button className={`sidebar-item ${activeTab === 'alerts' ? 'active' : ''}`} onClick={openAlerts}>
+              <span className="material-symbols-outlined sidebar-icon">warning</span>
+              <span>Quản lý cảnh báo</span>
             </button>
           )}
           {canAccess('device-profiles') && (
-            <button className={activeTab === 'device-profiles' ? 'active' : ''} onClick={openDeviceProfiles}>
-              Device Profiles
+            <button className={`sidebar-item ${activeTab === 'device-profiles' ? 'active' : ''}`} onClick={openDeviceProfiles}>
+              <span className="material-symbols-outlined sidebar-icon">settings_input_component</span>
+              <span>Device Profiles</span>
             </button>
           )}
           {canAccess('dashboards') && (
-            <button className={activeTab === 'dashboards-manage' ? 'active' : ''} onClick={openDashboardsManage}>
-              Quản lý Dashboard
+            <button className={`sidebar-item ${activeTab === 'dashboards-manage' ? 'active' : ''}`} onClick={openDashboardsManage}>
+              <span className="material-symbols-outlined sidebar-icon">monitoring</span>
+              <span>Quản lý Dashboard</span>
             </button>
           )}
           {isAdmin && (
-            <button className={activeTab === 'users' ? 'active' : ''} onClick={openUsers}>
-              Quản lý người dùng
+            <button className={`sidebar-item ${activeTab === 'users' ? 'active' : ''}`} onClick={openUsers}>
+              <span className="material-symbols-outlined sidebar-icon">group</span>
+              <span>Quản lý người dùng</span>
             </button>
           )}
           {(isAdmin || userRole === 'teacher') && (
-            <button className={activeTab === 'classes' ? 'active' : ''} onClick={() => {
+            <button className={`sidebar-item ${activeTab === 'classes' ? 'active' : ''}`} onClick={() => {
               window.location.hash = '#/classes';
               setCurrentView('classes');
               setSelectedDeviceId(null);
             }}>
-              Quản lý lớp học
+              <span className="material-symbols-outlined sidebar-icon">school</span>
+              <span>Quản lý lớp học</span>
             </button>
           )}
-          {customDashboards.map(dashboard => (
-            <button
-              key={dashboard.id}
-              className={currentView === 'dashboard-viewer' && selectedDeviceId === dashboard.id.toString() ? 'active' : ''}
-              onClick={() => {
-                setCurrentView('dashboard-viewer');
-                setSelectedDeviceId(dashboard.id.toString());
-                window.location.hash = `#/dashboards/${dashboard.id}`;
-              }}
-            >
-              {dashboard.ten_dashboard}
-            </button>
-          ))}
         </nav>
-        <div style={{ padding: '15px', marginTop: 'auto', borderTop: '1px solid #374151' }}>
-          <div style={{
-            marginBottom: '10px',
-            padding: '8px 10px',
-            background: '#1f2937',
-            borderRadius: '6px',
-            color: '#9ca3af',
-            fontSize: '12px',
-          }}>
-            <div style={{ color: '#f3f4f6', fontWeight: '600', marginBottom: '2px', fontSize: '13px' }}>
-              {userInfo?.ho_ten || userInfo?.ten || '—'}
-            </div>
-            <div style={{ textTransform: 'capitalize' }}>
-              {userInfo?.vai_tro === 'admin' ? 'Quản trị' : userInfo?.vai_tro === 'teacher' ? 'Giảng viên' : userInfo?.vai_tro === 'student' ? 'Sinh viên' : userInfo?.vai_tro || '—'}
-            </div>
-          </div>
+        <button
+          className="sidebar-collapse-btn"
+          onClick={() => setSidebarCollapsed(prev => !prev)}
+          title={sidebarCollapsed ? 'Mở rộng sidebar' : 'Thu nhỏ sidebar'}
+        >
+          <span className="material-symbols-outlined">
+            {sidebarCollapsed ? 'chevron_right' : 'chevron_left'}
+          </span>
+        </button>
+        <div className="sidebar-footer">
           <button
-            onClick={onLogout}
-            style={{
-              width: '100%', padding: '10px', background: '#ef4444', border: 'none',
-              borderRadius: '6px', color: '#fff', fontWeight: '600', cursor: 'pointer',
-              fontSize: '14px', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', gap: '8px',
+            className="sidebar-item sidebar-item-cta"
+            onClick={() => {
+              handleBackToDashboard();
+              window.dispatchEvent(new CustomEvent('bdu-open-add-device'));
             }}
           >
-            Đăng xuất
+            <span className="material-symbols-outlined sidebar-icon">add_circle</span>
+            <span>+ Khai Báo Thiết Bị</span>
           </button>
+          <a
+            className="sidebar-item sidebar-item-link"
+            href="/docs.html"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span className="material-symbols-outlined sidebar-icon">menu_book</span>
+            <span>Tải liệu hướng dẫn</span>
+          </a>
         </div>
       </aside>
-      <main className="app-main">{content}</main>
+      <main className="app-main">
+        <AppHeader
+          title={headerTitleForView}
+          subtitle={headerSubtitleForView}
+          searchValue={headerSearch}
+          onSearchChange={handleHeaderSearch}
+          wsConnected={wsConnected}
+          userInfo={userInfo}
+          onLogout={onLogout}
+          onChangePassword={() => {
+            if (userInfo?.id) {
+              const ev = new CustomEvent('bdu-open-password-change', { detail: { userId: userInfo.id } });
+              window.dispatchEvent(ev);
+            }
+          }}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+          devices={devices}
+          onNavigate={(target) => {
+            if (target === 'rules') openRules();
+            else openDevice(target);
+          }}
+          currentView={currentView}
+        />
+        {content}
+      </main>
       </div>
     </>
   );
