@@ -20,7 +20,6 @@ export default function ClassManagement({ token, onBack, onClassChanged, workspa
   const classesVersion = useCrudVersion('class');
   const groupsVersion = useCrudVersion('group');
   const classStudentsVersion = useCrudVersion('class_student');
-  const groupMembersVersion = useCrudVersion('group_member');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -70,12 +69,6 @@ export default function ClassManagement({ token, onBack, onClassChanged, workspa
       listClassStudents(selectedClass.id).then(r => setStudents(r.data.students || r.data || [])).catch(() => {});
     }
   }, [classStudentsVersion]);
-
-  useEffect(() => {
-    if (groupMembersVersion > 0 && selectedGroup) {
-      listGroupMembers(selectedGroup.id).then(r => setGroupMembers(r.data.members || r.data || [])).catch(() => {});
-    }
-  }, [groupMembersVersion]);
 
   const handleCreateClass = async (e) => {
     e.preventDefault();
