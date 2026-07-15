@@ -74,9 +74,6 @@ export default function DashboardBuilder({ dashboardId, token, onBack, onSave })
 
   // Handle widget save from editor
   const handleWidgetSave = async (updatedWidget) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardBuilder.js:100',message:'handleWidgetSave entry',data:{widget_id:updatedWidget.id,isTemp:updatedWidget.id.toString().startsWith('temp-'),dashboard_id:dashboardId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     try {
       setSaving(true);
       
@@ -95,16 +92,10 @@ export default function DashboardBuilder({ dashboardId, token, onBack, onSave })
         }, token);
         
         // Replace temp widget with real one
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardBuilder.js:115',message:'handleWidgetSave create success',data:{widget_id:res.data.widget?.id,dashboard_id:dashboardId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         setWidgets(widgets.map(w => w.id === id ? res.data.widget : w));
         setSelectedWidget(null);
       } else {
         // Existing widget - update it
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardBuilder.js:120',message:'handleWidgetSave update starting',data:{widget_id:updatedWidget.id,dashboard_id:dashboardId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         await updateWidget(dashboardId, updatedWidget.id, {
           widget_type: updatedWidget.widget_type,
           ten_widget: updatedWidget.ten_widget,
@@ -136,7 +127,7 @@ export default function DashboardBuilder({ dashboardId, token, onBack, onSave })
     try {
       // If it's a temp widget, just remove from state
       if (widgetId.toString().startsWith('temp-')) {
-        setWidgets(widgets.filter(w => w.id !== widgetId));
+        setWidgets(prevWidgets => prevWidgets.filter(w => w.id !== widgetId));
         if (selectedWidget?.id === widgetId) {
           setSelectedWidget(null);
         }
@@ -145,7 +136,7 @@ export default function DashboardBuilder({ dashboardId, token, onBack, onSave })
 
       // Real widget - delete from backend
       await deleteWidget(dashboardId, widgetId, token);
-      setWidgets(widgets.filter(w => w.id !== widgetId));
+      setWidgets(prevWidgets => prevWidgets.filter(w => w.id !== widgetId));
       if (selectedWidget?.id === widgetId) {
         setSelectedWidget(null);
       }

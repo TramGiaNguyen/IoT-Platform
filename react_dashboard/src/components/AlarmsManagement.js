@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { fetchAlerts, fetchDevices, fetchRooms, fetchClasses, acknowledgeAlert, resolveAlert } from '../services';
+import { useCrudVersion } from '../context/RealtimeProvider';
 
 const PAGE_SIZE = 15;
 
@@ -62,6 +63,9 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
   const [detailModal, setDetailModal] = useState(null);
 
   const effectiveWorkspaceId = workspaceContext === 'nhom' ? (userInfo?.primary_nhom_id || null) : null;
+
+  // Realtime: tu refresh khi co alert CRUD (acknowledge/resolve) tu tab khac
+  const alertsVersion = useCrudVersion('alert');
 
   const loadAlerts = useCallback(async () => {
     try {
@@ -129,9 +133,12 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
 
   useEffect(() => {
     loadAlerts();
-    const interval = setInterval(loadAlerts, 30000);
-    return () => clearInterval(interval);
   }, [loadAlerts]);
+
+  // Realtime: refetch khi alert CRUD event den (bo polling 30s)
+  useEffect(() => {
+    if (alertsVersion > 0) loadAlerts();
+  }, [alertsVersion]);
 
   useEffect(() => {
     loadDevices();

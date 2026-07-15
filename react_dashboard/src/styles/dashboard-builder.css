@@ -194,6 +194,10 @@
   border-radius: 8px;
   cursor: grab;
   transition: box-shadow 0.2s;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 .db-canvas-widget.selected {
   border-color: var(--bdu-cyan);
@@ -334,6 +338,8 @@
   overflow: hidden;
   position: relative;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .db-widget-preview {
@@ -481,6 +487,51 @@
   transition: background 0.2s;
 }
 .db-widget-preview-delete:hover { background: rgba(239, 68, 68, 1); }
+
+/* Eye toggle button - cho phep xem du lieu that cua widget */
+.db-widget-preview-eye-btn {
+  position: absolute;
+  top: 4px;
+  right: 28px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--bdu-card-border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  color: var(--bdu-muted);
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.db-widget-preview-eye-btn:hover {
+  background: rgba(34, 211, 238, 0.15);
+  border-color: var(--bdu-cyan);
+  color: var(--bdu-cyan);
+}
+.db-widget-preview-eye-btn.active {
+  background: rgba(34, 211, 238, 0.2);
+  border-color: var(--bdu-cyan);
+  color: var(--bdu-cyan);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.3);
+}
+
+/* Light theme styles for eye button */
+[data-theme="light"] .db-widget-preview-eye-btn {
+  background: rgba(255, 255, 255, 0.9);
+  color: #64748b;
+}
+[data-theme="light"] .db-widget-preview-eye-btn:hover {
+  background: rgba(0, 104, 117, 0.1);
+  border-color: #006875;
+  color: #006875;
+}
+[data-theme="light"] .db-widget-preview-eye-btn.active {
+  background: rgba(0, 104, 117, 0.15);
+  border-color: #006875;
+  color: #006875;
+}
 
 .db-widget-preview-status {
   position: absolute;

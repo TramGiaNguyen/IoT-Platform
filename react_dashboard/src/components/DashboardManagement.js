@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { fetchDashboards, createDashboard, updateDashboard, deleteDashboard, fetchRooms, fetchClasses } from '../services';
 import DashboardBuilder from './DashboardBuilder/DashboardBuilder';
+import { useCrudVersion } from '../context/RealtimeProvider';
 import '../styles/style.css';
 
 const CONTEXT_LABELS = {
@@ -13,6 +14,9 @@ const CONTEXT_LABELS = {
 export default function DashboardManagement({ token, onBack, onDashboardsChange, userInfo = null, workspaceContext = 'ca_nhan' }) {
   const [dashboards, setDashboards] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Realtime: tu refetch khi co CRUD dashboard/widget tu tab khac
+  const dashboardsVersion = useCrudVersion('dashboard');
+  const widgetsVersion = useCrudVersion('widget');
   const [error, setError] = useState('');
   const [formVisible, setFormVisible] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState(null);
@@ -60,6 +64,15 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange,
   useEffect(() => {
     loadDashboards();
   }, [loadDashboards]);
+
+  // Realtime: refetch khi dashboard hoặc widget CRUD event den
+  useEffect(() => {
+    if (dashboardsVersion > 0) loadDashboards();
+  }, [dashboardsVersion]);
+
+  useEffect(() => {
+    if (widgetsVersion > 0) loadDashboards();
+  }, [widgetsVersion]);
 
   useEffect(() => {
     loadRoomsAndClasses();
@@ -154,9 +167,6 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange,
   };
 
   const handleBuild = (dashboardId) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardManagement.js:105',message:'handleBuild called',data:{dashboardId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     console.log('[DashboardManagement] handleBuild called with dashboardId:', dashboardId);
     setBuildingDashboardId(dashboardId);
   };

@@ -14,6 +14,7 @@ import {
   deleteScheduledRule,
 } from '../services';
 import { useGlobalCache } from '../context/GlobalCache';
+import { useCrudVersion } from '../context/RealtimeProvider';
 import RuleChainEditor from './RuleChainEditor';
 
 const operatorOptions = ['>', '<', '>=', '<=', '!=', '=', '=='];
@@ -130,6 +131,9 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
   const [loading, setLoading] = useState(false);
   // Global cache — rooms/rules đọc NGAY, không cần chờ fetch
   const { cache, updateCache } = useGlobalCache();
+  // Realtime: bump khi co CRUD rule/scheduled_rule tu tab khac
+  const rulesVersion = useCrudVersion('rule');
+  const scheduledRulesVersion = useCrudVersion('scheduled_rule');
   const _initialRooms = cache.rooms?.length > 0 ? cache.rooms : [];
   const _initialRules = cache.rules?.length > 0 ? cache.rules : [];
   const [rooms, setRooms] = useState(_initialRooms);
@@ -363,6 +367,16 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
       _scheduledLoaded.current = false;
     }
   }, [activeTab, loadScheduledRules]);
+
+  // Realtime: tu refetch khi co CRUD rule tu tab khac
+  useEffect(() => {
+    if (rulesVersion > 0) loadRules();
+  }, [rulesVersion]);
+
+  // Realtime: tu refetch scheduled rules khi co CRUD scheduled_rule tu tab khac
+  useEffect(() => {
+    if (scheduledRulesVersion > 0) loadScheduledRules();
+  }, [scheduledRulesVersion]);
 
   useEffect(() => {
     if (formVisible && formData.phong_id) {
@@ -667,39 +681,6 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
     
     console.log('[SAVE_SCHEDULED_RULE]', editScheduledId ? 'UPDATE' : 'CREATE', body);
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7926b3' },
-      body: JSON.stringify({
-        sessionId: '7926b3',
-        location: 'RulesManagement.js:handleSaveScheduledRule',
-        message: 'scheduled_rule_save_payload',
-        hypothesisId: 'H_scheduled_update_payload',
-        data: {
-          op: editScheduledId ? 'update' : 'create',
-          editScheduledId,
-          cronMode,
-          cronPickerMode: cronPicker?.mode,
-          cronPicker: {
-            hour: cronPicker?.hour,
-            minute: cronPicker?.minute,
-            intervalMinutes: cronPicker?.intervalMinutes,
-            intervalHours: cronPicker?.intervalHours,
-            dayOfWeek: cronPicker?.dayOfWeek,
-          },
-          cron_expression: scheduledForm.cron_expression,
-          device_id: scheduledForm.device_id,
-          action_command: scheduledForm.action_command,
-          action_params_type: parsedParams === null ? 'null' : typeof parsedParams,
-          action_params: parsedParams,
-          trang_thai: scheduledForm.trang_thai,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-    
     try {
       if (editScheduledId) {
         await updateScheduledRule(editScheduledId, body, token);
@@ -715,27 +696,6 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
     } catch (err) {
       console.error('[SAVE_SCHEDULED_RULE] Error:', err);
       console.error('[SAVE_SCHEDULED_RULE] Response:', err.response?.data);
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7926b3' },
-        body: JSON.stringify({
-          sessionId: '7926b3',
-          location: 'RulesManagement.js:handleSaveScheduledRule',
-          message: 'scheduled_rule_save_error',
-          hypothesisId: 'H_scheduled_update_payload',
-          data: {
-            op: editScheduledId ? 'update' : 'create',
-            editScheduledId,
-            http_status: err.response?.status,
-            detail: err.response?.data?.detail,
-            cron_expression: scheduledForm.cron_expression,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       
       const errorDetail = err.response?.data?.detail;
       const errorMsg = typeof errorDetail === 'object' 

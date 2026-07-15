@@ -11,6 +11,7 @@ import time
 import json
 import secrets
 import requests
+import asyncio
 import paho.mqtt.publish as publish
 import paho.mqtt.client as mqtt
 
@@ -66,6 +67,9 @@ def _invalidate_api_cache(prefix: str = "api:*") -> None:
             r.delete(key)
     except Exception:
         pass
+
+
+from ws_events import publish_crud as _ws_publish_crud, publish_control as _ws_publish_control
 
 
 from kafka_consumer import get_latest_events
@@ -1441,6 +1445,10 @@ def register_device(
         conn.commit()
         _invalidate_api_cache("api:devices:*")
         _invalidate_latest_all_cache(request.device_id)
+        try:
+            _ws_publish_crud(entity="device", action="create", entity_id=request.device_id, actor_id=None, payload={"ten_thiet_bi": request.ten_thiet_bi})
+        except Exception:
+            pass
 
         # DEBUG [ca9780]: confirm cache invalidation happened for register_device
         import datetime as _dt, json as _json
@@ -2726,6 +2734,21 @@ def send_control_command(
         # Invalidate latest-all cache vì dữ liệu device vừa thay đổi
         _invalidate_latest_all_cache(device_id)
 
+        # Publish WS control event (notify other tabs)
+        try:
+            actor_id = None
+            try:
+                _, actor_id, _ = _get_role_and_id(conn, current_user)
+            except Exception:
+                pass
+            _ws_publish_control(
+                device_id=device_id, action_name=body.action,
+                payload={"payload_sent": payload, "via": "mqtt"},
+                actor_id=actor_id,
+            )
+        except Exception:
+            pass
+
         return {
             "status": "ok",
             "device_id": device_id,
@@ -2964,6 +2987,10 @@ def delete_device(
             cursor.execute("DELETE FROM thiet_bi WHERE id = %s", (thiet_bi_id,))
             conn.commit()
             _invalidate_api_cache("api:devices:*")
+            try:
+                _ws_publish_crud(entity="device", action="delete", entity_id=device_id, actor_id=None)
+            except Exception:
+                pass
             return {
                 "message": f"Đã xóa hoàn toàn thiết bị {device['ten_thiet_bi'] or device['ma_thiet_bi']}",
                 "device_id": device_id,
@@ -2977,6 +3004,10 @@ def delete_device(
             )
             conn.commit()
             _invalidate_api_cache("api:devices:*")
+            try:
+                _ws_publish_crud(entity="device", action="delete", entity_id=device_id, actor_id=None, payload={"soft": True})
+            except Exception:
+                pass
             return {
                 "message": f"Đã xóa thiết bị {device['ten_thiet_bi'] or device['ma_thiet_bi']} (soft delete)",
                 "device_id": device_id,
@@ -3261,7 +3292,16 @@ def create_room(
         conn.commit()
         _invalidate_api_cache("api:rooms:*")
         room_id = cursor.lastrowid
-        
+
+        # Publish WS CRUD event
+        try:
+            _ws_publish_crud(
+                entity="room", action="create", entity_id=room_id,
+                actor_id=requester_id, payload={"ten_phong": body.ten_phong, "ma_phong": body.ma_phong}
+            )
+        except Exception:
+            pass
+
         # Return created room with owner info
         cursor.execute("""
             SELECT p.*, u.ten as nguoi_so_huu_ten
@@ -3326,6 +3366,13 @@ def update_room(
             raise HTTPException(status_code=404, detail="Room not found")
         conn.commit()
         _invalidate_api_cache("api:rooms:*")
+
+        # Publish WS CRUD event
+        try:
+            _ws_publish_crud(entity="room", action="update", entity_id=room_id, actor_id=None)
+        except Exception:
+            pass
+
         return {"message": "updated"}
     except HTTPException:
         raise
@@ -3357,6 +3404,13 @@ def delete_room(
             raise HTTPException(status_code=404, detail="Room not found")
         conn.commit()
         _invalidate_api_cache("api:rooms:*")
+
+        # Publish WS CRUD event
+        try:
+            _ws_publish_crud(entity="room", action="delete", entity_id=room_id, actor_id=None)
+        except Exception:
+            pass
+
         return {"message": "deleted"}
     except HTTPException:
         raise
@@ -5920,6 +5974,10 @@ def create_rule(
 
         conn.commit()
         _invalidate_api_cache("api:rules:*")
+        try:
+            _ws_publish_crud(entity="rule", action="create", entity_id=rule_id, actor_id=None, payload={"ten_rule": body.ten_rule})
+        except Exception:
+            pass
         return {"message": "created", "rule_id": rule_id}
     except HTTPException:
         raise
@@ -6017,6 +6075,10 @@ def update_rule(rule_id: int, body: RuleUpdate, current_user: str = Depends(get_
         
         conn.commit()
         _invalidate_api_cache("api:rules:*")
+        try:
+            _ws_publish_crud(entity="rule", action="update", entity_id=rule_id, actor_id=None)
+        except Exception:
+            pass
         return {"message": "updated"}
     except HTTPException:
         raise
@@ -6038,6 +6100,10 @@ def delete_rule(rule_id: int, current_user: str = Depends(get_current_user)):
             raise HTTPException(status_code=404, detail="Rule not found")
         conn.commit()
         _invalidate_api_cache("api:rules:*")
+        try:
+            _ws_publish_crud(entity="rule", action="delete", entity_id=rule_id, actor_id=None)
+        except Exception:
+            pass
         return {"message": "deleted"}
     except HTTPException:
         raise
@@ -6174,6 +6240,10 @@ def create_scheduled_rule(
         )
         rid = cursor.lastrowid
         conn.commit()
+        try:
+            _ws_publish_crud(entity="scheduled_rule", action="create", entity_id=rid, actor_id=None, payload={"device_id": body.device_id})
+        except Exception:
+            pass
         return {"message": "created", "id": rid}
     except Exception as e:
         conn.rollback()
@@ -6266,6 +6336,10 @@ def update_scheduled_rule(rule_id: int, body: ScheduledRuleUpdate, current_user:
         
         conn.commit()
         logging.info(f"[UPDATE_SCHEDULED_RULE] Successfully updated rule_id={rule_id}")
+        try:
+            _ws_publish_crud(entity="scheduled_rule", action="update", entity_id=rule_id, actor_id=None)
+        except Exception:
+            pass
         return {"message": "updated"}
     except HTTPException:
         raise
@@ -6304,6 +6378,10 @@ def delete_scheduled_rule(rule_id: int, current_user: str = Depends(get_current_
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Scheduled rule not found")
         conn.commit()
+        try:
+            _ws_publish_crud(entity="scheduled_rule", action="delete", entity_id=rule_id, actor_id=None)
+        except Exception:
+            pass
         return {"message": "deleted"}
     except HTTPException:
         raise
@@ -6367,6 +6445,10 @@ def create_device_profile(body: DeviceProfileCreate, current_user: str = Depends
         )
         rid = cursor.lastrowid
         conn.commit()
+        try:
+            _ws_publish_crud(entity="profile", action="create", entity_id=rid, actor_id=None, payload={"ten_profile": body.ten_profile})
+        except Exception:
+            pass
         return {"message": "created", "id": rid}
     except Exception as e:
         conn.rollback()
@@ -6401,6 +6483,10 @@ def update_device_profile(profile_id: int, body: DeviceProfileUpdate, current_us
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Profile not found")
         conn.commit()
+        try:
+            _ws_publish_crud(entity="profile", action="update", entity_id=profile_id, actor_id=None)
+        except Exception:
+            pass
         return {"message": "updated"}
     except HTTPException:
         raise
@@ -6421,6 +6507,10 @@ def delete_device_profile(profile_id: int, current_user: str = Depends(get_curre
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Profile not found")
         conn.commit()
+        try:
+            _ws_publish_crud(entity="profile", action="delete", entity_id=profile_id, actor_id=None)
+        except Exception:
+            pass
         return {"message": "deleted"}
     except HTTPException:
         raise
@@ -6574,9 +6664,14 @@ def create_user(body: UserCreate, current_user: str = Depends(get_current_user))
             INSERT INTO nguoi_dung (ten, email, mat_khau_hash, vai_tro, lop_hoc_id, phai_doi_mat_khau)
             VALUES (%s, %s, %s, %s, %s, 0)
         """, (body.ten, body.email, password_hash, body.vai_tro, body.lop_hoc_id))
-        
+
+        new_id = cursor.lastrowid
         conn.commit()
-        return {"message": "User created", "user_id": cursor.lastrowid}
+        try:
+            _ws_publish_crud(entity="user", action="create", entity_id=new_id, actor_id=requester["id"], payload={"vai_tro": body.vai_tro})
+        except Exception:
+            pass
+        return {"message": "User created", "user_id": new_id}
     except HTTPException:
         raise
     except Exception as e:
@@ -6783,6 +6878,10 @@ def update_user(user_id: int, body: UserUpdate, current_user: str = Depends(get_
         values.append(user_id)
         cursor.execute(f"UPDATE nguoi_dung SET {', '.join(fields)} WHERE id = %s", tuple(values))
         conn.commit()
+        try:
+            _ws_publish_crud(entity="user", action="update", entity_id=user_id, actor_id=None)
+        except Exception:
+            pass
         return {"message": "User updated"}
     except HTTPException:
         raise
@@ -6814,6 +6913,10 @@ def delete_user(user_id: int, current_user: str = Depends(get_current_user)):
         
         cursor.execute("DELETE FROM nguoi_dung WHERE id = %s", (user_id,))
         conn.commit()
+        try:
+            _ws_publish_crud(entity="user", action="delete", entity_id=user_id, actor_id=current["id"])
+        except Exception:
+            pass
         return {"message": f"User '{user['ten']}' deleted"}
     except HTTPException:
         raise
@@ -6908,6 +7011,10 @@ def create_class(body: ClassCreate, current_user: str = Depends(get_current_user
         class_id = cursor.lastrowid
 
         conn.commit()
+        try:
+            _ws_publish_crud(entity="class", action="create", entity_id=class_id, actor_id=requester[0], payload={"ten_lop": body.ten_lop})
+        except Exception:
+            pass
         return {
             "message": "Class created",
             "class_id": class_id,
@@ -6941,6 +7048,10 @@ def delete_class(class_id: int, current_user: str = Depends(get_current_user)):
         cursor.execute("DELETE FROM lop_hoc WHERE id = %s", (class_id,))
         conn.commit()
         _invalidate_api_cache("api:rooms:*")
+        try:
+            _ws_publish_crud(entity="class", action="delete", entity_id=class_id, actor_id=requester[0])
+        except Exception:
+            pass
         return {"message": "Deleted"}
     except Exception as e:
         conn.rollback()
@@ -7146,6 +7257,10 @@ def add_student_to_class(
         cursor.execute("UPDATE nguoi_dung SET lop_hoc_id = %s WHERE id = %s", (class_id, body.student_id))
 
         conn.commit()
+        try:
+            _ws_publish_crud(entity="class_student", action="create", entity_id=class_id, actor_id=requester["id"], payload={"student_id": body.student_id})
+        except Exception:
+            pass
 
         return {
             "message": "Student added to class",
@@ -7302,6 +7417,10 @@ def remove_student_from_class(
         )
 
         conn.commit()
+        try:
+            _ws_publish_crud(entity="class_student", action="delete", entity_id=class_id, actor_id=requester["id"], payload={"student_id": student_id})
+        except Exception:
+            pass
         _invalidate_api_cache("api:rooms:*")
 
         return {"message": "Student removed from class", "student_id": student_id, "class_id": class_id}
@@ -7538,6 +7657,10 @@ def create_class_group(
         )
         group_id = cursor.lastrowid
         conn.commit()
+        try:
+            _ws_publish_crud(entity="group", action="create", entity_id=group_id, actor_id=requester["id"], payload={"ten_nhom": body.ten_nhom.strip(), "class_id": class_id})
+        except Exception:
+            pass
 
         return {
             "message": "Group created",
@@ -7601,6 +7724,10 @@ def update_group(
         cursor.execute(f"UPDATE nhom SET {', '.join(updates)} WHERE id = %s", params)
         conn.commit()
         _invalidate_api_cache("api:rooms:*")
+        try:
+            _ws_publish_crud(entity="group", action="update", entity_id=group_id, actor_id=requester["id"])
+        except Exception:
+            pass
         return {"message": "Group updated", "group_id": group_id}
     except HTTPException:
         raise
@@ -7642,6 +7769,10 @@ def delete_group(
         cursor.execute("DELETE FROM nhom WHERE id = %s", (group_id,))
         conn.commit()
         _invalidate_api_cache("api:rooms:*")
+        try:
+            _ws_publish_crud(entity="group", action="delete", entity_id=group_id, actor_id=requester["id"])
+        except Exception:
+            pass
         return {"message": "Group deleted", "group_id": group_id}
     except HTTPException:
         raise
@@ -7806,6 +7937,10 @@ def add_group_member(
             (group_id, body.user_id),
         )
         conn.commit()
+        try:
+            _ws_publish_crud(entity="group_member", action="create", entity_id=group_id, actor_id=requester["id"], payload={"user_id": body.user_id})
+        except Exception:
+            pass
         return {
             "message": "Member added to group",
             "group_id": group_id,
@@ -7858,6 +7993,10 @@ def remove_group_member(
         conn.commit()
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Member not found in group")
+        try:
+            _ws_publish_crud(entity="group_member", action="delete", entity_id=group_id, actor_id=requester["id"], payload={"user_id": user_id})
+        except Exception:
+            pass
         return {
             "message": "Member removed from group",
             "group_id": group_id,
@@ -7936,6 +8075,10 @@ def update_user_permissions(user_id: int, body: PermissionUpdate, current_user: 
             )
         
         conn.commit()
+        try:
+            _ws_publish_crud(entity="permission", action="update", entity_id=user_id, actor_id=requester.get("id") if requester else None)
+        except Exception:
+            pass
         return {"message": "Permissions updated", "user_id": user_id, "pages": body.pages}
     except HTTPException:
         raise
@@ -8154,6 +8297,12 @@ def create_dashboard(
         cursor.close()
         conn.close()
 
+    # Publish WS CRUD event after successful commit
+    try:
+        _ws_publish_crud(entity="dashboard", action="create", entity_id=dashboard_id, actor_id=ctx.user_id, payload={"ten_dashboard": request.ten_dashboard})
+    except Exception:
+        pass
+
 
 @router.get("/dashboards/{dashboard_id}")
 def get_dashboard(
@@ -8289,6 +8438,11 @@ def update_dashboard(
 
         conn.commit()
 
+        try:
+            _ws_publish_crud(entity="dashboard", action="update", entity_id=dashboard_id, actor_id=ctx.user_id)
+        except Exception:
+            pass
+
         return {"message": "Dashboard updated successfully"}
     except HTTPException:
         raise
@@ -8330,6 +8484,11 @@ def delete_dashboard(
 
         cursor.execute("DELETE FROM custom_dashboards WHERE id = %s", (dashboard_id,))
         conn.commit()
+
+        try:
+            _ws_publish_crud(entity="dashboard", action="delete", entity_id=dashboard_id, actor_id=ctx.user_id)
+        except Exception:
+            pass
 
         return {"message": "Dashboard deleted successfully"}
     except HTTPException:
@@ -8387,6 +8546,11 @@ def create_widget(
 
         widget_id = cursor.lastrowid
         conn.commit()
+
+        try:
+            _ws_publish_crud(entity="widget", action="create", entity_id=widget_id, actor_id=ctx.user_id, payload={"dashboard_id": dashboard_id, "widget_type": request.widget_type})
+        except Exception:
+            pass
 
         cursor.execute("""
             SELECT id, dashboard_id, widget_type, ten_widget, vi_tri_x, vi_tri_y,
@@ -8484,6 +8648,11 @@ def update_widget(
 
         conn.commit()
 
+        try:
+            _ws_publish_crud(entity="widget", action="update", entity_id=widget_id, actor_id=ctx.user_id, payload={"dashboard_id": dashboard_id})
+        except Exception:
+            pass
+
         return {"message": "Widget updated successfully"}
     except HTTPException:
         raise
@@ -8523,6 +8692,11 @@ def delete_widget(
             raise HTTPException(status_code=404, detail="Widget not found")
 
         conn.commit()
+
+        try:
+            _ws_publish_crud(entity="widget", action="delete", entity_id=widget_id, actor_id=ctx.user_id, payload={"dashboard_id": dashboard_id})
+        except Exception:
+            pass
 
         return {"message": "Widget deleted successfully"}
     except HTTPException:
@@ -8598,29 +8772,31 @@ def get_widget_data(
         
         thiet_bi_id = device_result["id"]
         
-        # Calculate time range
+        # Calculate time range using epoch timestamps throughout to avoid timezone ambiguity.
+        # datetime.utcnow() returns UTC, but .timestamp() on a UTC datetime interprets as local → +7h.
+        # Solution: compute start_ts and end_ts as floats, only convert to datetime for display.
         time_range = request.time_range or "1h"
-        
-        # Use start_time/end_time if provided, otherwise use time_range
+        import time as _time
+        now_ts = _time.time()
+
         if request.start_time and request.end_time:
-            start_dt = datetime.fromtimestamp(request.start_time)
-            end_dt = datetime.fromtimestamp(request.end_time)
+            start_ts = request.start_time
+            end_ts = request.end_time
         else:
-            end_dt = datetime.utcnow()
-            # Parse time_range correctly
-            try:
-                if time_range.endswith("h"):
-                    hours = int(time_range[:-1])
-                    start_dt = end_dt - timedelta(hours=hours)
-                elif time_range.endswith("d"):
-                    days = int(time_range[:-1])
-                    start_dt = end_dt - timedelta(days=days)
-                else:
-                    # Default to 1 hour
-                    start_dt = end_dt - timedelta(hours=1)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=f"Invalid time_range format: {time_range}")
-        
+            if time_range.endswith("h"):
+                hours = int(time_range[:-1])
+                start_ts = now_ts - hours * 3600
+            elif time_range.endswith("d"):
+                days = int(time_range[:-1])
+                start_ts = now_ts - days * 86400
+            else:
+                start_ts = now_ts - 3600
+            end_ts = now_ts
+
+        # For display/response, convert to UTC datetimes (no timezone offset applied)
+        start_dt = datetime.utcfromtimestamp(start_ts)
+        end_dt = datetime.utcfromtimestamp(end_ts)
+
         # Query data from MongoDB (primary) with MySQL fallback
         if len(data_keys) == 0:
             return {"data": [], "message": "No data keys specified"}
@@ -8628,29 +8804,27 @@ def get_widget_data(
         try:
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"[get_widget_data] Querying data: device_id={device_id_str}, data_keys={data_keys}, start_dt={start_dt}, end_dt={end_dt}")
+            logger.info(f"[get_widget_data] Querying: device_id={device_id_str}, data_keys={data_keys}")
             
             # Try MongoDB first (Spark writes here)
             mongo = get_mongo()
             events_collection = mongo["events"]
-            
-            start_timestamp = start_dt.timestamp()
-            end_timestamp = end_dt.timestamp()
-            
+
+            # Use epoch floats directly - DO NOT call .timestamp() on UTC datetimes
             mongo_query = {
                 "device_id": device_id_str,
                 "timestamp": {
-                    "$gte": start_timestamp,
-                    "$lte": end_timestamp
+                    "$gte": start_ts,
+                    "$lte": end_ts
                 }
             }
-            
+
             # Query all fields - let frontend filter by data_keys
             cursor_mongo = events_collection.find(
-                {"device_id": device_id_str, "timestamp": {"$gte": start_timestamp, "$lte": end_timestamp}},
+                {"device_id": device_id_str, "timestamp": {"$gte": start_ts, "$lte": end_ts}},
                 {"_id": 0}  # Project all fields
             ).sort("timestamp", 1).limit(10000)
-            
+
             rows = list(cursor_mongo)
             logger.info(f"[get_widget_data] MongoDB returned {len(rows)} documents")
             
@@ -8704,9 +8878,15 @@ def get_widget_data(
             logger.error(f"[get_widget_data] Traceback: {error_trace}")
             raise
         finally:
-            cursor.close()
-            conn.close()
-        
+            try:
+                cursor.close()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
         # Format data for charts
         # Group by timestamp and create series for each data key
         data_by_time = {}
@@ -9038,6 +9218,10 @@ def acknowledge_alert(
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Alert not found or already processed")
         conn.commit()
+        try:
+            _ws_publish_crud(entity="alert", action="update", entity_id=alert_id, actor_id=ctx.user_id, payload={"trang_thai": "acknowledged"})
+        except Exception:
+            pass
         return {"message": "Alert acknowledged"}
     except HTTPException:
         raise
@@ -9068,6 +9252,10 @@ def resolve_alert(
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Alert not found")
         conn.commit()
+        try:
+            _ws_publish_crud(entity="alert", action="update", entity_id=alert_id, actor_id=ctx.user_id, payload={"trang_thai": "resolved"})
+        except Exception:
+            pass
         return {"message": "Alert resolved"}
     except HTTPException:
         raise
@@ -9185,3 +9373,226 @@ def control_ac(
         raise HTTPException(status_code=503, detail=f"Không gửi được lệnh AC: {e}")
     except (ValueError, TypeError) as e:
         raise HTTPException(status_code=502, detail=f"Phản hồi AC gateway không hợp lệ: {e}")
+
+
+# ===================== WEBCAM STREAMING =====================
+
+class WebcamRegisterRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    device_index: int = Field(default=0, ge=0, le=10)
+    resolution_width: int = Field(default=640, ge=320, le=1920)
+    resolution_height: int = Field(default=480, ge=240, le=1080)
+    fps: int = Field(default=30, ge=5, le=60)
+
+
+@router.get("/webcam/list")
+def list_webcams(ctx: UserContext = Depends(require_user_context)):
+    """List all registered webcams."""
+    from camera_service import webcam_capture
+    webcams = webcam_capture.list_webcams()
+    return {
+        "webcams": [
+            {
+                "id": w.id,
+                "name": w.name,
+                "device_index": w.device_index,
+                "resolution": f"{w.resolution_width}x{w.resolution_height}",
+                "fps": w.fps,
+                "enabled": w.enabled
+            }
+            for w in webcams
+        ]
+    }
+
+
+@router.post("/webcam/register")
+def register_webcam(
+    body: WebcamRegisterRequest,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """Register a new webcam."""
+    from camera_service import webcam_capture
+    config = webcam_capture.register_webcam(
+        name=body.name,
+        device_index=body.device_index,
+        resolution_width=body.resolution_width,
+        resolution_height=body.resolution_height,
+        fps=body.fps
+    )
+    return {
+        "id": config.id,
+        "name": config.name,
+        "device_index": config.device_index,
+        "resolution": f"{config.resolution_width}x{config.resolution_height}",
+        "fps": config.fps,
+        "message": "Webcam registered successfully"
+    }
+
+
+@router.delete("/webcam/{webcam_id}")
+def unregister_webcam(
+    webcam_id: str,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """Unregister a webcam."""
+    from camera_service import webcam_capture
+    success = webcam_capture.unregister_webcam(webcam_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Webcam not found")
+    return {"message": "Webcam unregistered successfully"}
+
+
+@router.get("/webcam/{webcam_id}/stream")
+async def webcam_stream(webcam_id: str):
+    """
+    Stream MJPEG from a registered webcam.
+    Uses multipart/x-mixed-replace for continuous streaming.
+    """
+    from camera_service import webcam_capture
+    from fastapi.responses import StreamingResponse
+
+    config = webcam_capture.get_webcam(webcam_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Webcam not found")
+
+    webcam_capture.start_capture(webcam_id)
+
+    async def generate():
+        while True:
+            frame = webcam_capture.get_frame(webcam_id)
+            if frame:
+                yield (
+                    b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n'
+                    b'Content-Length: ' + str(len(frame)).encode() + b'\r\n\r\n' +
+                    frame +
+                    b'\r\n'
+                )
+            await asyncio.sleep(0.03)
+
+    return StreamingResponse(
+        generate(),
+        media_type='multipart/x-mixed-replace; boundary=frame'
+    )
+
+
+# ===================== CLIENT BROWSER STREAMING =====================
+
+class ClientStreamStartRequest(BaseModel):
+    stream_id: str = Field(..., min_length=1, max_length=100)
+    device_label: Optional[str] = ""
+    fps: int = Field(default=15, ge=5, le=30)
+
+
+class ClientStreamFrameRequest(BaseModel):
+    stream_id: str
+    frame_data: str  # Base64 encoded JPEG
+
+
+@router.post("/webcam/client/register")
+def client_register_stream(
+    body: ClientStreamStartRequest,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Register a new client browser stream.
+    Browser calls this first to get a stream_id, then pushes frames.
+    """
+    from camera_service import client_stream_manager
+
+    stream_id = f"client_{body.stream_id}_{ctx.user_id}"
+    success = client_stream_manager.register_stream(
+        stream_id=stream_id,
+        owner_id=ctx.user_id,
+        device_label=body.device_label
+    )
+
+    if not success:
+        raise HTTPException(status_code=409, detail="Stream already registered")
+
+    return {
+        "stream_id": stream_id,
+        "message": "Stream registered successfully"
+    }
+
+
+@router.post("/webcam/client/push")
+async def client_push_frame(
+    body: ClientStreamFrameRequest,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Push a video frame from browser to backend.
+    Browser uses MediaRecorder to capture frames and sends them here.
+    """
+    from camera_service import client_stream_manager
+    import base64
+
+    try:
+        frame_data = base64.b64decode(body.frame_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid frame data: {e}")
+
+    success = client_stream_manager.push_frame(body.stream_id, frame_data)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Stream not found or not registered")
+
+    return {"status": "ok"}
+
+
+@router.delete("/webcam/client/{stream_id}")
+def client_unregister_stream(
+    stream_id: str,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """Unregister a client stream."""
+    from camera_service import client_stream_manager
+
+    success = client_stream_manager.unregister_stream(stream_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Stream not found")
+
+    return {"message": "Stream unregistered successfully"}
+
+
+@router.get("/webcam/client/list")
+def client_list_streams(ctx: UserContext = Depends(require_user_context)):
+    """List all active client streams."""
+    from camera_service import client_stream_manager
+    streams = client_stream_manager.list_streams()
+    return {"streams": streams}
+
+
+@router.get("/webcam/client/{stream_id}/stream")
+async def client_stream_view(stream_id: str):
+    """
+    View a client stream from another browser.
+    Uses multipart/x-mixed-replace for MJPEG streaming.
+    """
+    from camera_service import client_stream_manager
+    from fastapi.responses import StreamingResponse
+
+    stream_info = client_stream_manager.get_stream(stream_id)
+    if not stream_info:
+        raise HTTPException(status_code=404, detail="Stream not found")
+
+    async def generate():
+        while True:
+            frame = client_stream_manager.get_frame(stream_id, timeout=2.0)
+            if frame is None:
+                # No frame received, send placeholder or skip
+                await asyncio.sleep(0.1)
+                continue
+            yield (
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n'
+                b'Content-Length: ' + str(len(frame)).encode() + b'\r\n\r\n' +
+                frame +
+                b'\r\n'
+            )
+
+    return StreamingResponse(
+        generate(),
+        media_type='multipart/x-mixed-replace; boundary=frame'
+    )

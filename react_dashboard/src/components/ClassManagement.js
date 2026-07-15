@@ -6,6 +6,7 @@ import {
   listGroupMembers, addGroupMember, removeGroupMember,
   bulkImportClassStudents, fetchUnassignedStudents,
 } from '../services';
+import { useCrudVersion } from '../context/RealtimeProvider';
 
 const MAX_STUDENTS_PER_CLASS = 100;
 const MAX_MEMBERS_PER_GROUP = 5;
@@ -14,6 +15,12 @@ const PAGE_SIZE = 15;
 export default function ClassManagement({ token, onBack, onClassChanged, workspaceContext = 'ca_nhan', userInfo = null }) {
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Realtime: tu refetch khi co CRUD class/group/student tu tab khac
+  const classesVersion = useCrudVersion('class');
+  const groupsVersion = useCrudVersion('group');
+  const classStudentsVersion = useCrudVersion('class_student');
+  const groupMembersVersion = useCrudVersion('group_member');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -46,6 +53,29 @@ export default function ClassManagement({ token, onBack, onClassChanged, workspa
   useEffect(() => {
     loadClasses(1);
   }, [loadClasses]);
+
+  // Realtime: refetch khi class/group/student CRUD event den
+  useEffect(() => {
+    if (classesVersion > 0) loadClasses(currentPage);
+  }, [classesVersion]);
+
+  useEffect(() => {
+    if (groupsVersion > 0 && selectedClass) {
+      listClassGroups(selectedClass.id).then(r => setGroups(r.data.groups || r.data || [])).catch(() => {});
+    }
+  }, [groupsVersion]);
+
+  useEffect(() => {
+    if (classStudentsVersion > 0 && selectedClass) {
+      listClassStudents(selectedClass.id).then(r => setStudents(r.data.students || r.data || [])).catch(() => {});
+    }
+  }, [classStudentsVersion]);
+
+  useEffect(() => {
+    if (groupMembersVersion > 0 && selectedGroup) {
+      listGroupMembers(selectedGroup.id).then(r => setGroupMembers(r.data.members || r.data || [])).catch(() => {});
+    }
+  }, [groupMembersVersion]);
 
   const handleCreateClass = async (e) => {
     e.preventDefault();

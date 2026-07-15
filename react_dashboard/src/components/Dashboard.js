@@ -4,6 +4,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, AreaChart, Area, Lin
 import { fetchDevicesLatestAll, fetchRooms } from '../services';
 import { API_BASE, WS_URL } from '../config/api';
 import { useGlobalCache } from '../context/GlobalCache';
+import { useRealtime } from '../context/RealtimeProvider';
 import LogStream from './LogStream';
 import AddDeviceModal from './AddDeviceModal';
 import '../styles/Dashboard.css';
@@ -15,6 +16,7 @@ const Icon = ({ name, className = '' }) => (
 
 const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRooms, onOpenDevice, onOpenAlerts, onWsStatusChange, headerSearch = '', workspaceId, workspaceContext, userInfo, userRole = '', isAdmin = false, isTeacher = false, teacherRooms = [] }) => {
   const { cache, updateCache } = useGlobalCache();
+  const { connected: wsConnected, lastEventAt, getDeviceLatest } = useRealtime();
   // Admin/teacher không phân biệt workspace cá nhân / nhóm — chỉ student mới có
   // 2 tab. isStudent = role chính xác là student.
   const isStudent = userRole === 'student';
@@ -27,7 +29,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   const [devices, setDevices] = useState(initialFromCache);
   const [deviceData, setDeviceData] = useState({});
   const [loading, setLoading] = useState(true);
-  const [wsConnected, setWsConnected] = useState(false);
+  // wsConnected duoc cung cap boi useRealtime() (line 17) va sync len App qua onWsStatusChange effect.
 
   const getScopeFilteredDevices = useCallback((allDevices, scope, uid, isAdmin = false, isTeacher = false, teacherRooms = [], cacheWorkspaceContext = null) => {
     if (!allDevices?.length) return [];
@@ -67,13 +69,6 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   }, []);
 
   const scopedDevices = getScopeFilteredDevices(cache.devices, workspaceContext, userInfo?.id, isAdmin, isTeacher, teacherRooms, cache?.workspaceContext);
-  // #region agent log [ca9780] H7: only log when scoped output changes (avoid render flood)
-  const _scopedKey = scopedDevices.map(d => d.ma_thiet_bi || d.device_id).join(',');
-  if (typeof window !== 'undefined' && window.__lastScopedKey !== _scopedKey) {
-    window.__lastScopedKey = _scopedKey;
-    fetch('http://127.0.0.1:7336/ingest/f2170468-c8de-41c8-b4d9-c82967e9e840', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ca9780' }, body: JSON.stringify({ sessionId: 'ca9780', runId: 'debug-newdevice-v2', hypothesisId: 'H7', location: 'Dashboard.js:scopedDevices', message: 'scopedDevices CHANGED', data: { workspaceContext, cacheWorkspaceContext: cache?.workspaceContext ?? null, cacheMatchesWorkspace, uid: userInfo?.id, isAdmin, isTeacher, cacheDevicesLen: cache.devices?.length, cacheDevicesAll: cache.devices?.map(d => ({ id: d.ma_thiet_bi || d.device_id, owner: d.nguoi_so_huu_id, creator: d.nguoi_tao_id, nhom: d.nhom_id })), scopedDevicesLen: scopedDevices.length, scopedDevicesIds: scopedDevices.map(d => d.ma_thiet_bi || d.device_id) }, timestamp: Date.now() }) }).catch(() => {});
-  }
-  // #endregion
   const [showDeviceModal, setShowDeviceModal] = useState(false);
 
   const [hourlyStats, setHourlyStats] = useState([]);
@@ -105,9 +100,6 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       devicesIdsRef.current = mappedDevices.map(d => String(d.ma_thiet_bi));
       setDevices(mappedDevices);
       updateCache({ devices: mappedDevices });
-      // #region agent log [ca9780] H4: track what loadLatestAll actually receives
-      fetch('http://127.0.0.1:7336/ingest/f2170468-c8de-41c8-b4d9-c82967e9e840', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ca9780' }, body: JSON.stringify({ sessionId: 'ca9780', runId: 'debug-newdevice', hypothesisId: 'H4', location: 'Dashboard.js:loadLatestAll', message: 'loadLatestAll received payload', data: { silent, workspaceContext, payloadCount: payload.length, payloadIds: payload.slice(0, 10).map(d => d.device_id), uid: userInfo?.id }, timestamp: Date.now() }) }).catch(() => {});
-      // #endregion
       setDeviceData((prev) => {
         const newDeviceData = {};
         payload.forEach((item) => {
@@ -313,65 +305,39 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     };
   }, [token, workspaceContext, userInfo?.primary_nhom_id]);
 
+  // Realtime: lang nghe tu RealtimeProvider (WS chung da mo o App).
+  // Khi co sensor event cho 1 deviceId trong devicesIdsRef, cap nhat deviceData.
   useEffect(() => {
-    if (!token) return;
-    const wsRef = { current: null };
-    const reconnectTimerRef = { current: null };
-    let mounted = false;
+    if (!lastEventAt) return;
+    const allowedIds = devicesIdsRef.current;
+    if (!allowedIds || allowedIds.length === 0) return;
 
-    const connectWs = () => {
-      if (mounted && !wsRef.current) {
-        wsRef.current = new WebSocket(WS_URL);
-        wsRef.current.onopen = () => {
-          if (!mounted) { try { wsRef.current.close(); } catch (e) {} return; }
-          setWsConnected(true);
-        };
-        wsRef.current.onmessage = (event) => {
-          if (!mounted) return;
-          try {
-            const data = JSON.parse(event.data);
-            const wsDeviceId = String(data.device_id || '');
-            if (!wsDeviceId || !devicesIdsRef.current.includes(wsDeviceId)) return;
-            setDeviceData((prev) => {
-              const currentDeviceData = prev[wsDeviceId] || {};
-              const currentData = currentDeviceData.data || {};
-              const newData = { ...currentData };
-              Object.keys(data).forEach((key) => {
-                if (key !== 'device_id' && key !== 'timestamp' && key !== 'type') {
-                  newData[key] = { ...currentData[key], value: data[key], timestamp: data.timestamp };
-                }
-              });
-              const wsTsSec = data.timestamp > 1e12 ? Math.floor(data.timestamp / 1000) : Math.floor(data.timestamp);
-              const existingTsSec = currentDeviceData.last_seen
-                ? (currentDeviceData.last_seen > 1e12 ? Math.floor(currentDeviceData.last_seen / 1000) : Math.floor(currentDeviceData.last_seen))
-                : 0;
-              const newLastSeen = wsTsSec > existingTsSec ? data.timestamp : currentDeviceData.last_seen;
-              return { ...prev, [wsDeviceId]: { ...currentDeviceData, device_id: wsDeviceId, last_seen: newLastSeen, data: newData } };
-            });
-          } catch (err) { console.error('WS parse error:', err); }
-        };
-        wsRef.current.onerror = () => setWsConnected(false);
-        wsRef.current.onclose = () => {
-          setWsConnected(false); wsRef.current = null;
-          if (mounted) reconnectTimerRef.current = setTimeout(connectWs, 3000);
-        };
-      }
-    };
-
-    mounted = true;
-    connectWs();
-    return () => {
-      mounted = false;
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      devicesIdsRef.current = [];
-      if (wsRef.current) {
-        if (wsRef.current.readyState === WebSocket.OPEN) { try { wsRef.current.close(); } catch (e) {} }
-        else if (wsRef.current.readyState === WebSocket.CONNECTING) {
-          wsRef.current.addEventListener('open', () => { try { wsRef.current.close(); } catch (e) {} }, { once: true });
+    setDeviceData((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const devId of allowedIds) {
+        const latest = getDeviceLatest(devId);
+        if (!latest || Object.keys(latest).length === 0) continue;
+        const cur = next[devId] || { device_id: devId, data: {} };
+        const newData = { ...(cur.data || {}) };
+        let maxTs = 0;
+        for (const [k, v] of Object.entries(latest)) {
+          newData[k] = { ...(newData[k] || {}), value: v.value, timestamp: v.ts };
+          if (v.ts > maxTs) maxTs = v.ts;
         }
+        const curLastSeen = cur.last_seen || 0;
+        const newLastSeen = maxTs > curLastSeen ? maxTs : curLastSeen;
+        next[devId] = { ...cur, device_id: devId, data: newData, last_seen: newLastSeen };
+        changed = true;
       }
-    };
-  }, [token]);
+      return changed ? next : prev;
+    });
+  }, [lastEventAt]);
+
+  // Forward WS status den AppHeader badge
+  useEffect(() => {
+    if (onWsStatusChange) onWsStatusChange(wsConnected);
+  }, [wsConnected, onWsStatusChange]);
 
   const formatTime = (timestamp) => {
     if (!timestamp) return 'Chưa có dữ liệu';

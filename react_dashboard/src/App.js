@@ -18,7 +18,17 @@ import DashboardViewer from './components/DashboardViewer/DashboardViewer';
 import RoomDetail from './components/RoomDetail';
 import { canAccessPage } from './config/pages';
 import { GlobalCacheProvider, useGlobalCache } from './context/GlobalCache';
+import { RealtimeProvider, useRealtime } from './context/RealtimeProvider';
 import './styles/style.css';
+
+// Sync realtime WS connection state len App-level `wsConnected` (cho AppHeader badge)
+function useRealtimeSync(setWsConnected) {
+  const { connected } = useRealtime();
+  useEffect(() => {
+    setWsConnected(connected);
+  }, [connected, setWsConnected]);
+  return { connected };
+}
 
 // ── JWT helpers ────────────────────────────────────────────────────────────────
 
@@ -376,44 +386,47 @@ function App() {
 
   // GlobalCacheProvider wraps authenticated app.
   // Inside: GlobalCache.initialize() runs in its useEffect (1-time load of all data).
+  // RealtimeProvider: mo 1 WS chung (sensor + CRUD + control events).
   return (
-    <GlobalCacheProvider token={token}>
-      <AppContentWithTracker
-        token={token}
-        sidebarCollapsed={sidebarCollapsed}
-        setSidebarCollapsed={setSidebarCollapsed}
-        devices={devices}
-        setDevices={setDevices}
-        currentView={currentView}
-        setCurrentView={setCurrentView}
-        selectedDeviceId={selectedDeviceId}
-        setSelectedDeviceId={setSelectedDeviceId}
-        userRole={userRole}
-        isAdmin={isAdmin}
-        isLoggedIn={isLoggedIn}
-        customDashboards={customDashboards}
-        userInfo={userInfo}
-        setUserInfo={setUserInfo}
-        workspaceContext={workspaceContext}
-        setWorkspaceContext={setWorkspaceContext}
-        fetchUserInfo={fetchUserInfo}
-        setIsLoggedIn={setIsLoggedIn}
-        setToken={setToken}
-        setRefreshTokenValue={setRefreshTokenValue}
-        setUserRole={setUserRole}
-        setAllowedPages={setAllowedPages}
-        setCustomDashboards={setCustomDashboards}
-        teacherRooms={teacherRooms}
-        setTeacherRooms={setTeacherRooms}
-        wsConnected={wsConnected}
-        setWsConnected={setWsConnected}
-        theme={theme}
-        setTheme={setTheme}
-        headerSearch={headerSearch}
-        setHeaderSearch={setHeaderSearch}
-        loadCustomDashboards={loadCustomDashboards}
-      />
-    </GlobalCacheProvider>
+    <RealtimeProvider>
+      <GlobalCacheProvider token={token}>
+        <AppContentWithTracker
+          token={token}
+          sidebarCollapsed={sidebarCollapsed}
+          setSidebarCollapsed={setSidebarCollapsed}
+          devices={devices}
+          setDevices={setDevices}
+          currentView={currentView}
+          setCurrentView={setCurrentView}
+          selectedDeviceId={selectedDeviceId}
+          setSelectedDeviceId={setSelectedDeviceId}
+          userRole={userRole}
+          isAdmin={isAdmin}
+          isLoggedIn={isLoggedIn}
+          customDashboards={customDashboards}
+          userInfo={userInfo}
+          setUserInfo={setUserInfo}
+          workspaceContext={workspaceContext}
+          setWorkspaceContext={setWorkspaceContext}
+          fetchUserInfo={fetchUserInfo}
+          setIsLoggedIn={setIsLoggedIn}
+          setToken={setToken}
+          setRefreshTokenValue={setRefreshTokenValue}
+          setUserRole={setUserRole}
+          setAllowedPages={setAllowedPages}
+          setCustomDashboards={setCustomDashboards}
+          teacherRooms={teacherRooms}
+          setTeacherRooms={setTeacherRooms}
+          wsConnected={wsConnected}
+          setWsConnected={setWsConnected}
+          theme={theme}
+          setTheme={setTheme}
+          headerSearch={headerSearch}
+          setHeaderSearch={setHeaderSearch}
+          loadCustomDashboards={loadCustomDashboards}
+        />
+      </GlobalCacheProvider>
+    </RealtimeProvider>
   );
 }
 
@@ -431,6 +444,8 @@ function AppContentWithTracker({
   loadCustomDashboards,
 }) {
   const { updateCache, refetch, clearCache } = useGlobalCache();
+  // Realtime WS status (from RealtimeProvider)
+  const { connected: realtimeConnected } = useRealtimeSync(setWsConnected);
 
   // Chỉ student mới có 2 workspace (cá nhân / nhóm). Admin và teacher quản lý
   // toàn bộ trong phạm vi quyền hạn của họ, không phân biệt personal/group.

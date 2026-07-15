@@ -1,11 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { fetchRooms, fetchDevices, updateDeviceRoom, createRoom, updateRoom, deleteRoom } from '../services';
 import { API_BASE } from '../config/api';
+import { useCrudVersion } from '../context/RealtimeProvider';
 
 export default function RoomManagement({ token, onBack, workspaceContext = 'ca_nhan', userInfo = null }) {
-  // #region agent log (hypothesisId: H_render_mount)
-  fetch('http://127.0.0.1:7336/ingest/f2170468-c8de-41c8-b4d9-c82967e9e840',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'7e9fdc'},body:JSON.stringify({sessionId:'7e9fdc',location:'RoomManagement.js:5',message:'RoomManagement mounted',data:{hasOnBack:typeof onBack,workspaceContext},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   const [rooms, setRooms] = useState([]);
   const [devices, setDevices] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -20,6 +18,9 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
 
   const isGroupContext = workspaceContext === 'nhom';
   const effectiveWorkspaceId = isGroupContext ? (userInfo?.primary_nhom_id || null) : null;
+
+  // Realtime: tu refresh khi co CRUD event "room" (tao/sua/xoa o tab khac)
+  const roomsVersion = useCrudVersion('room');
 
   // Đánh dấu khi đang có optimistic update để tránh ghi đè state
   const pendingRef = useRef(false);
@@ -46,6 +47,14 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
     loadRooms();
     loadDevices();
   }, [loadRooms, loadDevices]);
+
+  // Auto-refetch khi co CRUD event cho entity "room" tu tab khac
+  useEffect(() => {
+    if (roomsVersion > 0 && !pendingRef.current) {
+      loadRooms();
+      loadDevices();
+    }
+  }, [roomsVersion]);
 
   const resetForm = () => {
     setRoomForm({ ten_phong: '', ma_phong: '', vi_tri: '', mo_ta: '', nguoi_quan_ly_id: '' });

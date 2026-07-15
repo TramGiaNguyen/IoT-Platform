@@ -18,23 +18,14 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const loadDashboard = useCallback(async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardViewer.js:20',message:'loadDashboard entry',data:{dashboard_id:dashboardId,hasToken:!!token},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
     setLoading(true);
     setError('');
     try {
       const res = await fetchDashboard(dashboardId, token);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardViewer.js:25',message:'loadDashboard success',data:{dashboard_id:dashboardId,widgets_count:res.data?.widgets?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       setDashboard(res.data);
       setWidgets(res.data.widgets || []);
     } catch (err) {
       console.error('Failed to load dashboard:', err);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DashboardViewer.js:30',message:'loadDashboard error',data:{dashboard_id:dashboardId,error:err.message,status:err.response?.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       setError('Không thể tải dashboard');
     } finally {
       setLoading(false);

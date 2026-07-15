@@ -44,14 +44,6 @@ const Icons = {
       <line x1="19" y1="12" x2="22" y2="12"/>
     </svg>
   ),
-  table: (
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <rect x="3" y="4" width="18" height="16" rx="1"/>
-      <line x1="3" y1="9" x2="21" y2="9"/>
-      <line x1="3" y1="14" x2="21" y2="14"/>
-      <line x1="9" y1="4" x2="9" y2="20"/>
-    </svg>
-  ),
   pie_chart: (
     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M12 12 L12 3 A9 9 0 0 1 21 12 Z" fill="currentColor" opacity="0.5"/>
@@ -255,12 +247,6 @@ const WIDGET_TYPES = [
     name: 'SCADA Symbol',
     description: 'Biểu tượng SCADA cho đèn, điều hòa, cảm biến. Có thể click để điều khiển bật/tắt.',
     defaultSize: { w: 2, h: 2 }
-  },
-  {
-    type: 'table',
-    name: 'Data Table',
-    description: 'Bảng dữ liệu dạng bảng chi tiết với timestamp và nhiều cột key.',
-    defaultSize: { w: 12, h: 6 }
   },
   {
     type: 'pie_chart',

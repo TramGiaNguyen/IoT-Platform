@@ -1,6 +1,7 @@
 # fastapi_backend/database.py
 
 import os
+import threading
 import mysql.connector.pooling
 from pymongo import MongoClient
 
@@ -33,12 +34,12 @@ def _get_pool():
     return _mysql_pool
 
 def get_mysql():
-    """Lấy connection từ pool. Sau khi dùng xong PHẢI gọi conn.close() để trả về pool."""
+    """Lay connection tu pool. Sau khi dung xong PHAI goi conn.close() de tra ve pool."""
     return _get_pool().get_connection()
 
 
 # ============================================================
-# MongoDB – dùng MongoClient singleton (đã có connection pooling nội bộ)
+# MongoDB – dung MongoClient singleton (da co connection pooling noi bo)
 # ============================================================
 _MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongodb:27017")
 _mongo_client = None
@@ -50,7 +51,7 @@ def _get_mongo_client():
     return _mongo_client
 
 def get_mongo():
-    """Trả về MongoDB database 'iot'. Client được tái sử dụng (singleton)."""
+    """Tra ve MongoDB database 'iot'. Client duoc tai su dung (singleton)."""
     return _get_mongo_client().iot
 
 
@@ -62,19 +63,32 @@ _REDIS_CONFIG = {
     "port":     int(os.getenv("REDIS_PORT", 6379)),
     "db":       0,
     "decode_responses": True,
+    "socket_connect_timeout": 1,
+    "socket_timeout": 1,
+    "health_check_interval": 30,
+    "retry_on_timeout": False,
 }
 
 _redis_client = None
+_redis_lock = threading.Lock()
 
 def get_redis():
-    """Trả về Redis client singleton. Nếu Redis không khả dụng, trả None (graceful degradation)."""
+    """Tra ve Redis client. Tu re-init neu connection bi broken."""
     global _redis_client
-    if _redis_client is None:
+    if _redis_client is not None:
         try:
-            import redis as _redis_lib
-            _redis_client = _redis_lib.Redis(**_REDIS_CONFIG)
-            _redis_client.ping()  # verify connection
-        except Exception as e:
-            print(f"[REDIS] Không kết nối được: {e}")
-            _redis_client = None
+            _redis_client.ping()
+        except Exception:
+            with _redis_lock:
+                _redis_client = None
+    if _redis_client is None:
+        with _redis_lock:
+            if _redis_client is None:
+                try:
+                    import redis as _redis_lib
+                    _redis_client = _redis_lib.Redis(**_REDIS_CONFIG)
+                    _redis_client.ping()
+                except Exception as e:
+                    print(f"[REDIS] Khong ket noi duoc: {e}")
+                    _redis_client = None
     return _redis_client

@@ -1,8 +1,56 @@
-import React, { useState, useEffect } from 'react';
-import { ResponsiveContainer, LineChart, BarChart, PieChart, Pie, Cell, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ComposedChart, Area } from 'recharts';
+﻿import React, { useState, useEffect, useRef } from 'react';
+import { ResponsiveContainer, LineChart, AreaChart, BarChart, PieChart, Pie, Cell, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ComposedChart } from 'recharts';
 import { fetchWidgetData, controlRelay } from '../../services';
-import { WS_URL } from '../../config/api';
+import { API_BASE } from '../../config/api';
+import { useRealtime } from '../../context/RealtimeProvider';
 import '../../styles/dashboard-builder.css';
+
+// ── Hook helper: subscribe realtime data tu RealtimeProvider ──────────────
+function useDeviceRealtime(deviceId, dataKeys) {
+  const { lastEventAt, getDeviceLatest } = useRealtime();
+  const [latestValue, setLatestValue] = useState({});
+
+  useEffect(() => {
+    if (!deviceId || !lastEventAt) return;
+    const latest = getDeviceLatest(deviceId);
+    if (!latest) return;
+    const extracted = {};
+    for (const key of dataKeys) {
+      if (latest[key] !== undefined) {
+        const v = latest[key];
+        extracted[key] = typeof v === 'object' ? v.value : v;
+      }
+    }
+    setLatestValue((prev) => {
+      // Chi update neu co thay doi that su
+      let changed = false;
+      for (const k of Object.keys(extracted)) {
+        if (prev[k] !== extracted[k]) { changed = true; break; }
+      }
+      return changed ? extracted : prev;
+    });
+  }, [lastEventAt, deviceId]);
+
+  return latestValue;
+}
+
+// ── Helper: merge realtime latest values vao series hien tai ─────────────
+// Tra ve setDataMerged: cap nhat diem cuoi (hoac tao moi neu rong)
+// voi value moi nhat + ts tu RealtimeProvider.
+function makeRealtimeMerger(setData) {
+  return (latest) => {
+    if (!latest || Object.keys(latest).length === 0) return;
+    setData(prev => {
+      if (prev.length === 0) return prev; // doi polling load xong
+      const last = prev[prev.length - 1];
+      const merged = { ...last };
+      for (const [k, v] of Object.entries(latest)) {
+        if (v !== undefined) merged[k] = v;
+      }
+      return [...prev.slice(0, -1), merged];
+    });
+  };
+}
 
 const COLORS = ['#22d3ee', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
 
@@ -72,130 +120,12 @@ export function LineChartWidget({ widget, token, dashboardId }) {
     return () => clearInterval(interval);
   }, [widget.id, timeRange]);
 
-  // WebSocket for real-time updates
+  // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
+  const latest = useDeviceRealtime(deviceId, dataKeys);
   useEffect(() => {
-    if (!token || !deviceId || dataKeys.length === 0) return;
-
-    const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
-    const WS_URL = `${API_BASE.replace(/^http/i, 'ws')}/ws/events`;
-    
-    let ws = null;
-    let reconnectTimer = null;
-
-    const connect = () => {
-      try {
-        ws = new WebSocket(WS_URL);
-        
-        ws.onopen = () => {
-          console.log(`[LineChartWidget] WebSocket connected for ${deviceId}`);
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const newData = JSON.parse(event.data);
-            console.log('[LineChartWidget] WS received:', newData);
-            
-            if (newData.device_id === deviceId) {
-              // Extract all numeric values from the message
-              const extractedData = {};
-              Object.keys(newData).forEach(key => {
-                if (key !== 'device_id' && key !== 'timestamp' && newData[key] != null) {
-                  // Handle unwrapValue pattern: {value: number}
-                  if (typeof newData[key] === 'object' && 'value' in newData[key]) {
-                    extractedData[key] = newData[key].value;
-                  } else if (typeof newData[key] === 'number') {
-                    extractedData[key] = newData[key];
-                  } else {
-                    // Try to parse string numbers
-                    const parsed = parseFloat(newData[key]);
-                    if (!isNaN(parsed)) {
-                      extractedData[key] = parsed;
-                    }
-                  }
-                }
-              });
-              
-              // Use configured dataKeys if available, otherwise use all extracted keys
-              const keysToUse = dataKeys.length > 0 ? dataKeys : Object.keys(extractedData);
-              
-              // Update chart data in real-time
-              setData(prev => {
-                // Check if this timestamp already exists
-                const timestamp = newData.timestamp;
-                const existingIndex = prev.findIndex(item => item.timestampValue === timestamp);
-                
-                if (existingIndex >= 0) {
-                  // Update existing point
-                  const updated = [...prev];
-                  updated[existingIndex] = {
-                    ...updated[existingIndex],
-                    ...keysToUse.reduce((acc, key) => {
-                      if (extractedData[key] !== undefined) {
-                        acc[key] = extractedData[key];
-                      }
-                      return acc;
-                    }, {})
-                  };
-                  return updated;
-                } else {
-                  // Add new point (keep within time range)
-                  const newPoint = {
-                    timestamp: new Date(timestamp * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                    timestampValue: timestamp,
-                    ...keysToUse.reduce((acc, key) => {
-                      if (extractedData[key] !== undefined) {
-                        acc[key] = extractedData[key];
-                      }
-                      return acc;
-                    }, {})
-                  };
-                  
-                  // Add to end and keep only recent data (within time range)
-                  const updated = [...prev, newPoint]
-                    .sort((a, b) => a.timestampValue - b.timestampValue);
-                  
-                  // Remove old data points outside time range
-                  const now = Date.now() / 1000;
-                  const rangeHours = timeRange.endsWith('h') ? parseInt(timeRange) : (timeRange.endsWith('d') ? parseInt(timeRange) * 24 : 1);
-                  const cutoffTime = now - (rangeHours * 3600);
-                  
-                  return updated.filter(item => item.timestampValue >= cutoffTime);
-                }
-              });
-            }
-          } catch (err) {
-            console.error('[LineChartWidget] WebSocket parse error:', err);
-          }
-        };
-
-        ws.onerror = (err) => {
-          console.error('[LineChartWidget] WebSocket error:', err);
-        };
-
-        ws.onclose = () => {
-          console.log(`[LineChartWidget] WebSocket disconnected for ${deviceId}`);
-          ws = null;
-          // Reconnect after 3 seconds
-          reconnectTimer = setTimeout(connect, 3000);
-        };
-      } catch (err) {
-        console.error('[LineChartWidget] WebSocket connection error:', err);
-      }
-    };
-
-    connect();
-
-    return () => {
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (ws) {
-        try {
-          ws.close();
-        } catch (e) {
-          // Ignore
-        }
-      }
-    };
-  }, [token, deviceId, dataKeys, timeRange]);
+    if (!latest || Object.keys(latest).length === 0) return;
+    makeRealtimeMerger(setData)(latest);
+  }, [latest]);
 
   if (loading) {
     return (
@@ -244,6 +174,111 @@ export function LineChartWidget({ widget, token, dashboardId }) {
   );
 }
 
+export function AreaChartWidget({ widget, token, dashboardId }) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const deviceId = widget.cau_hinh?.device_id;
+  const dataKeys = widget.cau_hinh?.data_keys || [];
+  const timeRange = widget.cau_hinh?.time_range || '1h';
+
+  const loadData = async () => {
+    try {
+      const res = await fetchWidgetData(
+        dashboardId,
+        widget.id,
+        timeRange,
+        null,
+        token
+      );
+      const chartData = (res.data.data || [])
+        .map(item => ({
+          ...item,
+          timestamp: new Date(item.timestamp * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          timestampValue: item.timestamp // Keep original timestamp for sorting
+        }))
+        .sort((a, b) => a.timestampValue - b.timestampValue); // Ensure ascending order (oldest to newest)
+      setData(chartData);
+    } catch (err) {
+      console.error('Failed to load widget data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial load and periodic refresh
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, [widget.id, timeRange]);
+
+  // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
+  const latestArea = useDeviceRealtime(deviceId, dataKeys);
+  useEffect(() => {
+    if (!latestArea || Object.keys(latestArea).length === 0) return;
+    makeRealtimeMerger(setData)(latestArea);
+  }, [latestArea]);
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--bdu-muted)' }}>
+        Đang tải...
+      </div>
+    );
+  }
+
+  const colors = widget.cau_hinh?.colors || {};
+
+  return (
+    <div style={{ width: '100%', height: '100%', padding: '12px' }}>
+      {widget.ten_widget && (
+        <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px' }}>
+          {widget.ten_widget}
+        </h4>
+      )}
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data}>
+          <defs>
+            {dataKeys.map((key, idx) => {
+              const color = colors[key] || COLORS[idx % COLORS.length];
+              return (
+                <linearGradient key={key} id={`area-fill-${widget.id}-${key}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0.05} />
+                </linearGradient>
+              );
+            })}
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2a44" />
+          <XAxis
+            dataKey="timestamp"
+            stroke="#64748b"
+            tick={{ fontSize: 10 }}
+            type="category"
+            allowDuplicatedCategory={false}
+          />
+          <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
+          <Tooltip contentStyle={{ backgroundColor: 'var(--bdu-card)', border: '1px solid var(--bdu-card-border)', color: 'var(--bdu-text)' }} />
+          <Legend />
+          {dataKeys.map((key, idx) => {
+            const color = colors[key] || COLORS[idx % COLORS.length];
+            return (
+              <Area
+                key={key}
+                type="monotone"
+                dataKey={key}
+                stroke={color}
+                fill={`url(#area-fill-${widget.id}-${key})`}
+                strokeWidth={2}
+                name={key}
+              />
+            );
+          })}
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export function BarChartWidget({ widget, token, dashboardId }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -282,102 +317,12 @@ export function BarChartWidget({ widget, token, dashboardId }) {
     return () => clearInterval(interval);
   }, [widget.id, timeRange]);
 
-  // WebSocket for real-time updates
+  // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
+  const latest = useDeviceRealtime(deviceId, dataKeys);
   useEffect(() => {
-    if (!token || !deviceId || dataKeys.length === 0) return;
-
-    const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
-    const WS_URL = `${API_BASE.replace(/^http/i, 'ws')}/ws/events`;
-    
-    let ws = null;
-    let reconnectTimer = null;
-
-    const connect = () => {
-      try {
-        ws = new WebSocket(WS_URL);
-        
-        ws.onmessage = (event) => {
-          try {
-            const newData = JSON.parse(event.data);
-            console.log('[BarChartWidget] WS received:', newData);
-            
-            if (newData.device_id === deviceId) {
-              // Extract all numeric values
-              const extractedData = {};
-              Object.keys(newData).forEach(key => {
-                if (key !== 'device_id' && key !== 'timestamp' && newData[key] != null) {
-                  if (typeof newData[key] === 'object' && 'value' in newData[key]) {
-                    extractedData[key] = newData[key].value;
-                  } else if (typeof newData[key] === 'number') {
-                    extractedData[key] = newData[key];
-                  } else {
-                    const parsed = parseFloat(newData[key]);
-                    if (!isNaN(parsed)) extractedData[key] = parsed;
-                  }
-                }
-              });
-              
-              const keysToUse = dataKeys.length > 0 ? dataKeys : Object.keys(extractedData);
-              
-              setData(prev => {
-                const timestamp = newData.timestamp;
-                const existingIndex = prev.findIndex(item => item.timestampValue === timestamp);
-                
-                if (existingIndex >= 0) {
-                  const updated = [...prev];
-                  updated[existingIndex] = {
-                    ...updated[existingIndex],
-                    ...keysToUse.reduce((acc, key) => {
-                      if (extractedData[key] !== undefined) acc[key] = extractedData[key];
-                      return acc;
-                    }, {})
-                  };
-                  return updated;
-                } else {
-                  const newPoint = {
-                    timestamp: new Date(timestamp * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                    timestampValue: timestamp,
-                    ...keysToUse.reduce((acc, key) => {
-                      if (extractedData[key] !== undefined) acc[key] = extractedData[key];
-                      return acc;
-                    }, {})
-                  };
-                  
-                  const updated = [...prev, newPoint]
-                    .sort((a, b) => a.timestampValue - b.timestampValue);
-                  
-                  const now = Date.now() / 1000;
-                  const rangeHours = timeRange.endsWith('h') ? parseInt(timeRange) : (timeRange.endsWith('d') ? parseInt(timeRange) * 24 : 1);
-                  const cutoffTime = now - (rangeHours * 3600);
-                  
-                  return updated.filter(item => item.timestampValue >= cutoffTime);
-                }
-              });
-            }
-          } catch (err) {
-            console.error('[BarChartWidget] WebSocket parse error:', err);
-          }
-        };
-
-        ws.onclose = () => {
-          reconnectTimer = setTimeout(connect, 3000);
-        };
-      } catch (err) {
-        console.error('[BarChartWidget] WebSocket error:', err);
-      }
-    };
-
-    connect();
-
-    return () => {
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (ws) {
-        try {
-          ws.close();
-        } catch (e) {}
-      }
-    };
-  }, [token, deviceId, dataKeys, timeRange]);
+    if (!latest || Object.keys(latest).length === 0) return;
+    makeRealtimeMerger(setData)(latest);
+  }, [latest]);
 
   if (loading) {
     return (
@@ -451,64 +396,14 @@ export function GaugeWidget({ widget, token, dashboardId }) {
     return () => clearInterval(interval);
   }, [widget.id]);
 
-  // WebSocket for real-time updates
+  // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
+  const latest = useDeviceRealtime(deviceId, dataKey ? [dataKey] : []);
   useEffect(() => {
-    if (!token || !deviceId || !dataKey) return;
-
-    const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
-    const WS_URL = `${API_BASE.replace(/^http/i, 'ws')}/ws/events`;
-    
-    let ws = null;
-    let reconnectTimer = null;
-
-    const connect = () => {
-      try {
-        ws = new WebSocket(WS_URL);
-        
-        ws.onmessage = (event) => {
-          try {
-            const newData = JSON.parse(event.data);
-            console.log('[GaugeWidget] WS received:', newData);
-            
-            if (newData.device_id === deviceId) {
-              // Try to find the dataKey value in various formats
-              let rawValue = null;
-              if (newData[dataKey] !== undefined) {
-                rawValue = newData[dataKey];
-              } else {
-                // Search for the key in the object
-                const foundKey = Object.keys(newData).find(k => k.toLowerCase() === dataKey.toLowerCase());
-                if (foundKey) rawValue = newData[foundKey];
-              }
-              
-              if (rawValue != null) {
-                setData(unwrapValue(rawValue));
-              }
-            }
-          } catch (err) {
-            console.error('[GaugeWidget] WebSocket parse error:', err);
-          }
-        };
-
-        ws.onclose = () => {
-          reconnectTimer = setTimeout(connect, 3000);
-        };
-      } catch (err) {
-        console.error('[GaugeWidget] WebSocket error:', err);
-      }
-    };
-
-    connect();
-
-    return () => {
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (ws) {
-        try {
-          ws.close();
-        } catch (e) {}
-      }
-    };
-  }, [token, deviceId, dataKey]);
+    if (!latest || Object.keys(latest).length === 0) return;
+    if (dataKey && latest[dataKey] !== undefined) {
+      setData(unwrapValue(latest[dataKey]));
+    }
+  }, [latest]);
 
   if (loading) {
     return (
@@ -605,64 +500,13 @@ export function StatCardWidget({ widget, token, dashboardId }) {
     return () => clearInterval(interval);
   }, [widget.id]);
 
-  // WebSocket for real-time updates
+  // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
+  const latest = useDeviceRealtime(deviceId, dataKey ? [dataKey] : []);
   useEffect(() => {
-    if (!token || !deviceId || !dataKey) return;
-
-    const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
-    const WS_URL = `${API_BASE.replace(/^http/i, 'ws')}/ws/events`;
-    
-    let ws = null;
-    let reconnectTimer = null;
-
-    const connect = () => {
-      try {
-        ws = new WebSocket(WS_URL);
-        
-        ws.onmessage = (event) => {
-          try {
-            const newData = JSON.parse(event.data);
-            console.log('[StatCardWidget] WS received:', newData);
-            
-            if (newData.device_id === deviceId) {
-              // Try to find the dataKey value in various formats
-              let rawValue = null;
-              if (newData[dataKey] !== undefined) {
-                rawValue = newData[dataKey];
-              } else {
-                // Search for the key in the object
-                const foundKey = Object.keys(newData).find(k => k.toLowerCase() === dataKey.toLowerCase());
-                if (foundKey) rawValue = newData[foundKey];
-              }
-              
-              if (rawValue != null) {
-                setData(unwrapValue(rawValue));
-              }
-            }
-          } catch (err) {
-            console.error('[StatCardWidget] WebSocket parse error:', err);
-          }
-        };
-
-        ws.onclose = () => {
-          reconnectTimer = setTimeout(connect, 3000);
-        };
-      } catch (err) {
-        console.error('[StatCardWidget] WebSocket error:', err);
-      }
-    };
-
-    connect();
-
-    return () => {
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (ws) {
-        try {
-          ws.close();
-        } catch (e) {}
-      }
-    };
-  }, [token, deviceId, dataKey]);
+    if (!latest || dataKey === undefined) return;
+    const v = latest[dataKey];
+    if (v !== undefined) setData(unwrapValue(v));
+  }, [latest]);
 
   if (loading) {
     return (
@@ -695,95 +539,12 @@ export function StatCardWidget({ widget, token, dashboardId }) {
   );
 }
 
-export function TableWidget({ widget, token, dashboardId }) {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const res = await fetchWidgetData(
-        dashboardId,
-        widget.id,
-        widget.cau_hinh?.time_range || '1h',
-        null,
-        token
-      );
-      const tableData = (res.data.data || []).slice(-10).reverse().map(item => ({
-        ...item,
-        timestamp: new Date(item.timestamp * 1000).toLocaleString('vi-VN')
-      }));
-      setData(tableData);
-    } catch (err) {
-      console.error('Failed to load widget data:', err);
-      setData([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
-  }, [widget.id, widget.cau_hinh?.time_range]);
-
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--bdu-muted)' }}>
-        Đang tải...
-      </div>
-    );
-  }
-
-  const dataKeys = widget.cau_hinh?.data_keys || [];
-
-  return (
-    <div style={{ width: '100%', height: '100%', padding: '12px', overflow: 'auto' }}>
-      {widget.ten_widget && (
-        <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px' }}>
-          {widget.ten_widget}
-        </h4>
-      )}
-      <table style={{ width: '100%', fontSize: '12px', color: 'var(--bdu-text)', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid #1f2a44' }}>
-            <th style={{ padding: '8px', textAlign: 'left', color: 'var(--bdu-muted)', fontWeight: '600' }}>Thời gian</th>
-            {dataKeys.map(key => (
-              <th key={key} style={{ padding: '8px', textAlign: 'left', color: 'var(--bdu-muted)', fontWeight: '600' }}>
-                {key}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.length === 0 ? (
-            <tr>
-              <td colSpan={dataKeys.length + 1} style={{ padding: '20px', textAlign: 'center', color: 'var(--bdu-muted)' }}>
-                Chưa có dữ liệu
-              </td>
-            </tr>
-          ) : (
-            data.map((row, idx) => (
-              <tr key={idx} style={{ borderBottom: '1px solid #1f2a44' }}>
-                <td style={{ padding: '8px' }}>{row.timestamp}</td>
-                {dataKeys.map(key => (
-                  <td key={key} style={{ padding: '8px' }}>
-                    {row[key]?.toFixed ? row[key].toFixed(2) : row[key] || '--'}
-                  </td>
-                ))}
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 export function PieChartWidget({ widget, token, dashboardId }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const pieLimit = widget.cau_hinh?.pie_limit || 5;
+  const dataKeys = widget.cau_hinh?.data_keys || [];
+  const useCategory = widget.cau_hinh?.pie_category === true;
 
   const loadData = async () => {
     try {
@@ -794,18 +555,43 @@ export function PieChartWidget({ widget, token, dashboardId }) {
         null,
         token
       );
-      // Aggregate data for pie chart
-      const chartData = (res.data.data || []).reduce((acc, item) => {
-        const key = widget.cau_hinh?.data_keys?.[0];
-        if (key && item[key]) {
-          const value = parseFloat(item[key]);
-          if (!isNaN(value)) {
-            acc.push({ name: new Date(item.timestamp * 1000).toLocaleTimeString('vi-VN'), value });
+
+      if (useCategory && dataKeys.length > 0) {
+        // Mode 1: Pie chart by data keys (sum values of each key)
+        const totals = {};
+        dataKeys.forEach(key => { totals[key] = 0; });
+        (res.data.data || []).forEach(item => {
+          dataKeys.forEach(key => {
+            const val = parseFloat(item[key]);
+            if (!isNaN(val)) {
+              totals[key] = (totals[key] || 0) + val;
+            }
+          });
+        });
+        const labels = (widget.cau_hinh?.labels || '').split(';').filter(Boolean);
+        const chartData = dataKeys.map((key, i) => ({
+          name: labels[i] || key,
+          value: totals[key] || 0
+        })).filter(d => d.value > 0);
+        setData(chartData);
+      } else {
+        // Mode 2: Pie chart by time slices (last N values)
+        const chartData = (res.data.data || []).reduce((acc, item) => {
+          // Use first data_key for value
+          const key = dataKeys[0];
+          if (key && item[key] !== undefined) {
+            const value = parseFloat(item[key]);
+            if (!isNaN(value)) {
+              acc.push({
+                name: new Date(item.timestamp * 1000).toLocaleTimeString('vi-VN'),
+                value
+              });
+            }
           }
-        }
-        return acc;
-      }, []).slice(-5); // Last 5 values
-      setData(chartData);
+          return acc;
+        }, []).slice(-pieLimit);
+        setData(chartData);
+      }
     } catch (err) {
       console.error('Failed to load widget data:', err);
     } finally {
@@ -817,7 +603,7 @@ export function PieChartWidget({ widget, token, dashboardId }) {
     loadData();
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
-  }, [widget.id, widget.cau_hinh?.time_range]);
+  }, [widget.id, widget.cau_hinh?.time_range, widget.cau_hinh?.pie_category, pieLimit]);
 
   if (loading) {
     return (
@@ -827,6 +613,22 @@ export function PieChartWidget({ widget, token, dashboardId }) {
     );
   }
 
+  if (data.length === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--bdu-muted)', fontSize: '12px' }}>
+        Chưa có dữ liệu
+      </div>
+    );
+  }
+
+  // Build legend items from dataKeys with labels
+  const labels = (widget.cau_hinh?.labels || '').split(';').filter(Boolean);
+  const legendItems = dataKeys.map((key, i) => ({
+    key,
+    label: labels[i] || key,
+    color: COLORS[i % COLORS.length]
+  }));
+
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px' }}>
       {widget.ten_widget && (
@@ -834,7 +636,7 @@ export function PieChartWidget({ widget, token, dashboardId }) {
           {widget.ten_widget}
         </h4>
       )}
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="85%">
         <PieChart>
           <Pie
             data={data}
@@ -842,7 +644,7 @@ export function PieChartWidget({ widget, token, dashboardId }) {
             cy="50%"
             labelLine={false}
             label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-            outerRadius={80}
+            outerRadius={60}
             fill="#8884d8"
             dataKey="value"
           >
@@ -853,11 +655,147 @@ export function PieChartWidget({ widget, token, dashboardId }) {
           <Tooltip contentStyle={{ backgroundColor: 'var(--bdu-card)', border: '1px solid var(--bdu-card-border)', color: 'var(--bdu-text)' }} />
         </PieChart>
       </ResponsiveContainer>
+      {/* Custom color legend below chart */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', padding: '4px 0' }}>
+        {legendItems.map((item, index) => (
+          <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{
+              width: '10px',
+              height: '10px',
+              borderRadius: '2px',
+              backgroundColor: item.color
+            }} />
+            <span style={{ fontSize: '10px', color: 'var(--bdu-muted)' }}>{item.label}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-export default function WidgetRenderer({ widget, token, dashboardId }) {
+// ---- ScadaSymbolWidget ----
+function ScadaSymbolWidget({ widget, token, dashboardId }) {
+  const [value, setValue] = useState(null);
+  const deviceId = widget.cau_hinh?.device_id;
+  const dataKey = widget.cau_hinh?.data_key || 'state';
+  const symbolType = widget.cau_hinh?.symbol_type || 'light';
+
+  const loadData = async () => {
+    try {
+      const res = await fetchWidgetData(dashboardId, widget.id, '1h', null, token);
+      const latest = res.data.data?.[res.data.data.length - 1];
+      if (latest && latest[dataKey] !== undefined) {
+        setValue(unwrapValue(latest[dataKey]));
+      }
+    } catch (err) {
+      console.error('Failed to load scada symbol data:', err);
+    }
+  };
+
+  useEffect(() => { loadData(); }, [widget.id]);
+
+  const latest = useDeviceRealtime(deviceId, dataKey ? [dataKey] : []);
+  useEffect(() => {
+    if (!latest || Object.keys(latest).length === 0) return;
+    if (dataKey && latest[dataKey] !== undefined) {
+      setValue(unwrapValue(latest[dataKey]));
+    }
+  }, [latest]);
+
+  const isOn = value === 1 || value === '1' || value === true || value === 'ON';
+
+  const handleClick = async () => {
+    if (symbolType === 'sensor') return;
+    const cmd = isOn ? '0' : '1';
+    try {
+      await fetch(`/api/devices/${deviceId}/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ command: cmd, pin: dataKey }),
+      });
+    } catch (err) {
+      console.error('Failed to send command:', err);
+    }
+  };
+
+  const iconColor = symbolType === 'sensor' ? '#38bdf8' : (isOn ? '#22c55e' : '#475569');
+  const label = widget.cau_hinh?.label || dataKey;
+
+  const renderSymbol = () => {
+    switch (symbolType) {
+      case 'light':
+        return (
+          <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke={iconColor} strokeWidth="1.5">
+            <path d="M9 18h6M10 22h4M12 2a7 7 0 0 1 4 12.9V17H8v-2.1A7 7 0 0 1 12 2z"
+              fill={isOn ? '#facc15' : 'none'} opacity={isOn ? 0.3 : 1}/>
+            {isOn && <path d="M9 18h6M10 22h4M12 2a7 7 0 0 1 4 12.9V17H8v-2.1A7 7 0 0 1 12 2z" stroke="#facc15"/>}
+          </svg>
+        );
+      case 'ac':
+        return (
+          <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke={iconColor} strokeWidth="1.5">
+            <rect x="3" y="5" width="18" height="12" rx="2"/>
+            <path d="M6 11h3M10 11h3M14 11h2" strokeLinecap="round"/>
+            <path d="M3 9h18" strokeLinecap="round" opacity="0.5"/>
+            {value !== null && (
+              <text x="12" y="20" textAnchor="middle" fontSize="5" fill={iconColor} fontFamily="monospace">{value}°</text>
+            )}
+          </svg>
+        );
+      case 'sensor':
+      default:
+        return (
+          <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke={iconColor} strokeWidth="1.5">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="2" x2="12" y2="5"/>
+            <line x1="12" y1="19" x2="12" y2="22"/>
+            <line x1="2" y1="12" x2="5" y2="12"/>
+            <line x1="19" y1="12" x2="22" y2="12"/>
+            <line x1="4.9" y1="4.9" x2="7" y2="7"/>
+            <line x1="17" y1="17" x2="19.1" y2="19.1"/>
+            <line x1="4.9" y1="19.1" x2="7" y2="17"/>
+            <line x1="17" y1="7" x2="19.1" y2="4.9"/>
+          </svg>
+        );
+    }
+  };
+
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      height: '100%', cursor: symbolType === 'sensor' ? 'default' : 'pointer',
+    }} onClick={handleClick}>
+      {widget.ten_widget && (
+        <div style={{ color: 'var(--bdu-text)', fontSize: '12px', marginBottom: '8px', textAlign: 'center' }}>
+          {widget.ten_widget}
+        </div>
+      )}
+      {renderSymbol()}
+      <div style={{ color: iconColor, fontSize: '11px', marginTop: '6px', fontFamily: 'monospace' }}>
+        {value !== null ? String(value) : '—'}
+      </div>
+      <div style={{ color: 'var(--bdu-muted)', fontSize: '10px', marginTop: '2px' }}>{label}</div>
+    </div>
+  );
+}
+
+export default function WidgetRenderer({ widget, token, dashboardId, isPreview }) {
+  // Preview mode (build/edit): khong fetch, khong realtime, render placeholder
+  if (isPreview) {
+    return (
+      <div style={{
+        width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', color: 'var(--bdu-muted)',
+        fontSize: '11px', textAlign: 'center', padding: '8px'
+      }}>
+        <div style={{ fontSize: '10px', color: 'var(--bdu-cyan)', marginBottom: '4px', fontWeight: 600 }}>
+          {widget.widget_type}
+        </div>
+        <div style={{ opacity: 0.6 }}>Preview</div>
+      </div>
+    );
+  }
+
   const renderWidget = () => {
     const style = {
       width: '100%',
@@ -870,14 +808,16 @@ export default function WidgetRenderer({ widget, token, dashboardId }) {
       // Existing widgets
       case 'line_chart':
         return <div style={style} className="db-widget-wrap"><LineChartWidget widget={widget} token={token} dashboardId={dashboardId} /></div>;
+      case 'area_chart':
+        return <div style={style} className="db-widget-wrap"><AreaChartWidget widget={widget} token={token} dashboardId={dashboardId} /></div>;
       case 'bar_chart':
         return <div style={style} className="db-widget-wrap"><BarChartWidget widget={widget} token={token} dashboardId={dashboardId} /></div>;
       case 'gauge':
         return <div style={style} className="db-widget-wrap"><GaugeWidget widget={widget} token={token} dashboardId={dashboardId} /></div>;
       case 'stat_card':
         return <div style={style} className="db-widget-wrap"><StatCardWidget widget={widget} token={token} dashboardId={dashboardId} /></div>;
-      case 'table':
-        return <div style={style} className="db-widget-wrap"><TableWidget widget={widget} token={token} dashboardId={dashboardId} /></div>;
+      case 'scada_symbol':
+        return <div style={style} className="db-widget-wrap"><ScadaSymbolWidget widget={widget} token={token} dashboardId={dashboardId} /></div>;
       case 'pie_chart':
         return <div style={style} className="db-widget-wrap"><PieChartWidget widget={widget} token={token} dashboardId={dashboardId} /></div>;
       case 'scatter_plot':
@@ -1266,6 +1206,7 @@ export function RelayButtonWidget({ widget, token, dashboardId }) {
 export function JoystickWidget({ widget, token, dashboardId }) {
   const [position, setPosition] = useState({ x: 50, y: 50 });
   const [isDragging, setIsDragging] = useState(false);
+  const containerRef = useRef(null);
   const deviceId = widget.cau_hinh?.device_id;
   const xDataKey = widget.cau_hinh?.x_datakey || 'joystick_x';
   const yDataKey = widget.cau_hinh?.y_datakey || 'joystick_y';
@@ -1276,7 +1217,8 @@ export function JoystickWidget({ widget, token, dashboardId }) {
   };
 
   const updatePosition = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
     const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
     setPosition({ x, y });
@@ -1293,7 +1235,7 @@ export function JoystickWidget({ widget, token, dashboardId }) {
     // Gửi giá trị về server nếu có device_id
     if (deviceId) {
       try {
-        await fetch(`${process.env.REACT_APP_API_BASE || 'http://localhost:8000'}/api/device/${deviceId}/control`, {
+        await fetch(`${API_BASE}/api/device/${deviceId}/control`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ [xDataKey]: position.x, [yDataKey]: position.y })
@@ -1319,6 +1261,7 @@ export function JoystickWidget({ widget, token, dashboardId }) {
     <div style={{ width: '100%', height: '100%', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 8px 0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
       <div
+        ref={containerRef}
         onMouseDown={handleMouseDown}
         style={{
           width: '100%',
@@ -1381,7 +1324,7 @@ export function RGBControlWidget({ widget, token, dashboardId }) {
     setColor(newColor);
     if (deviceId) {
       try {
-        await fetch(`${process.env.REACT_APP_API_BASE || 'http://localhost:8000'}/api/device/${deviceId}/control`, {
+        await fetch(`${API_BASE}/api/device/${deviceId}/control`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ [colorDataKey]: `${newColor.r},${newColor.g},${newColor.b}`, [brightnessDataKey]: brightness })
@@ -1396,7 +1339,7 @@ export function RGBControlWidget({ widget, token, dashboardId }) {
     setBrightness(newBrightness);
     if (deviceId) {
       try {
-        await fetch(`${process.env.REACT_APP_API_BASE || 'http://localhost:8000'}/api/device/${deviceId}/control`, {
+        await fetch(`${API_BASE}/api/device/${deviceId}/control`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ [brightnessDataKey]: newBrightness })
@@ -1778,17 +1721,231 @@ export function GradientRampWidget({ widget, token, dashboardId }) {
 // ---- VideoStreamWidget ----
 export function VideoStreamWidget({ widget, token, dashboardId }) {
   const [error, setError] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamError, setStreamError] = useState(null);
+  // Use ref for fullStreamId to avoid closure issues with React StrictMode
+  const fullStreamIdRef = useRef(null); // Backend returns full stream_id with prefix
+  const sourceType = widget.cau_hinh?.source_type || 'ip_camera';
   const streamUrl = widget.cau_hinh?.stream_url || '';
+  const cameraId = widget.cau_hinh?.camera_id || '';
+  const clientDeviceId = widget.cau_hinh?.client_device_id || '';
   const autoplay = widget.cau_hinh?.autoplay !== false;
   const muted = widget.cau_hinh?.muted !== false;
+  const isWebcam = sourceType === 'webcam';
+  const isClientWebcam = isWebcam && !!clientDeviceId;
 
-  if (!streamUrl) {
+  // Generate a unique stream ID for client webcam based on widget
+  const getClientStreamId = () => {
+    if (!isClientWebcam) return null;
+    return `widget_${widget.id || widget.widget_id || 'unknown'}`;
+  };
+
+  const clientStreamId = getClientStreamId();
+
+  // Build stream URL based on source type
+  const getStreamUrl = () => {
+    if (isClientWebcam && clientStreamId) {
+      return `/api/webcam/client/${clientStreamId}/stream`;
+    }
+    if (isWebcam && cameraId) {
+      return `/api/webcam/${cameraId}/stream`;
+    }
+    return streamUrl;
+  };
+
+  const activeStreamUrl = getStreamUrl();
+
+  // Check if configured
+  const isConfigured = isClientWebcam ? !!clientDeviceId : (isWebcam ? !!cameraId : !!streamUrl);
+
+  // Refs for video element and media stream
+  const videoRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const captureIntervalRef = useRef(null);
+
+  // Register and start streaming for client webcam
+  useEffect(() => {
+    if (!isClientWebcam || !clientStreamId || !token) return;
+
+    let ignore = false;
+
+    const startStreaming = async () => {
+      console.log('[Webcam] Starting stream, clientDeviceId:', clientDeviceId, 'streamId:', clientStreamId);
+      try {
+        // Request camera access
+        console.log('[Webcam] Requesting camera access...');
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: clientDeviceId ? { exact: clientDeviceId } : undefined,
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          }
+        });
+        console.log('[Webcam] Camera access granted!');
+
+        mediaStreamRef.current = stream;
+
+        // Attach stream to video element
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+
+        // Register stream with backend
+        console.log('[Webcam] Registering with backend...');
+        const registerRes = await fetch(`${API_BASE}/webcam/client/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            stream_id: clientStreamId,
+            device_label: 'Browser Camera'
+          })
+        });
+
+        console.log('[Webcam] Register response status:', registerRes.status);
+
+        // Parse response - handle both success and "already exists" case
+        let data;
+        try {
+          data = await registerRes.json();
+        } catch (e) {
+          // Non-JSON response
+          if (!registerRes.ok) {
+            const text = await registerRes.text();
+            console.error('[Webcam] Register failed:', text);
+            throw new Error('register_failed: ' + text);
+          }
+          throw new Error('Invalid JSON response');
+        }
+
+        // Handle 409 Conflict - stream already exists, use existing stream_id
+        if (registerRes.status === 409) {
+          console.log('[Webcam] Stream already exists, using existing stream_id:', data.stream_id);
+          fullStreamIdRef.current = data.stream_id;
+        } else if (!registerRes.ok) {
+          console.error('[Webcam] Register failed:', data.detail || data);
+          throw new Error('register_failed: ' + JSON.stringify(data));
+        } else {
+          console.log('[Webcam] Full stream_id from backend:', data.stream_id);
+          fullStreamIdRef.current = data.stream_id;
+        }
+
+        if (ignore) return;
+        setIsStreaming(true);
+        setStreamError(null);
+        console.log('[Webcam] Streaming started successfully!');
+
+        // Start capturing frames at regular intervals
+        captureIntervalRef.current = setInterval(() => {
+          captureAndPushFrame();
+        }, 100); // ~10 FPS
+
+      } catch (err) {
+        console.error('[Webcam] Streaming error:', err);
+        let errorMsg = 'Không thể truy cập camera. Vui lòng cho phép truy cập camera.';
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          errorMsg = 'Camera bị từ chối. Vui lòng cho phép truy cập camera trong trình duyệt.';
+        } else if (err.name === 'NotFoundError') {
+          errorMsg = 'Không tìm thấy camera. Vui lòng kết nối camera.';
+        } else if (err.name === 'NotReadableError') {
+          errorMsg = 'Camera đang được sử dụng bởi ứng dụng khác.';
+        } else if (err.message?.includes('register')) {
+          errorMsg = 'Không thể kết nối server. Vui lòng kiểm tra kết nối.';
+        }
+        setStreamError(errorMsg);
+        cleanup();
+      }
+    };
+
+    const captureAndPushFrame = async () => {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) {
+        return;
+      }
+      const streamId = fullStreamIdRef.current || clientStreamId;
+      console.log('[Webcam] Capturing frame, streamId:', streamId);
+
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+
+        canvas.toBlob(async (blob) => {
+          if (!blob) return;
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64 = reader.result.split(',')[1];
+            try {
+              const res = await fetch(`${API_BASE}/webcam/client/push`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  stream_id: streamId,
+                  frame_data: base64
+                })
+              });
+              if (!res.ok) {
+                console.warn('[Webcam] Push failed:', res.status);
+              }
+            } catch (e) {
+              // Silent fail
+            }
+          };
+          reader.readAsDataURL(blob);
+        }, 'image/jpeg', 0.8);
+      } catch (e) {
+        // Silent fail
+      }
+    };
+
+    const cleanup = async () => {
+      console.log('[Webcam] Cleaning up...');
+      if (captureIntervalRef.current) {
+        clearInterval(captureIntervalRef.current);
+        captureIntervalRef.current = null;
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(t => t.stop());
+        mediaStreamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      setIsStreaming(false);
+      console.log('[Webcam] Cleanup done.');
+    };
+
+    startStreaming();
+
+    return () => {
+      ignore = true; // Mark as ignored for async operations
+      cleanup();
+      // Unregister stream - use ref for closure safety
+      const streamIdToDelete = fullStreamIdRef.current || clientStreamId;
+      if (streamIdToDelete && token) {
+        console.log('[Webcam] Unregistering stream:', streamIdToDelete);
+        fetch(`${API_BASE}/webcam/client/${streamIdToDelete}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).catch(() => {});
+      }
+    };
+  }, [isClientWebcam, clientStreamId, clientDeviceId, token]);
+
+  if (!isConfigured) {
     return (
       <div style={{ width: '100%', height: '100%', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 8px 0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
         <div style={{ color: 'var(--bdu-muted)', fontSize: '12px', textAlign: 'center' }}>
           <div style={{ fontSize: '32px', marginBottom: '8px' }}>📹</div>
-          Chưa cấu hình URL stream
+          {isWebcam ? 'Chưa chọn camera' : 'Chưa cấu hình URL stream'}
         </div>
       </div>
     );
@@ -1797,29 +1954,93 @@ export function VideoStreamWidget({ widget, token, dashboardId }) {
   return (
     <div style={{ width: '100%', height: '100%', padding: '8px', display: 'flex', flexDirection: 'column' }}>
       {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 4px 0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
+      {/* Hidden video element for capturing frames */}
+      {isClientWebcam && (
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          style={{ display: 'none' }}
+        />
+      )}
       <div style={{ flex: 1, position: 'relative', borderRadius: '8px', overflow: 'hidden', background: '#000' }}>
-        {streamUrl.toLowerCase().includes('.m3u8') ? (
+        {isClientWebcam ? (
+          // Client webcam: show local video + fetch from backend stream for others
+          <>
+            {isStreaming && (
+              <div style={{
+                position: 'absolute',
+                top: '8px',
+                left: '8px',
+                background: 'rgba(34, 197, 94, 0.9)',
+                color: 'white',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                fontSize: '10px',
+                zIndex: 10
+              }}>
+                LIVE
+              </div>
+            )}
+            {streamError ? (
+              <div style={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ef4444',
+                fontSize: '12px',
+                textAlign: 'center',
+                padding: '12px'
+              }}>
+                {streamError}
+              </div>
+            ) : (
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {/* Local preview */}
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              </div>
+            )}
+          </>
+        ) : isWebcam && cameraId ? (
+          // Server-side webcam
+          <img
+            key={`webcam-${cameraId}`}
+            src={activeStreamUrl}
+            alt="Webcam Stream"
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            onError={() => setError(true)}
+          />
+        ) : activeStreamUrl.toLowerCase().includes('.m3u8') ? (
           <video
-            key={streamUrl}
+            key={activeStreamUrl}
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             autoPlay={autoplay}
             muted={muted}
             controls
             onError={() => setError(true)}
           >
-            <source src={streamUrl} type="application/x-mpegURL" />
+            <source src={activeStreamUrl} type="application/x-mpegURL" />
           </video>
-        ) : streamUrl.toLowerCase().includes('.jpg') || streamUrl.toLowerCase().includes('.jpeg') || streamUrl.toLowerCase().includes('.png') ? (
+        ) : activeStreamUrl.toLowerCase().includes('.jpg') || activeStreamUrl.toLowerCase().includes('.jpeg') || activeStreamUrl.toLowerCase().includes('.png') ? (
           <img
-            src={streamUrl}
+            src={activeStreamUrl}
             alt="Stream"
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             onError={() => setError(true)}
           />
         ) : (
           <img
-            key={streamUrl + Date.now()}
-            src={`${streamUrl}?t=${Date.now()}`}
+            key={activeStreamUrl + Date.now()}
+            src={`${activeStreamUrl}?t=${Date.now()}`}
             alt="MJPEG Stream"
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             onError={() => setError(true)}
@@ -1839,7 +2060,7 @@ export function VideoStreamWidget({ widget, token, dashboardId }) {
             color: '#ef4444',
             fontSize: '12px'
           }}>
-            Không thể kết nối stream
+            Khong the ket noi stream
           </div>
         )}
       </div>
@@ -2055,7 +2276,7 @@ export function DropdownMenuWidget({ widget, token, dashboardId }) {
     setIsOpen(false);
     if (deviceId) {
       try {
-        await fetch(`${process.env.REACT_APP_API_BASE || 'http://localhost:8000'}/api/device/${deviceId}/control`, {
+        await fetch(`${API_BASE}/api/device/${deviceId}/control`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ [dataKey]: option })
@@ -2139,7 +2360,7 @@ export function TextInputWidget({ widget, token, dashboardId }) {
     if (!value.trim() || !deviceId || sending) return;
     setSending(true);
     try {
-      await fetch(`${process.env.REACT_APP_API_BASE || 'http://localhost:8000'}/api/device/${deviceId}/control`, {
+      await fetch(`${API_BASE}/api/device/${deviceId}/control`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ [dataKey]: value.trim() })
@@ -2211,7 +2432,7 @@ export function NumericInputWidget({ widget, token, dashboardId }) {
     if (!deviceId || sending) return;
     setSending(true);
     try {
-      await fetch(`${process.env.REACT_APP_API_BASE || 'http://localhost:8000'}/api/device/${deviceId}/control`, {
+      await fetch(`${API_BASE}/api/device/${deviceId}/control`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ [dataKey]: value })
@@ -2296,7 +2517,7 @@ export function SegmentedSwitchWidget({ widget, token, dashboardId }) {
     setSelectedIndex(index);
     if (deviceId) {
       try {
-        await fetch(`${process.env.REACT_APP_API_BASE || 'http://localhost:8000'}/api/device/${deviceId}/control`, {
+        await fetch(`${API_BASE}/api/device/${deviceId}/control`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ [dataKey]: segments[index] })

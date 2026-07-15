@@ -1,10 +1,56 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import WidgetPreview from './WidgetPreview';
 import '../../styles/dashboard-builder.css';
 
-const CELL_SIZE = 40; // 40px per cell
-const GRID_COLS = 24; // 24 columns for more precision
-const GRID_ROWS = 50; // 50 rows for more vertical space
+const CELL_SIZE = 40;
+const GRID_COLS = 24;
+const GRID_ROWS = 50;
+
+const CanvasWidget = React.memo(function CanvasWidget({
+  widget, size, pos, isSelected, isBeingDragged, dragPixelRef,
+  onPreviewSelect, onWidgetDelete, onCanvasWidgetClick,
+  onCanvasWidgetMouseDown, onResizeStart, token, dashboardId,
+}) {
+  const style = useMemo(() => {
+    if (isBeingDragged) {
+      return {
+        position: 'absolute', left: 0, top: 0, zIndex: 1000, willChange: 'transform',
+        transform: 'translate(' + dragPixelRef.current.x + 'px, ' + dragPixelRef.current.y + 'px)',
+      };
+    }
+    return { left: pos.x, top: pos.y };
+  }, [isBeingDragged, pos.x, pos.y, dragPixelRef]);
+
+  return (
+    <div
+      className={'db-canvas-widget' + (isSelected ? ' selected' : '') + (isBeingDragged ? ' dragging' : '')}
+      style={{
+        ...style,
+        width: size.width,
+        height: size.height,
+        transition: isBeingDragged ? 'none' : 'box-shadow 0.2s',
+      }}
+      onMouseDown={(e) => onCanvasWidgetMouseDown(e, widget.id)}
+      onClick={(e) => onCanvasWidgetClick(e, widget.id)}
+    >
+      <WidgetPreview
+        widget={widget}
+        onSelect={onPreviewSelect}
+        onDelete={onWidgetDelete}
+        token={token}
+        dashboardId={dashboardId}
+        isPreview={true}
+      />
+      {isSelected && ['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'].map((h) => (
+        <div
+          key={h}
+          onMouseDown={(e) => onResizeStart(e, h)}
+          className={'db-resize-handle ' + h}
+        />
+      ))}
+    </div>
+  );
+});
 
 export default function Canvas({ widgets, onLayoutChange, onWidgetSelect, onWidgetDelete, token, dashboardId }) {
   const canvasRef = useRef(null);
@@ -15,57 +61,87 @@ export default function Canvas({ widgets, onLayoutChange, onWidgetSelect, onWidg
   const [resizeHandle, setResizeHandle] = useState(null);
   const [showGrid, setShowGrid] = useState(true);
   const [localWidgets, setLocalWidgets] = useState(widgets);
+  const [, setDragTick] = useState(0);
 
-  // Sync with props
+  const draggingWidgetIdRef = useRef(null);
+  const dragStartGridRef = useRef(null);
+  const dragPixelRef = useRef({ x: 0, y: 0 });
+  const rafRef = useRef(null);
+
   useEffect(() => {
     setLocalWidgets(widgets);
   }, [widgets]);
 
-  // Convert grid position to pixels
-  const gridToPixels = (gridX, gridY) => ({
-    x: gridX * CELL_SIZE,
-    y: gridY * CELL_SIZE
-  });
+  const gridToPixels = (gridX, gridY) => ({ x: gridX * CELL_SIZE, y: gridY * CELL_SIZE });
 
-  // Convert pixels to grid position (snapped)
   const pixelsToGrid = (pixelX, pixelY) => ({
     x: Math.max(0, Math.min(GRID_COLS - 1, Math.round(pixelX / CELL_SIZE))),
     y: Math.max(0, Math.min(GRID_ROWS - 1, Math.round(pixelY / CELL_SIZE)))
   });
 
-  // Handle widget selection
-  const handleWidgetClick = (e, widgetId) => {
+  // Stable refs cho parent callbacks (memo-friendly)
+  const onWidgetSelectRef = useRef(onWidgetSelect);
+  const onLayoutChangeRef = useRef(onLayoutChange);
+  const onWidgetDeleteRef = useRef(onWidgetDelete);
+  useEffect(() => { onWidgetSelectRef.current = onWidgetSelect; }, [onWidgetSelect]);
+  useEffect(() => { onLayoutChangeRef.current = onLayoutChange; }, [onLayoutChange]);
+  useEffect(() => { onWidgetDeleteRef.current = onWidgetDelete; }, [onWidgetDelete]);
+
+  const handleCanvasClick = useCallback(() => {
+    setSelectedId(null);
+    if (onWidgetSelectRef.current) onWidgetSelectRef.current(null);
+  }, []);
+
+  const handlePreviewSelect = useCallback((w) => {
+    setSelectedId(w.id);
+    if (onWidgetSelectRef.current) onWidgetSelectRef.current(w);
+  }, []);
+
+  const handleWidgetClick = useCallback((e, widgetId) => {
     e.stopPropagation();
     setSelectedId(widgetId);
-    onWidgetSelect(localWidgets.find(w => w.id === widgetId));
-  };
+    if (onWidgetSelectRef.current) {
+      onWidgetSelectRef.current(localWidgets.find(w => w.id === widgetId));
+    }
+  }, [localWidgets]);
 
-  // Handle canvas click (deselect)
-  const handleCanvasClick = () => {
-    setSelectedId(null);
-    onWidgetSelect(null);
-  };
-
-  // Handle drag start
-  const handleDragStart = (e, widgetId) => {
+  const handleDragStart = useCallback((e, widgetId) => {
     e.stopPropagation();
+    e.preventDefault();
+    document.body.style.userSelect = 'none';
+
     const widget = localWidgets.find(w => w.id === widgetId);
     if (!widget) return;
-
     const rect = canvasRef.current.getBoundingClientRect();
     const widgetPos = gridToPixels(widget.vi_tri_x, widget.vi_tri_y);
-
+    draggingWidgetIdRef.current = widgetId;
+    dragStartGridRef.current = { x: widget.vi_tri_x, y: widget.vi_tri_y };
     setIsDragging(true);
     setSelectedId(widgetId);
     setDragOffset({
       x: e.clientX - rect.left - widgetPos.x,
       y: e.clientY - rect.top - widgetPos.y
     });
-  };
+    dragPixelRef.current = { x: widgetPos.x, y: widgetPos.y };
+  }, [localWidgets]);
 
-  // Handle mouse move for dragging/resizing
+  const handleResizeStart = useCallback((e, handle) => {
+    e.stopPropagation();
+    setIsResizing(true);
+    setResizeHandle(handle);
+  }, []);
+
+  // Drag/resize handlers — requestAnimationFrame throttle mousemove
   useEffect(() => {
     if (!isDragging && !isResizing) return;
+
+    const scheduleUpdate = () => {
+      if (rafRef.current !== null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        setDragTick(c => c + 1);
+      });
+    };
 
     const handleMouseMove = (e) => {
       if (!canvasRef.current) return;
@@ -73,31 +149,16 @@ export default function Canvas({ widgets, onLayoutChange, onWidgetSelect, onWidg
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      if (isDragging) {
-        const widget = localWidgets.find(w => w.id === selectedId);
-        if (!widget) return;
-
-        const newGridPos = pixelsToGrid(mouseX - dragOffset.x, mouseY - dragOffset.y);
-        const maxX = GRID_COLS - widget.chieu_rong;
-        const maxY = GRID_ROWS - widget.chieu_cao;
-
-        const updatedWidgets = localWidgets.map(w => {
-          if (w.id === selectedId) {
-            return {
-              ...w,
-              vi_tri_x: Math.max(0, Math.min(maxX, newGridPos.x)),
-              vi_tri_y: Math.max(0, Math.min(maxY, newGridPos.y))
-            };
-          }
-          return w;
-        });
-        setLocalWidgets(updatedWidgets);
+      if (isDragging && draggingWidgetIdRef.current) {
+        const newPixelX = mouseX - dragOffset.x;
+        const newPixelY = mouseY - dragOffset.y;
+        dragPixelRef.current = { x: newPixelX, y: newPixelY };
+        scheduleUpdate();
       }
 
       if (isResizing && resizeHandle) {
         const widget = localWidgets.find(w => w.id === selectedId);
         if (!widget) return;
-
         const widgetPos = gridToPixels(widget.vi_tri_x, widget.vi_tri_y);
         const widgetWidth = widget.chieu_rong * CELL_SIZE;
         const widgetHeight = widget.chieu_cao * CELL_SIZE;
@@ -133,13 +194,7 @@ export default function Canvas({ widgets, onLayoutChange, onWidgetSelect, onWidg
         if (newWidth >= 2 && newHeight >= 2) {
           const updatedWidgets = localWidgets.map(w => {
             if (w.id === selectedId) {
-              return {
-                ...w,
-                vi_tri_x: newX,
-                vi_tri_y: newY,
-                chieu_rong: newWidth,
-                chieu_cao: newHeight
-              };
+              return { ...w, vi_tri_x: newX, vi_tri_y: newY, chieu_rong: newWidth, chieu_cao: newHeight };
             }
             return w;
           });
@@ -149,14 +204,36 @@ export default function Canvas({ widgets, onLayoutChange, onWidgetSelect, onWidg
     };
 
     const handleMouseUp = () => {
-      if (isDragging) {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+
+      document.body.style.userSelect = '';
+
+      if (isDragging && draggingWidgetIdRef.current) {
+        const wId = draggingWidgetIdRef.current;
+        const startGrid = dragStartGridRef.current;
+        const newGrid = pixelsToGrid(dragPixelRef.current.x, dragPixelRef.current.y);
+
+        if (newGrid.x !== startGrid.x || newGrid.y !== startGrid.y) {
+          const updatedWidgets = localWidgets.map(w => {
+            if (w.id === wId) {
+              return { ...w, vi_tri_x: newGrid.x, vi_tri_y: newGrid.y };
+            }
+            return w;
+          });
+          setLocalWidgets(updatedWidgets);
+          if (onLayoutChangeRef.current) onLayoutChangeRef.current(updatedWidgets);
+        }
+        draggingWidgetIdRef.current = null;
+        dragStartGridRef.current = null;
         setIsDragging(false);
-        onLayoutChange(localWidgets);
       }
       if (isResizing) {
         setIsResizing(false);
         setResizeHandle(null);
-        onLayoutChange(localWidgets);
+        if (onLayoutChangeRef.current) onLayoutChangeRef.current(localWidgets);
       }
     };
 
@@ -166,29 +243,24 @@ export default function Canvas({ widgets, onLayoutChange, onWidgetSelect, onWidg
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
     };
-  }, [isDragging, isResizing, selectedId, dragOffset, resizeHandle, localWidgets, onLayoutChange]);
+  }, [isDragging, isResizing, selectedId, dragOffset, resizeHandle, localWidgets]);
 
-  // Handle resize start
-  const handleResizeStart = (e, handle) => {
-    e.stopPropagation();
-    setIsResizing(true);
-    setResizeHandle(handle);
-  };
-
-  // Calculate canvas size
   const canvasWidth = GRID_COLS * CELL_SIZE;
   const canvasHeight = GRID_ROWS * CELL_SIZE;
 
   return (
     <div className="db-canvas-area">
-      {/* Toolbar toggle */}
       <div className="db-canvas-toolbar">
         <button
           onClick={() => setShowGrid(!showGrid)}
-          className={`db-grid-toggle${showGrid ? ' active' : ''}`}
+          className={'db-grid-toggle' + (showGrid ? ' active' : '')}
         >
-          {showGrid ? 'Ẩn lưới' : 'Hiện lưới'}
+          {showGrid ? 'An luoi' : 'Hien luoi'}
         </button>
       </div>
 
@@ -205,9 +277,9 @@ export default function Canvas({ widgets, onLayoutChange, onWidgetSelect, onWidg
       >
         {localWidgets.length === 0 ? (
           <div className="db-canvas-empty">
-            <div className="db-canvas-empty-icon">📊</div>
-            <h3>Canvas trống</h3>
-            <p>Kéo widget từ thanh công cụ bên trái vào đây để bắt đầu</p>
+            <div className="db-canvas-empty-icon">[chart]</div>
+            <h3>Canvas trong</h3>
+            <p>Keo widget tu thanh cong cu ben trai vao day de bat dau</p>
           </div>
         ) : (
           localWidgets.map(widget => {
@@ -217,51 +289,33 @@ export default function Canvas({ widgets, onLayoutChange, onWidgetSelect, onWidg
               height: widget.chieu_cao * CELL_SIZE
             };
             const isSelected = selectedId === widget.id;
+            const isBeingDragged = isDragging && selectedId === widget.id;
 
             return (
-              <div
+              <CanvasWidget
                 key={widget.id}
-                className={`db-canvas-widget${isSelected ? ' selected' : ''}${(isDragging || isResizing) && isSelected ? ' dragging' : ''}`}
-                style={{
-                  left: pos.x,
-                  top: pos.y,
-                  width: size.width,
-                  height: size.height,
-                  transition: (isDragging || isResizing) ? 'none' : 'box-shadow 0.2s',
-                }}
-                onMouseDown={(e) => handleDragStart(e, widget.id)}
-                onClick={(e) => handleWidgetClick(e, widget.id)}
-              >
-                <WidgetPreview
-                  widget={widget}
-                  onSelect={(w) => {
-                    setSelectedId(widget.id);
-                    onWidgetSelect(w);
-                  }}
-                  onDelete={onWidgetDelete}
-                  token={token}
-                  dashboardId={dashboardId}
-                />
-
-                {/* Resize handles (only show when selected) */}
-                {isSelected && ['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'].map((h) => (
-                  <div
-                    key={h}
-                    onMouseDown={(e) => handleResizeStart(e, h)}
-                    className={`db-resize-handle ${h}`}
-                  />
-                ))}
-              </div>
+                widget={widget}
+                pos={pos}
+                size={size}
+                isSelected={isSelected}
+                isBeingDragged={isBeingDragged}
+                dragPixelRef={dragPixelRef}
+                onPreviewSelect={handlePreviewSelect}
+                onWidgetDelete={onWidgetDelete}
+                onCanvasWidgetClick={handleWidgetClick}
+                onCanvasWidgetMouseDown={handleDragStart}
+                onResizeStart={handleResizeStart}
+                token={token}
+                dashboardId={dashboardId}
+              />
             );
           })
         )}
       </div>
 
-      {/* Grid size indicator */}
       <div className="db-grid-info">
-        Grid: {GRID_COLS} × {GRID_ROWS} cells ({CELL_SIZE}px/cell) | Widgets: {localWidgets.length}
+        Grid: {GRID_COLS} x {GRID_ROWS} cells ({CELL_SIZE}px/cell) | Widgets: {localWidgets.length}
       </div>
     </div>
   );
 }
-

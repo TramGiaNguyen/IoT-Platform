@@ -6,10 +6,13 @@ import {
   deleteDeviceProfile,
   fetchDevices,
 } from '../services';
+import { useCrudVersion } from '../context/RealtimeProvider';
 
 export default function DeviceProfilesManagement({ token, onBack, workspaceContext = 'ca_nhan', userInfo = null }) {
   const [profiles, setProfiles] = useState([]);
   const [devices, setDevices] = useState([]);
+  // Realtime: tu refetch khi co CRUD profile tu tab khac
+  const profilesVersion = useCrudVersion('profile');
   const [loading, setLoading] = useState(false);
   const [formVisible, setFormVisible] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -65,6 +68,11 @@ export default function DeviceProfilesManagement({ token, onBack, workspaceConte
     loadProfiles();
     loadDevices();
   }, []);
+
+  // Realtime: refetch khi profile CRUD event den
+  useEffect(() => {
+    if (profilesVersion > 0) loadProfiles();
+  }, [profilesVersion]);
 
   const parseConfig = (cfg) => {
     if (typeof cfg === 'string') {

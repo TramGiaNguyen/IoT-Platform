@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tài liệu hướng dẫn — BDU IoT</title>
+  <link rel="icon" href="/bdu-logo.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+  <style>
+    /* ===== Variables (đồng bộ style.css chính) ===== */
+    :root {
+      --bdu-bg:           #0f1419;
+      --bdu-card:         #1f2937;
+      --bdu-card-border:  #374151;
+      --bdu-card-hover:   #111827;
+      --bdu-cyan:         #22d3ee;
+      --bdu-cyan-dim:     rgba(34, 211, 238, 0.10);
+      --bdu-text:         #f9fafb;
+      --bdu-muted:        #9ca3af;
+      --bdu-code-bg:      #111827;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      background: var(--bdu-bg);
+      color: var(--bdu-text);
+      font-family: 'Geist', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--bdu-cyan); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    button { font-family: inherit; cursor: pointer; }
+
+    /* ===== Layout ===== */
+    .docs-shell {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+    .docs-toc {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      background: #0b1117;
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      flex-direction: column;
+      padding: 24px 16px;
+      overflow-y: auto;
+    }
+    .docs-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      padding: 4px 12px 16px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      margin-bottom: 16px;
+      color: var(--bdu-text);
+    }
+    .docs-brand .material-symbols-outlined {
+      color: var(--bdu-cyan);
+      font-size: 22px;
+    }
+    .docs-nav { flex: 1; }
+    .docs-nav a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      margin-bottom: 4px;
+      border-radius: 8px;
+      color: var(--bdu-muted);
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+    .docs-nav a:hover {
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--bdu-text);
+      text-decoration: none;
+    }
+    .docs-nav a.active {
+      background: var(--bdu-cyan-dim);
+      color: var(--bdu-cyan);
+    }
+    .docs-nav a.active::before {
+      content: '';
+      width: 3px; height: 18px;
+      background: var(--bdu-cyan);
+      border-radius: 2px;
+      margin-right: -4px;
+    }
+    .docs-toc-footer { padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+    .docs-toc-footer button {
+      width: 100%;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      color: var(--bdu-text);
+      font-size: 14px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: background 0.15s;
+    }
+    .docs-toc-footer button:hover { background: rgba(255, 255, 255, 0.08); }
+    .docs-toc-footer .material-symbols-outlined { font-size: 18px; }
+
+    /* ===== Main content ===== */
+    .docs-main {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 48px 64px 96px 64px;
+      line-height: 1.7;
+      font-size: 15px;
+    }
+    .docs-loading,
+    .docs-error {
+      padding: 40px;
+      text-align: center;
+      color: var(--bdu-muted);
+    }
+    .docs-error h1 { color: var(--bdu-cyan); }
+
+    /* Markdown content styling */
+    .docs-content > h1 {
+      font-size: 32px;
+      font-weight: 700;
+      margin: 0 0 8px 0;
+      padding-bottom: 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .docs-content > h2 {
+      font-size: 22px;
+      font-weight: 600;
+      margin: 48px 0 16px 0;
+      color: var(--bdu-text);
+    }
+    .docs-content > h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 32px 0 12px 0;
+      color: var(--bdu-text);
+    }
+    .docs-content p { margin: 12px 0; }
+    .docs-content ul, .docs-content ol { padding-left: 24px; }
+    .docs-content li { margin: 4px 0; }
+    .docs-content strong { color: var(--bdu-text); font-weight: 600; }
+    .docs-content hr {
+      border: none;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      margin: 40px 0;
+    }
+
+    /* Inline code */
+    .docs-content code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9em;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--bdu-code-bg);
+      color: var(--bdu-cyan);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    /* Code block */
+    .docs-content pre {
+      background: var(--bdu-code-bg);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      line-height: 1.55;
+      margin: 16px 0;
+    }
+    .docs-content pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: var(--bdu-text);
+      font-size: 13px;
+    }
+
+    /* Blockquote (thường dùng cho "> Lưu ý") */
+    .docs-content blockquote {
+      margin: 16px 0;
+      padding: 8px 16px;
+      border-left: 3px solid var(--bdu-cyan);
+      background: var(--bdu-cyan-dim);
+      border-radius: 0 8px 8px 0;
+      color: var(--bdu-muted);
+    }
+    .docs-content blockquote p { margin: 4px 0; }
+
+    /* Tables */
+    .docs-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+    .docs-content th, .docs-content td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .docs-content th {
+      background: rgba(255, 255, 255, 0.03);
+      font-weight: 600;
+      color: var(--bdu-text);
+    }
+    .docs-content tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+    /* ASCII diagrams (render từ ``` … ``` không phải code fence) - vẫn cho monospace */
+    .docs-content .ascii-diagram {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      white-space: pre;
+      background: var(--bdu-code-bg);
+      padding: 16px;
+      border-radius: 12px;
+      overflow-x: auto;
+      line-height: 1.45;
+    }
+
+    /* Images */
+    .docs-content img {
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      margin: 24px auto;
+      display: block;
+    }
+
+    /* Figure caption (sau ảnh) */
+    .docs-content p > em:only-child {
+      display: block;
+      text-align: center;
+      font-size: 13px;
+      color: var(--bdu-muted);
+      font-style: italic;
+      margin-top: -16px;
+      margin-bottom: 24px;
+    }
+
+    /* Checklist */
+    .docs-content table td:has(input[type="checkbox"]),
+    .docs-content table th:has(input[type="checkbox"]) {
+      white-space: nowrap;
+    }
+    .docs-content input[type="checkbox"] {
+      accent-color: var(--bdu-cyan);
+      transform: scale(1.2);
+      margin: 0 4px;
+      vertical-align: middle;
+    }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 800px) {
+      .docs-shell {
+        grid-template-columns: 1fr;
+      }
+      .docs-toc {
+        position: relative;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .docs-main {
+        padding: 24px 20px 64px 20px;
+      }
+      .docs-content > h1 { font-size: 24px; }
+      .docs-content > h2 { font-size: 18px; }
+    }
+
+    /* ===== Print ===== */
+    @media print {
+      .docs-toc, .docs-toc-footer { display: none; }
+      .docs-main { max-width: 100%; padding: 24px; }
+      .docs-content a { color: #0369a1; text-decoration: underline; }
+      .docs-content pre, .docs-content code { background: #f3f4f6 !important; color: #111 !important; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="docs-shell">
+    <aside class="docs-toc">
+      <div class="docs-brand">
+        <span class="material-symbols-outlined">menu_book</span>
+        <span>Tài liệu hướng dẫn</span>
+      </div>
+      <nav class="docs-nav">
+        <a href="#" data-doc="00-overview">00. Tổng quan & Chuẩn bị</a>
+        <a href="#" data-doc="01-workspace-and-rooms">01. Workspace & Phòng</a>
+        <a href="#" data-doc="02-create-device">02. Tạo thiết bị</a>
+        <a href="#" data-doc="03-control-and-detail">03. Điều khiển & Chi tiết</a>
+        <a href="#" data-doc="04-esp32-setup">04. Cấu hình ESP32</a>
+        <a href="#" data-doc="05-esp32-upload">05. Nạp chương trình</a>
+        <a href="#" data-doc="06-testing">06. Kiểm thử vận hành</a>
+        <a href="#" data-doc="07-errors-and-appendix">07. Lỗi & Phụ lục</a>
+        <a href="#" data-doc="08-checklist">08. Checklist bàn giao</a>
+      </nav>
+      <div class="docs-toc-footer">
+        <button id="docs-print" type="button">
+          <span class="material-symbols-outlined">print</span>
+          <span>In / Lưu PDF</span>
+        </button>
+      </div>
+    </aside>
+    <main class="docs-main">
+      <article id="docs-content" class="docs-content">
+        <div class="docs-loading">Đang tải tài liệu...</div>
+      </article>
+    </main>
+  </div>
+  <script>
+    (function () {
+      // Configure marked: GitHub-flavored markdown + line breaks.
+      if (window.marked && marked.setOptions) {
+        marked.setOptions({ breaks: true, gfm: true });
+      }
+
+      const content = document.getElementById('docs-content');
+      const navLinks = document.querySelectorAll('.docs-nav a');
+      const printBtn = document.getElementById('docs-print');
+
+      const params = new URLSearchParams(window.location.search);
+      let currentSlug = params.get('doc') || '00-overview';
+
+      const VALID_SLUGS = [
+        '00-overview',
+        '01-workspace-and-rooms',
+        '02-create-device',
+        '03-control-and-detail',
+        '04-esp32-setup',
+        '05-esp32-upload',
+        '06-testing',
+        '07-errors-and-appendix',
+        '08-checklist'
+      ];
+      if (VALID_SLUGS.indexOf(currentSlug) === -1) {
+        currentSlug = '00-overview';
+      }
+
+      function highlight(slug) {
+        navLinks.forEach(function (a) {
+          if (a.dataset.doc === slug) a.classList.add('active');
+          else a.classList.remove('active');
+        });
+      }
+
+      function load(slug) {
+        content.innerHTML = '<div class="docs-loading">Đang tải tài liệu...</div>';
+        const file = '/docs/' + slug + '.md';
+        fetch(file, { cache: 'no-cache' })
+          .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.text();
+          })
+          .then(function (md) {
+            let html = window.marked.parse(md);
+            // Bọc các block ``` không phải code fence ngôn ngữ (ASCII diagram) bằng class ascii-diagram
+            html = html.replace(/<pre><code>([\s\S]*?)<\/code><\/pre>/g, function (m, body) {
+              // Nếu không có dòng nào trông như từ khoá ngôn ngữ ở đầu -> xem là ASCII
+              const firstLine = body.split('\n')[0].trim();
+              if (/^[a-zA-Z][a-zA-Z0-9_+-]*$/.test(firstLine) && firstLine.length < 20) {
+                return m; // có ngôn ngữ -> giữ nguyên
+              }
+              const decoded = body
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&amp;/g, '&')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'");
+              return '<div class="ascii-diagram">' + decoded + '</div>';
+            });
+            content.innerHTML = html;
+            content.scrollTop = 0;
+            window.scrollTo(0, 0);
+            currentSlug = slug;
+            highlight(slug);
+            const newUrl = window.location.pathname + '?doc=' + encodeURIComponent(slug);
+            window.history.replaceState(null, '', newUrl);
+            document.title = slug + ' — Tài liệu hướng dẫn BDU IoT';
+          })
+          .catch(function (err) {
+            content.innerHTML =
+              '<div class="docs-error">' +
+              '<h1>Không tải được tài liệu</h1>' +
+              '<p>File <code>/docs/' + slug + '.md</code> không tồn tại hoặc lỗi mạng.</p>' +
+              '<pre>' + (err && err.message ? err.message : err) + '</pre>' +
+              '</div>';
+          });
+      }
+
+      navLinks.forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          load(a.dataset.doc);
+        });
+      });
+
+      printBtn.addEventListener('click', function () { window.print(); });
+
+      load(currentSlug);
+    })();
+  </script>
+</body>
+
+</html>

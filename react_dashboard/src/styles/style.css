@@ -1910,6 +1910,52 @@ body {
   letter-spacing: 0.5px;
 }
 
+.header-realtime-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.5px;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  user-select: none;
+}
+.header-realtime-badge.connected {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #10b981;
+}
+.header-realtime-badge.disconnected {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+.header-realtime-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.header-realtime-dot.on {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.8);
+  animation: realtimePulse 1.6s ease-in-out infinite;
+}
+.header-realtime-dot.off {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+}
+.header-realtime-label {
+  text-transform: uppercase;
+  font-weight: 600;
+}
+@keyframes realtimePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
 .header-ws-dot {
   width: 7px;
   height: 7px;

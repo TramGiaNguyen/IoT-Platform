@@ -8,11 +8,15 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
     device_id: '',
     data_keys: [],
     time_range: '1h',
+    source_type: 'ip_camera',
+    camera_id: '',
     ...widget?.cau_hinh
   });
   const [availableKeys, setAvailableKeys] = useState([]);
   const [loadingKeys, setLoadingKeys] = useState(false);
   const [controlLines, setControlLines] = useState([]);
+  const [webcamList, setWebcamList] = useState([]);
+  const [loadingWebcams, setLoadingWebcams] = useState(false);
 
   useEffect(() => {
     if (widget) {
@@ -27,6 +31,11 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         relay_number: widget.cau_hinh?.relay_number || 1,
         x_key: widget.cau_hinh?.x_key || '',
         y_key: widget.cau_hinh?.y_key || '',
+        pie_limit: widget.cau_hinh?.pie_limit || 5,
+        pie_category: widget.cau_hinh?.pie_category || false,
+        source_type: widget.cau_hinh?.source_type || 'ip_camera',
+        camera_id: widget.cau_hinh?.camera_id || '',
+        client_device_id: widget.cau_hinh?.client_device_id || '',
         ...widget.cau_hinh
       });
     }
@@ -37,29 +46,17 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
     const loadDataKeys = async () => {
       if (!formData.device_id || !token) {
         setAvailableKeys([]);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WidgetEditor.js:30',message:'loadDataKeys skipped',data:{device_id:formData.device_id,hasToken:!!token},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         return;
       }
 
       setLoadingKeys(true);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WidgetEditor.js:35',message:'loadDataKeys starting',data:{device_id:formData.device_id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       try {
         const res = await fetchDeviceDataKeys(formData.device_id, token);
         const keys = res.data.data_keys || [];
         setAvailableKeys(keys);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WidgetEditor.js:38',message:'loadDataKeys success',data:{device_id:formData.device_id,keysCount:keys.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
       } catch (err) {
         console.error('Failed to load data keys:', err);
         setAvailableKeys([]);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WidgetEditor.js:42',message:'loadDataKeys error',data:{device_id:formData.device_id,error:err.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
       } finally {
         setLoadingKeys(false);
       }
@@ -82,10 +79,35 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
     loadRelayLines();
   }, [formData.device_id, token, widget?.widget_type]);
 
+  // Load webcam list from client browser using enumerateDevices
+  useEffect(() => {
+    const loadClientWebcams = async () => {
+      if (widget?.widget_type !== 'video_stream' || formData.source_type !== 'webcam') return;
+
+      setLoadingWebcams(true);
+      try {
+        // Request permission first
+        await navigator.mediaDevices.getUserMedia({ video: true });
+        // Then enumerate devices
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices
+          .filter(d => d.kind === 'videoinput')
+          .map(d => ({
+            id: d.deviceId,
+            label: d.label || `Camera ${d.deviceId.slice(0, 8)}`
+          }));
+        setWebcamList(videoDevices);
+      } catch (err) {
+        console.error('Failed to enumerate devices:', err);
+        setWebcamList([]);
+      } finally {
+        setLoadingWebcams(false);
+      }
+    };
+    loadClientWebcams();
+  }, [widget?.widget_type, formData.source_type]);
+
   const handleSave = () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WidgetEditor.js:50',message:'handleSave entry',data:{device_id:formData.device_id,data_keys_count:formData.data_keys?.length||0,hasWidget:!!widget},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     const widgetType = widget?.widget_type;
 
     // Handle widget types that don't require device_id
@@ -136,7 +158,25 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         time_range: formData.time_range,
       };
     } else if (isVideoStream) {
+      const sourceType = formData.source_type || 'ip_camera';
+      const isWebcam = sourceType === 'webcam';
+
+      // Validate webcam selection (client-side)
+      if (isWebcam && !formData.client_device_id) {
+        alert('Vui lòng chọn camera');
+        return;
+      }
+
+      // Validate IP camera URL
+      if (!isWebcam && !formData.stream_url) {
+        alert('Vui lòng nhập stream URL');
+        return;
+      }
+
       config = {
+        source_type: sourceType,
+        camera_id: formData.camera_id || '',
+        client_device_id: formData.client_device_id || '',
         stream_url: formData.stream_url || '',
         autoplay: formData.autoplay !== false,
         muted: formData.muted !== false,
@@ -182,6 +222,15 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         unit: formData.unit || '°C',
         low_color: formData.low_color || '#22d3ee',
         high_color: formData.high_color || '#ef4444',
+      };
+    } else if (widgetType === 'pie_chart') {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        labels: formData.labels || '',
+        time_range: formData.time_range || '24h',
+        pie_limit: Number(formData.pie_limit) || 5,
+        pie_category: formData.pie_category === true,
       };
     } else if (widgetType === 'map_widget') {
       config = {
@@ -245,9 +294,6 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
       };
     }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b79dabf1-b019-4647-a912-96914bd03449',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'WidgetEditor.js:71',message:'handleSave calling onSave',data:{widget_id:widget?.id,config_keys:Object.keys(config)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     onSave({
       ...widget,
       ten_widget: formData.ten_widget,
@@ -352,7 +398,47 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         </div>
       )}
 
-      {/* Widget-specific options */}
+      {/* Pie Chart config */}
+      {widget?.widget_type === 'pie_chart' && (
+        <>
+          <div className="form-row">
+            <label>Labels (phân cách bằng ;)</label>
+            <input
+              type="text"
+              value={formData.labels || ''}
+              onChange={(e) => setFormData({ ...formData, labels: e.target.value })}
+              placeholder="humidity (%);temperature (°C)"
+            />
+          </div>
+          <div className="form-row">
+            <label>Số phần (slices)</label>
+            <input
+              type="number"
+              min="2"
+              max="10"
+              value={formData.pie_limit || 5}
+              onChange={(e) => setFormData({ ...formData, pie_limit: parseInt(e.target.value) || 5 })}
+            />
+          </div>
+          <div className="form-row">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={formData.pie_category === true}
+                onChange={(e) => setFormData({ ...formData, pie_category: e.target.checked })}
+              />
+              <span>Phân theo category (thay vì theo thời gian)</span>
+            </label>
+            <p style={{ color: 'var(--bdu-muted)', fontSize: '11px', marginTop: '6px' }}>
+              {formData.pie_category
+                ? 'Pie chart sẽ đếm số lần xuất hiện của từng giá trị (ON/OFF, các trạng thái...)'
+                : 'Pie chart hiển thị N giá trị cuối theo thời gian'}
+            </p>
+          </div>
+        </>
+      )}
+
+      {/* Gauge config */}
       {widget?.widget_type === 'gauge' && (
         <>
           <div className="form-row">
@@ -475,9 +561,81 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
       {widget?.widget_type === 'video_stream' && (
         <>
           <div className="form-row">
-            <label>Stream URL</label>
-            <input type="text" value={formData.stream_url || ''} onChange={(e) => setFormData({ ...formData, stream_url: e.target.value })} placeholder="http://camera:8080/stream" />
+            <label>Nguồn Video</label>
+            <select
+              value={formData.source_type || 'ip_camera'}
+              onChange={(e) => setFormData({ ...formData, source_type: e.target.value, camera_id: '', stream_url: '' })}
+              style={{
+                width: '100%',
+                padding: '8px',
+                borderRadius: '6px',
+                border: '1px solid var(--bdu-border)',
+                background: 'var(--bdu-input-bg)',
+                color: 'var(--bdu-text)'
+              }}
+            >
+              <option value="ip_camera">IP Camera (URL Stream)</option>
+              <option value="webcam">Webcam / Camera thiết bị</option>
+            </select>
           </div>
+
+          {formData.source_type === 'webcam' ? (
+            <>
+              {loadingWebcams ? (
+                <div className="form-row">
+                  <div style={{ padding: '12px', textAlign: 'center', color: 'var(--bdu-muted)', fontSize: '12px' }}>
+                    Đang tìm camera...
+                  </div>
+                </div>
+              ) : webcamList.length > 0 ? (
+                <div className="form-row">
+                  <label>Chọn Camera</label>
+                  <select
+                    value={formData.client_device_id || ''}
+                    onChange={(e) => setFormData({ ...formData, client_device_id: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--bdu-border)',
+                      background: 'var(--bdu-input-bg)',
+                      color: 'var(--bdu-text)'
+                    }}
+                  >
+                    <option value="">-- Chọn camera --</option>
+                    {webcamList.map((cam) => (
+                      <option key={cam.id} value={cam.id}>
+                        {cam.label}
+                      </option>
+                    ))}
+                  </select>
+                  <small style={{ color: 'var(--bdu-muted)', fontSize: '10px', marginTop: '4px' }}>
+                    Camera từ trình duyệt này. Mỗi người dùng sẽ thấy camera riêng.
+                  </small>
+                </div>
+              ) : (
+                <div style={{ padding: '12px', background: 'var(--bdu-card)', borderRadius: '8px', marginBottom: '12px' }}>
+                  <p style={{ color: 'var(--bdu-muted)', fontSize: '12px', margin: '0 0 8px 0' }}>
+                    Không tìm thấy camera nào trên trình duyệt.
+                  </p>
+                  <p style={{ color: 'var(--bdu-muted)', fontSize: '11px', margin: '0' }}>
+                    Vui lòng cho phép truy cập camera trong trình duyệt.
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="form-row">
+              <label>Stream URL</label>
+              <input
+                type="text"
+                value={formData.stream_url || ''}
+                onChange={(e) => setFormData({ ...formData, stream_url: e.target.value })}
+                placeholder="rtsp://camera:554/stream hoặc http://camera:8080/stream"
+              />
+            </div>
+          )}
+
           <div className="form-row" style={{ display: 'flex', gap: '16px' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--bdu-muted)' }}>
               <input type="checkbox" checked={formData.autoplay !== false} onChange={(e) => setFormData({ ...formData, autoplay: e.target.checked })} style={{ accentColor: 'var(--bdu-cyan)' }} />

@@ -1,8 +1,9 @@
 import os
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from routes import router
 from websocket import websocket_endpoint, _redis_subscriber_loop
 
@@ -75,28 +76,47 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="BDU IoT Platform API", lifespan=lifespan)
 
-# CORS: chỉ cho phép các origin đã biết khi dùng credentials
-# Thêm origin vào ALLOWED_ORIGINS env var (phân cách bởi dấu phẩy) khi deploy production
-# Đặt ALLOWED_ORIGINS=* để cho phép tất cả (dev/LAN)
+# CORS: Cho phep tat ca origins de ho tro LAN access
+# Su dung middleware tuong thich voi credentials
 _raw_origins = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000"
+    "*"  # Mac dinh cho phep tat ca origins (LAN/dev)
 )
 
 if _raw_origins.strip() == "*":
-    ALLOWED_ORIGINS = ["*"]
-    _allow_credentials = False   # CORS spec: wildcard không dùng được với credentials
+    # Wildcard: cho phep tat ca origins nhung van ho tro Authorization header
+    # Custom middleware thay vi CORSMiddleware mac dinh
+    @app.middleware("http")
+    async def cors_wildcard_middleware(request: Request, call_next):
+        # Handle preflight OPTIONS request
+        if request.method == "OPTIONS":
+            origin = request.headers.get("origin", "*")
+            access_control_request_method = request.headers.get("access-control-request-method", "*")
+            access_control_request_headers = request.headers.get("access-control-request-headers", "*")
+            from fastapi.responses import Response
+            response = Response(status_code=200)
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = access_control_request_method
+            response.headers["Access-Control-Allow-Headers"] = access_control_request_headers
+            return response
+        
+        origin = request.headers.get("origin", "*")
+        response = await call_next(request)
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
 else:
     ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
-    _allow_credentials = True
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=_allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(router)
 

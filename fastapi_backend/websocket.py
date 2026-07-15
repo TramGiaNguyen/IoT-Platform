@@ -25,8 +25,8 @@ active_connections: List[WebSocket] = []
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 WS_CHANNEL = "ws:events"
-WS_LATEST_KEY = "ws:latest_events"  # Redis list chua 100 event moi nhat
-WS_LATEST_MAX = 100
+WS_LATEST_KEY = "ws:latest_events"  # Redis list chua 200 event moi nhat (sensor + CRUD)
+WS_LATEST_MAX = 200
 INITIAL_EVENTS_COUNT = 10
 PING_INTERVAL = 10
 

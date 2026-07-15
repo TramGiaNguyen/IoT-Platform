@@ -118,11 +118,6 @@ export function GlobalCacheProvider({ children, token }) {
         dailyStats:  dailyRes.status     === 'fulfilled' ? (dailyRes.value.data?.stats     || []) : [],
         workspaceContext: context,
       };
-      // #region agent log
-      if (typeof window !== 'undefined' && window.__ca9780_debug) {
-        fetch('http://127.0.0.1:7336/ingest/f2170468-c8de-41c8-b4d9-c82967e9e840', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ca9780' }, body: JSON.stringify({ sessionId: 'ca9780', runId: 'reload-debug', hypothesisId: 'H6', location: 'GlobalCache.js:121', message: 'fetchFreshData sets cache', data: { context, devicesLen: next.devices.length, devicesSample: next.devices.slice(0, 3).map(d => ({ id: d.ma_thiet_bi || d.device_id, owner: d.nguoi_so_huu_id, creator: d.nguoi_tao_id, nhom: d.nhom_id })), cachedWorkspaceContext: next.workspaceContext ?? null }, timestamp: Date.now() }) }).catch(() => {});
-      }
-      // #endregion
       setCache(next);
       setCacheTimestamp(Date.now());
       initialized.current = true;
@@ -148,11 +143,6 @@ export function GlobalCacheProvider({ children, token }) {
       });
       if (fromStorage && !initialized.current) {
         console.log('[DBG-ca9780] GlobalCache.initialize fromStorage', { devicesLen: fromStorage.devices?.length, devicesSample: fromStorage.devices?.slice(0,2).map(d=>({id:d.ma_thiet_bi||d.device_id,nhom:d.nhom_id,owner:d.nguoi_so_huu_id})), storedContext: fromStorage.workspaceContext });
-        // #region agent log
-        if (typeof window !== 'undefined' && window.__ca9780_debug) {
-          fetch('http://127.0.0.1:7336/ingest/f2170468-c8de-41c8-b4d9-c82967e9e840', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ca9780' }, body: JSON.stringify({ sessionId: 'ca9780', runId: 'reload-debug', hypothesisId: 'H6', location: 'GlobalCache.js:initialize', message: 'initialize from localStorage', data: { fromStorageDevicesLen: fromStorage.devices?.length, fromStorageWorkspaceContext: fromStorage.workspaceContext ?? null }, timestamp: Date.now() }) }).catch(() => {});
-        }
-        // #endregion
         setCache(fromStorage);
         setCacheTimestamp(Date.now());
         fetchFreshData();
@@ -226,4 +216,34 @@ export function useGlobalCache() {
     throw new Error('useGlobalCache must be used inside GlobalCacheProvider');
   }
   return ctx;
+}
+
+// ── Realtime extensions (RealtimeProvider goi vao) ─────────────────────────
+
+/**
+ * Merge 1 sensor value moi vao device trong cache.
+ * - deviceId: id cua thiet bi
+ * - key: ten field (Nhiet_do, Do_am, relay_1, ...)
+ * - value, ts: gia tri moi nhat
+ * Chi tac dong neu device co trong cache (tranh tao "zombie" device).
+ */
+export function applyRealtimePatch(patch) {
+  const { deviceId, key, value, ts } = patch || {};
+  if (!deviceId || !key) return;
+  const event = new CustomEvent('bdu-realtime-patch', { detail: patch });
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(event);
+  }
+}
+
+/**
+ * Tang counter cho 1 entity khi co CRUD event.
+ * Page consumer se listen qua useCrudVersion (trong RealtimeProvider).
+ * Day la ham tien ich cho cac page muon goi thu cong neu can.
+ */
+export function bumpEntity(entity) {
+  const event = new CustomEvent('bdu-realtime-bump', { detail: { entity } });
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(event);
+  }
 }

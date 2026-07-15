@@ -57,6 +57,13 @@ const AppHeader = ({
       </div>
 
       <div className="app-header-right">
+        <div
+          className={`header-realtime-badge ${wsConnected ? 'connected' : 'disconnected'}`}
+          title={wsConnected ? 'Realtime connected' : 'Realtime disconnected'}
+        >
+          <span className={`header-realtime-dot ${wsConnected ? 'on' : 'off'}`} />
+          <span className="header-realtime-label">Realtime</span>
+        </div>
         <div ref={notifRef} style={{ position: 'relative' }}>
           <button
             className="header-icon-btn"

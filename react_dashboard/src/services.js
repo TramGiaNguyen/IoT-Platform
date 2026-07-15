@@ -1,21 +1,22 @@
 import axios from 'axios';
 import { API_BASE } from './config/api';
 
-/** Default axios instance với interceptor xử lý 401. */
-const api = axios.create({ baseURL: API_BASE, timeout: 30000 });
-
-api.interceptors.response.use(
+// Global 401 handler: moi API call qua axios default deu chay qua day.
+// Khi token het han (access hoac refresh), tu dong clear state + reload ve login.
+axios.interceptors.response.use(
   response => response,
   error => {
     if (error.response?.status === 401) {
-      localStorage.clear();
-      window.location.href = '/login';
+      try {
+        localStorage.clear();
+      } catch (e) {
+        // Bo qua loi localStorage (SSR / private mode)
+      }
+      window.location.href = '/';
     }
     return Promise.reject(error);
   }
 );
-
-export { api };
 
 /** Timeout cho các API truy vấn MySQL/DB nặng (du_lieu_thiet_bi lớn, Docker LAN). */
 const DEVICE_API_TIMEOUT_MS = 30000;

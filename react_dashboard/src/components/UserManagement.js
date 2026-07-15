@@ -1,11 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { fetchUsers, createUser, updateUser, deleteUser, impersonateUser, bulkImportUsers } from '../services';
+import { useCrudVersion } from '../context/RealtimeProvider';
 
 const PAGE_SIZE = 15;
 
 export default function UserManagement({ token, onBack }) {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(false);
+    // Realtime: tu refetch khi co CRUD user tu tab khac
+    const usersVersion = useCrudVersion('user');
     const [formVisible, setFormVisible] = useState(false);
     const [editUserId, setEditUserId] = useState(null);
     const [bulkImportVisible, setBulkImportVisible] = useState(false);
@@ -47,6 +50,11 @@ export default function UserManagement({ token, onBack }) {
     useEffect(() => {
         loadUsers(1);
     }, [loadUsers]);
+
+    // Realtime: refetch khi user CRUD event den
+    useEffect(() => {
+        if (usersVersion > 0) loadUsers(1);
+    }, [usersVersion]);
 
     const resetForm = () => {
         setFormData({ ten: '', email: '', password: '', vai_tro: 'student' });

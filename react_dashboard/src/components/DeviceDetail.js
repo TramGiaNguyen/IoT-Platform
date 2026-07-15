@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchDeviceKeys, createDeviceKey, updateDeviceKey, deleteDeviceKey, detectDeviceKeys, fetchControlLines, saveControlLines, controlRelay, updateEdgeControlUrl, fetchDeviceFullConfig } from '../services';
 import axios from 'axios';
 import SmartClassroomDashboard from './SmartClassroomDashboard';
-import { API_BASE, WS_URL } from '../config/api';
+import { API_BASE } from '../config/api';
 import { useGlobalCache } from '../context/GlobalCache';
+import { useRealtime } from '../context/RealtimeProvider';
 import '../styles/DeviceDetail.css';
 
 const DEFAULT_EDGE_BODY_TEMPLATE = `{
@@ -19,6 +20,7 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
   useEffect(() => { tokenRef.current = token; }, [token]);
 
   const { cache } = useGlobalCache();
+  const { lastEventAt, getDeviceLatest } = useRealtime();
   const [device, setDevice] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [events, setEvents] = useState([]);
@@ -38,7 +40,6 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
 
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
-  const latestPollRef = useRef(null);
   const relayRangeTimersRef = useRef({});
 
   const CONTROL_TYPES = [
@@ -183,7 +184,6 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
     try {
       await deleteDeviceKey(deviceId, k.id, token);
       setKeyMsg({ type: 'success', text: `Đã xóa field "${k.khoa}"` });
-      await loadDataKeys();
     } catch (err) {
       setKeyMsg({ type: 'error', text: err.response?.data?.detail || 'Xóa thất bại' });
     }
@@ -320,10 +320,10 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
     const dataPayloadCpp = keys.length
       ? keys.map(k => {
           const key = k.khoa || k.key || 'value';
-          return `    "${key}":${key},`;
-        }).join('\n')
-      : `    "temperature":${'{'}temperature, 1{'}'},
-    "humidity":${'{'}humidity{'}'},`;
+          return `payload += "\\"${key}\\":" + String(${key}) + ",";`;
+        }).join('\n          ')
+      : `payload += "\\"temperature\\":" + String(temperature, 1) + ",";
+          payload += "\\"humidity\\":" + String(humidity) + ",";`;
 
     const lines = Array.isArray(controlLines) ? controlLines : [];
     const relayCpp = lines.length
@@ -337,120 +337,272 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
     const isMqtt = proto === 'mqtt' || proto === 'both';
     const isHttp = proto === 'http' || proto === 'both';
 
-    const ingestHttpBlock = isHttp ? `// ================= HTTP INGEST =================
-const char* INGEST_URL    = "${ingestUrl}";
-const char* HTTP_API_KEY  = "${httpKey}";
+    const ingestHttpBlock = isHttp ? `// ================= IOT PLATFORM CONFIG =================
+const char* INGEST_URL = "${ingestUrl}";
+const char* DEVICE_ID = "${deviceCode}";
+const char* HTTP_API_KEY = "${httpKey}";
 
-void sendHttpData() {
-  if (WiFi.status() != WL_CONNECTED) return;
-  HTTPClient http;
-  http.begin(INGEST_URL);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-API-Key", HTTP_API_KEY);
+// ================= RELAY CONFIG =================
+#define RELAY_PIN 26
+const bool RELAY_ACTIVE_LOW = false;
+bool relayState = false;
+
+// ================= WEB SERVER =================
+WebServer server(80);
+
+// ================= SEND INTERVAL =================
+unsigned long lastSendTime = 0;
+const unsigned long SEND_INTERVAL = 5000;
+
+// ================= RELAY CONTROL =================
+void setRelay(bool on) {
+  relayState = on;
+  if (RELAY_ACTIVE_LOW) {
+    digitalWrite(RELAY_PIN, on ? LOW : HIGH);
+  } else {
+    digitalWrite(RELAY_PIN, on ? HIGH : LOW);
+  }
+  Serial.print("Relay 1: ");
+  Serial.println(on ? "ON" : "OFF");
+}
+
+// ================= CREATE PAYLOAD =================
+String createPayload() {
+  float temperature = 25.5;
+  int humidity = 60;
+  String relayText = relayState ? "ON" : "OFF";
+  int relayValue = relayState ? 1 : 0;
 
   String payload = "{";
   payload += "\\"device_id\\":\\"" + String(DEVICE_ID) + "\\",";
   payload += "\\"data\\":{";
-${dataPayloadCpp}
+  payload += "\\"temperature\\":" + String(temperature, 1) + ",";
+  payload += "\\"humidity\\":" + String(humidity) + ",";
+  payload += "\\"relay\\":1,";
+  payload += "\\"relay_value\\":" + String(relayValue) + ",";
+  payload += "\\"relay_state\\":\\"" + relayText + "\\"";
   payload += "}}";
+  return payload;
+}
 
-  int code = http.POST(payload);
-  if (code > 0) {
+// ================= SEND DATA TO IOT PLATFORM =================
+void sendDataToIoTPlatform() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi lost, reconnecting...");
+    connectWiFi();
+    if (WiFi.status() != WL_CONNECTED) return;
+  }
+  HTTPClient http;
+  http.setConnectTimeout(15000);
+  http.setTimeout(15000);
+  if (!http.begin(INGEST_URL)) return;
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Accept", "application/json");
+  http.addHeader("X-API-Key", HTTP_API_KEY);
+  String payload = createPayload();
+  Serial.println("Payload:");
+  Serial.println(payload);
+  int httpResponseCode = http.POST(payload);
+  if (httpResponseCode > 0) {
     Serial.print("HTTP OK: ");
-    Serial.println(code);
+    Serial.println(httpResponseCode);
   } else {
     Serial.print("HTTP ERR: ");
-    Serial.println(http.errorToString(code));
+    Serial.println(http.errorToString(httpResponseCode));
   }
   http.end();
+}
+
+// ================= HANDLE RELAY CONTROL =================
+void handleRelayControl() {
+  String body = server.arg("plain");
+  String normalizedBody = body;
+  normalizedBody.toUpperCase();
+  normalizedBody.replace(" ", "");
+  normalizedBody.replace("\\n", "");
+  normalizedBody.replace("\\r", "");
+  normalizedBody.replace("\\t", "");
+  bool isRelay1 = normalizedBody.indexOf("\\"RELAY\\":1") >= 0;
+  bool isOn = normalizedBody.indexOf("\\"STATE\\":\\"ON\\"") >= 0;
+  bool isOff = normalizedBody.indexOf("\\"STATE\\":\\"OFF\\"") >= 0;
+  if (!isRelay1) {
+    server.send(400, "application/json", "{\\"success\\":false,\\"message\\":\\"Relay khong hop le\\"}");
+    return;
+  }
+  if (isOn) { setRelay(true); server.send(200, "application/json", "{\\"success\\":true,\\"relay\\":1,\\"state\\":\\"ON\\"}"); return; }
+  if (isOff) { setRelay(false); server.send(200, "application/json", "{\\"success\\":true,\\"relay\\":1,\\"state\\":\\"OFF\\"}"); return; }
+  server.send(400, "application/json", "{\\"success\\":false,\\"message\\":\\"Khong tim thay state ON/OFF\\"}");
+}
+
+// ================= HANDLE STATUS =================
+void handleStatus() {
+  String relayText = relayState ? "ON" : "OFF";
+  int relayValue = relayState ? 1 : 0;
+  String response = "{";
+  response += "\\"device_id\\":\\"" + String(DEVICE_ID) + "\\",";
+  response += "\\"relay\\":1,";
+  response += "\\"relay_value\\":" + String(relayValue) + ",";
+  response += "\\"relay_state\\":\\"" + relayText + "\\"";
+  response += "}";
+  server.send(200, "application/json", response);
+}
+
+// ================= WEB SERVER SETUP =================
+void setupWebServer() {
+  server.on("/relay", HTTP_POST, handleRelayControl);
+  server.on("/status", HTTP_GET, handleStatus);
+  server.onNotFound([]() {
+    server.send(404, "application/json", "{\\"success\\":false,\\"message\\":\\"Endpoint not found\\"}");
+  });
+  server.begin();
+  Serial.println("ESP32 Web Server started on port 80");
 }
 ` : '';
 
     const ingestMqttBlock = isMqtt ? `// ================= MQTT INGEST =================
-const char* MQTT_BROKER  = "${mqttBroker}";
-const int   MQTT_PORT    = 1883;
-const char* MQTT_USER    = "${mqttUser}";
-const char* MQTT_PASS    = "${mqttPass}";
-const char* TOPIC_DATA   = "devices/${deviceCode}/data";
-const char* TOPIC_STATUS = "devices/${deviceCode}/status";
-const char* TOPIC_LWT    = "devices/${deviceCode}/lwt";
+const char* MQTT_BROKER   = "${mqttBroker}";
+const int   MQTT_PORT     = 1883;
+const char* MQTT_USER     = "${mqttUser}";
+const char* MQTT_PASS     = "${mqttPass}";
+const char* DEVICE_ID     = "${deviceCode}";
 
+const char* TOPIC_DATA    = "iot/devices/${deviceCode}/data";
+const char* TOPIC_STATUS  = "iot/devices/${deviceCode}/status";
+const char* TOPIC_CONTROL = "iot/devices/${deviceCode}/control";
+const char* TOPIC_LWT     = "iot/devices/${deviceCode}/lwt";
+
+// ================= RELAY CONFIG =================
+#define RELAY_PIN 26
+const bool RELAY_ACTIVE_LOW = false;
+bool relayState = false;
+
+void setRelay(bool on) {
+  relayState = on;
+  if (RELAY_ACTIVE_LOW) {
+    digitalWrite(RELAY_PIN, on ? LOW : HIGH);
+  } else {
+    digitalWrite(RELAY_PIN, on ? HIGH : LOW);
+  }
+  Serial.print("Relay 1: ");
+  Serial.println(on ? "ON" : "OFF");
+}
+
+// ================= SEND INTERVAL =================
+unsigned long lastSendTime = 0;
+const unsigned long SEND_INTERVAL = 5000;
+unsigned long lastStatusTime = 0;
+const unsigned long STATUS_INTERVAL = 30000;
+
+// ================= WIFI CLIENT =================
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
 
+// ================= MQTT CALLBACK =================
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  // Xử lý lệnh điều khiển từ server (bật/tắt relay...)
   Serial.print("MQTT msg [");
   Serial.print(topic);
   Serial.print("]: ");
   for (unsigned int i = 0; i < length; i++) Serial.print((char)payload[i]);
   Serial.println();
+
+  // Parse control command
+  String message = "";
+  for (unsigned int i = 0; i < length; i++) message += (char)payload[i];
+
+  // Parse JSON manually (simple parser for relay control)
+  message.toUpperCase();
+  message.replace(" ", "");
+  message.replace("\\n", "");
+  message.replace("\\r", "");
+
+  bool isRelay1 = message.indexOf("\\"RELAY\\":1") >= 0 || message.indexOf("\\"RELAY\\":1}") >= 0;
+  bool isOn = message.indexOf("\\"STATE\\":\\"ON\\"") >= 0;
+  bool isOff = message.indexOf("\\"STATE\\":\\"OFF\\"") >= 0;
+
+  if (isRelay1) {
+    if (isOn) {
+      setRelay(true);
+      String onPayload = "{\\"device_id\\":\\"" + String(DEVICE_ID) + "\\",\\"relay\\":1,\\"state\\":\\"ON\\"}";
+      mqtt.publish(TOPIC_STATUS, onPayload.c_str());
+    } else if (isOff) {
+      setRelay(false);
+      String offPayload = "{\\"device_id\\":\\"" + String(DEVICE_ID) + "\\",\\"relay\\":1,\\"state\\":\\"OFF\\"}";
+      mqtt.publish(TOPIC_STATUS, offPayload.c_str());
+    }
+  }
 }
 
+// ================= CONNECT MQTT =================
 void connectMqtt() {
-  while (!mqtt.connected()) {
+  if (!mqtt.connected()) {
     Serial.print("Connecting MQTT...");
-    if (mqtt.connect(MQTT_USER, MQTT_USER, MQTT_PASS, TOPIC_LWT, 1, true, "offline")) {
+    if (mqtt.connect(DEVICE_ID, MQTT_USER, MQTT_PASS, TOPIC_LWT, 1, true, "offline")) {
       Serial.println("OK");
       mqtt.publish(TOPIC_LWT, "online", true);
-      mqtt.subscribe("devices/${deviceCode}/control");
+      mqtt.subscribe(TOPIC_CONTROL);
+      Serial.println("Subscribed to: " + String(TOPIC_CONTROL));
     } else {
       Serial.print("fail rc=");
-      Serial.print(mqtt.state());
+      Serial.println(mqtt.state());
       delay(2000);
     }
   }
 }
 
-void sendMqttData() {
-  if (!mqtt.connected()) connectMqtt();
+// ================= SENSOR DATA =================
+// Khai báo biến sensor (đọc từ DHT, BMP, v.v.)
+${dataKeysCpp}
+
+// ================= SEND DATA TO IOT PLATFORM =================
+void sendDataToIoTPlatform() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi lost, reconnecting...");
+    connectWiFi();
+    if (WiFi.status() != WL_CONNECTED) return;
+  }
+
+  if (!mqtt.connected()) {
+    connectMqtt();
+    if (!mqtt.connected()) return;
+  }
+
   String payload = "{";
   payload += "\\"device_id\\":\\"" + String(DEVICE_ID) + "\\",";
   payload += "\\"data\\":{";
 ${dataPayloadCpp}
   payload += "}}";
-  mqtt.publish(TOPIC_DATA, payload);
+  Serial.println("Payload:");
+  Serial.println(payload);
+
+  if (mqtt.publish(TOPIC_DATA, payload.c_str(), true)) {
+    Serial.println("MQTT publish OK");
+  } else {
+    Serial.println("MQTT publish FAIL");
+  }
+}
+
+// ================= PUBLISH STATUS =================
+void publishStatus() {
+  if (!mqtt.connected()) return;
+
+  String relayText = relayState ? "ON" : "OFF";
+  int relayValue = relayState ? 1 : 0;
+
+  String status = "{";
+  status += "\\"device_id\\":\\"" + String(DEVICE_ID) + "\\",";
+  status += "\\"relay\\":1,";
+  status += "\\"relay_value\\":" + String(relayValue) + ",";
+  status += "\\"relay_state\\":\\"" + relayText + "\\",";
+  status += "\\"rssi\\":" + String(WiFi.RSSI());
+  status += "}";
+
+  mqtt.publish(TOPIC_STATUS, status.c_str(), true);
 }
 ` : '';
 
-    const relayBlock = lines.length ? `// ================= RELAY CONTROL (HTTP EDGE) =================
-const char* EDGE_CONTROL_URL = "${edgeUrl}";
-WebServer server(80);
-
-void setup() {
-  Serial.begin(115200);
-  delay(1000);
-
-  // Khởi tạo trạng thái relay
-${relayCpp}
-
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);
-
-  // Kết nối WiFi + (tùy chọn) IP tĩnh
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) delay(500);
-
-  // Endpoint POST /relay  body: {"relay":1,"state":"ON"}
-  server.on("/relay", HTTP_POST, []() {
-    String body = server.arg("plain");
-    // Ví dụ đơn giản: tìm "relay":N và "state":"ON|OFF"
-    int r = 0; String st = "";
-    int idx = body.indexOf("\\"relay\\":");
-    if (idx >= 0) r = body.substring(idx + 8).toInt();
-    if (body.indexOf("\\"state\\":\\"ON\\"") >= 0) st = "ON";
-    if (body.indexOf("\\"state\\":\\"OFF\\"") >= 0) st = "OFF";
-    if (r > 0 && st != "") {
-      relayStates[r] = (st == "ON");
-      digitalWrite(RELAY_PIN, relayStates[r] ? HIGH : LOW);
-      server.send(200, "application/json", "{\\"success\\":true,\\"relay\\":" + String(r) + ",\\"state\\":\\"" + st + "\\"}");
-    } else {
-      server.send(400, "application/json", "{\\"success\\":false}");
-    }
-  });
-  server.begin();
-}
+    const relayBlock = lines.length ? `// ================= RELAY CONTROL =================
+#define RELAY_PIN 26
+bool relayStates[8] = { false };
 ` : '';
 
     return `// Auto-generated sample code for device: ${deviceCode}
@@ -459,13 +611,14 @@ ${relayCpp}
 // Lưu ý: chỉnh WIFI_SSID/PASSWORD và IP tĩnh trước khi flash
 
 #include <WiFi.h>
-${isHttp ? '#include <HTTPClient.h>\n' : ''}${isMqtt ? '#include <PubSubClient.h>\n' : ''}${lines.length ? '#include <WebServer.h>\n' : ''}
+${isHttp ? '#include <HTTPClient.h>\n#include <WebServer.h>\n' : ''}${isMqtt ? '#include <PubSubClient.h>\n' : ''}
+// ================= WIFI ESP32 THAT =================
+// Lưu ý: ESP32 chỉ kết nối WiFi 2.4GHz, không dùng WiFi 5GHz
+const char* WIFI_SSID = "YOUR_WIFI_SSID";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-// ================= WIFI =================
-const char* WIFI_SSID     = "FPT";
-const char* WIFI_PASSWORD = "12345678";
-
-// ================= STATIC IP (tùy chọn - bỏ nếu muốn DHCP) =================
+// ================= STATIC IP CONFIG =================
+// IP tĩnh để IoT Platform luôn gửi đúng ESP32 (không bị đổi khi router cấp lại DHCP)
 IPAddress espStaticIP(192, 168, 69, 241);
 IPAddress espGateway (192, 168, 69, 1);
 IPAddress espSubnet  (255, 255, 255, 0);
@@ -473,42 +626,65 @@ IPAddress espDNS1    (192, 168, 69, 1);
 IPAddress espDNS2    (8, 8, 8, 8);
 
 // ================= IOT PLATFORM =================
-const char* DEVICE_ID = "${deviceCode}";
+// (DEVICE_ID da duoc dinh nghia trong ingestHttpBlock)
 
 ${ingestHttpBlock}${ingestMqttBlock}
-// ================= RELAY STATE =================
-#define RELAY_PIN 26
-bool relayStates[8] = { false };
-
-${relayBlock}
-// ================= DATA (đọc từ cảm biến thật) =================
-${dataKeysCpp}
-
-unsigned long lastSendTime = 0;
-const unsigned long SEND_INTERVAL = 5000;
+// ================= WIFI CONNECT (STATIC IP) =================
+void connectWiFi() {
+  Serial.println();
+  Serial.println("Dang ket noi WiFi ESP32 that...");
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.config(espStaticIP, espGateway, espSubnet, espDNS1, espDNS2);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  int retry = 0;
+  while (WiFi.status() != WL_CONNECTED && retry < 40) {
+    delay(500);
+    Serial.print(".");
+    retry++;
+  }
+  Serial.println();
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("Da ket noi WiFi");
+    Serial.print("IP ESP32: ");
+    Serial.println(WiFi.localIP());
+    Serial.println();
+    Serial.println("Edge Control URL can dien tren IoT Platform:");
+    Serial.print("http://");
+    Serial.print(WiFi.localIP());
+    Serial.println("/relay");
+  } else {
+    Serial.println("Ket noi WiFi that bai!");
+  }
+}
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
   pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) delay(500);
-  Serial.print("WiFi OK, IP: ");
-  Serial.println(WiFi.localIP());
-${isMqtt ? `
-  mqtt.setServer(MQTT_BROKER, MQTT_PORT);
-  mqtt.setCallback(mqttCallback);
-  connectMqtt();` : ''}
+  setRelay(false);
+  connectWiFi();
+  if (WiFi.status() == WL_CONNECTED) {
+${isHttp ? '    setupWebServer();\n    sendDataToIoTPlatform();' : ''}${isMqtt ? `
+    mqtt.setServer(MQTT_BROKER, MQTT_PORT);
+    mqtt.setCallback(mqttCallback);
+    connectMqtt();
+    sendDataToIoTPlatform();` : ''}
+  }
 }
 
 void loop() {
-${isMqtt ? '  mqtt.loop();\n' : ''}${lines.length ? '  server.handleClient();\n' : ''}
-  if (millis() - lastSendTime >= SEND_INTERVAL) {
-    lastSendTime = millis();
-${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}  }
+  if (WiFi.status() == WL_CONNECTED) {
+${isHttp ? '    server.handleClient();\n' : ''}${isMqtt ? '    mqtt.loop();\n' : ''}    unsigned long now = millis();
+    if (now - lastSendTime >= SEND_INTERVAL) {
+      lastSendTime = now;
+${isHttp ? '      sendDataToIoTPlatform();\n' : ''}${isMqtt ? '      sendDataToIoTPlatform();\n' : ''}    }
+${isMqtt ? '    if (now - lastStatusTime >= STATUS_INTERVAL) {\n      lastStatusTime = now;\n      publishStatus();\n    }\n' : ''}  } else {
+    Serial.println("Mat WiFi, dang ket noi lai...");
+    connectWiFi();
+    if (WiFi.status() == WL_CONNECTED) {
+${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${isMqtt ? '      mqtt.setServer(MQTT_BROKER, MQTT_PORT);\n      mqtt.setCallback(mqttCallback);\n      connectMqtt();\n' : ''}    }
+  }
 }
 `;
   }, [device, deviceId, dataKeys, controlLines]);
@@ -685,7 +861,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
       .then((deviceRes) => {
         const data = deviceRes.data || {};
         // Nếu thiếu protocol/http_api_key/secret_key (do cache cũ / cache.devices cũ),
-        // fetch full-config để merge vào device state — tránh label nút copy bị fallback "MQTT" sai.
+        // fetch full-config để merge vào device state để tránh label nút copy bị fallback "MQTT" sai.
         if (!data.protocol) {
           fetchDeviceFullConfig(deviceId, tokenRef.current)
             .then((cfg) => {
@@ -729,25 +905,6 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
     loadEvents(1);
   }, [deviceId]);
 
-  useEffect(() => {
-    if (!deviceId) return;
-    const poll = async () => {
-      try {
-        const res = await axios.get(`${API_BASE}/devices/${deviceId}/latest`, {
-          headers: { Authorization: `Bearer ${tokenRef.current}` },
-          timeout: DEVICE_API_TIMEOUT_MS,
-        });
-        setDevice(prev => {
-          if (!prev) return res.data;
-          return { ...res.data, data: { ...prev.data, ...res.data.data } };
-        });
-      } catch (err) { /* ignore */ }
-      loadEvents(1, true);
-    };
-    latestPollRef.current = setInterval(poll, 5000);
-    return () => { if (latestPollRef.current) clearInterval(latestPollRef.current); };
-  }, [deviceId]);
-
   const loadEvents = async (targetPage = 1, silent = false) => {
     try {
       const res = await axios.get(
@@ -774,43 +931,36 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
     setChartData(data);
   };
 
+  // Realtime: lang nghe tu RealtimeProvider (WS da duoc mo 1 lan o App level).
+  // Khi co sensor event cho deviceId nay, cap nhat events list, chart, device.data.
   useEffect(() => {
-    if (!deviceId) return;
-    let cancelled = false;
-    const ws = new WebSocket(WS_URL);
-    ws.onopen = () => {
-      if (cancelled) { try { ws.close(); } catch (_) { /* ignore */ } }
-    };
-    ws.onerror = () => { /* silent */ };
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.device_id === deviceId) {
-          setEvents(prev => {
-            const newEvent = { ...data };
-            return [newEvent, ...prev].slice(0, 100);
-          });
-          setChartData(prev => {
-            const newPoint = {
-              ...data,
-              timeStr: data.timestamp
-                ? new Date(data.timestamp * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-                : '',
-            };
-            return [...prev, newPoint].slice(-200);
-          });
-          if (data.timestamp) setDevice(prev => prev ? { ...prev, last_seen: data.timestamp } : prev);
-        }
-      } catch (e) { console.error('WS parse error', e); }
-    };
-    return () => {
-      cancelled = true;
-      if (ws.readyState === WebSocket.OPEN) { try { ws.close(); } catch (_) { /* ignore */ } }
-      else if (ws.readyState === WebSocket.CONNECTING) {
-        ws.addEventListener('open', () => { try { ws.close(); } catch (_) { /* ignore */ } }, { once: true });
+    if (!deviceId || !lastEventAt) return;
+    const latest = getDeviceLatest(deviceId);
+    const keys = Object.keys(latest || {});
+    if (keys.length === 0) return;
+
+    const ts = Math.max(...Object.values(latest).map(v => v.ts || 0));
+    const newEvent = { device_id: deviceId, timestamp: Math.floor(ts / 1000), data: latest };
+    setEvents(prev => {
+      if (prev[0] && prev[0].timestamp === newEvent.timestamp) return prev;
+      return [newEvent, ...prev].slice(0, 100);
+    });
+    setChartData(prev => {
+      const newPoint = {
+        ...newEvent,
+        timeStr: new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      };
+      return [...prev, newPoint].slice(-200);
+    });
+    setDevice(prev => {
+      if (!prev) return prev;
+      const flatData = {};
+      for (const [k, v] of Object.entries(latest)) {
+        flatData[k] = typeof v === 'object' ? v.value : v;
       }
-    };
-  }, [deviceId]);
+      return { ...prev, last_seen: Math.floor(ts / 1000), data: { ...(prev.data || {}), ...flatData } };
+    });
+  }, [lastEventAt, deviceId]);
 
   // --- Status helpers ---
   const getStatus = (deviceObj) => {
@@ -828,8 +978,8 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
   const renderStatusBanner = () => {
     const type = device.loai_thiet_bi;
     const statusInfo = getStatus(device);
-    const typeIcon = type === 'sensor' ? '🌡️' : type === 'air_conditioner' ? '❄️' : '💡';
-    const roomBadgeText = device.ten_phong || (device.phong_id != null && device.phong_id !== undefined ? `Phòng #${device.phong_id}` : '') || 'Chưa gắn phòng';
+    const typeIcon = type === 'sensor' ? '📡' : type === 'air_conditioner' ? '❄️' : '⚡';
+    const roomBadgeText = device.ten_phong || (device.phong_id != null && device.phong_id !== undefined ? `Phòng #${device.phong_id}` : '') || 'Chưa gán phòng';
     return (
       <div className="status-banner">
         <div className="status-banner-left">
@@ -849,7 +999,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
             disabled={configDownloading}
             style={{ color: 'var(--iot-primary)', borderColor: 'rgba(0,229,255,0.3)' }}
           >
-            {configDownloading ? '⏳ Đang tải...' : '⬇ Tải config'}
+            {configDownloading ? 'Đang tải...' : 'Tải config'}
           </button>
           <button
             className="btn-ghost"
@@ -857,7 +1007,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
             title={sampleCopied ? 'Đã copy vào clipboard!' : 'Copy code ESP32 Arduino mẫu'}
             style={{ color: 'var(--iot-success)', borderColor: 'rgba(16,185,129,0.3)' }}
           >
-            {sampleCopied ? '✅ Đã copy!' : `📋 Copy code mẫu (${(device.protocol || 'mqtt').toUpperCase()})`}
+            {sampleCopied ? 'Đã copy!' : `Đã Copy code mẫu (${(device.protocol || 'mqtt').toUpperCase()})`}
           </button>
         </div>
       </div>
@@ -898,7 +1048,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
     if (ctrlType === 'momentary') {
       return (
         <button className="power-btn-large" onClick={onToggle} style={{ background: 'var(--iot-primary)', color: '#001f24' }}>
-          NHẤN
+          NH?N
         </button>
       );
     }
@@ -908,7 +1058,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
         <div className="three-way-group">
           {states.map(s => (
             <button key={s} className={`three-way-btn${relayState === s ? ' active' : ''}`} onClick={() => onThreeWay(s)}>
-              {relayState === s ? 'ĐANG ' + s : s}
+              {relayState === s ? '?ANG ' + s : s}
             </button>
           ))}
         </div>
@@ -916,7 +1066,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
     }
     const isOn = relayState === 'ON';
     return (
-      <button className={`power-btn${isOn ? ' is-on' : ''}`} onClick={onToggle} title={isOn ? 'ĐANG BẬT' : 'ĐANG TẮT'}>
+      <button className={`power-btn${isOn ? ' is-on' : ''}`} onClick={onToggle} title={isOn ? '?ANG B?T' : '?ANG T?T'}>
         <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>{isOn ? 'power' : 'power_off'}</span>
       </button>
     );
@@ -935,7 +1085,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
         <div className="detail-section control-card" style={{ gridColumn: 'span 12' }}>
           <div className="detail-section-title">Điều khiển</div>
           <div style={{ color: 'var(--iot-outline)', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>
-            Thiết bị chỉ đọc — không có đầu ra điều khiển.
+            Thiết bị chỉ đọc, không có đầu ra điều khiển.
           </div>
         </div>
       );
@@ -999,7 +1149,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button className="btn-primary" onClick={handleSaveConfig} style={{ flex: 1, fontSize: '12px', padding: '7px' }}>Lưu</button>
                           <button className="btn-secondary" onClick={() => setEditingRelay(null)} style={{ flex: 1, fontSize: '12px', padding: '7px' }}>Hủy</button>
-                          <button className="btn-danger-ghost" onClick={() => handleDeleteRelay(rn)} style={{ fontSize: '12px', padding: '7px 10px' }}>🗑</button>
+                          <button className="btn-danger-ghost" onClick={() => handleDeleteRelay(rn)} style={{ fontSize: '12px', padding: '7px 10px' }}>✕</button>
                         </div>
                       </div>
                     ) : (
@@ -1017,7 +1167,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
                           (st) => handleThreeWayToggle(rn, st)
                         )}
                         <div className="relay-actions">
-                          <button className="relay-action-btn" onClick={() => handleStartEditLabel(line)} title="Sửa cấu hình">✏️</button>
+                          <button className="relay-action-btn" onClick={() => handleStartEditLabel(line)} title="Sửa cấu hình">✎</button>
                           <button className="relay-action-btn" onClick={() => {
                             const updated = controlLines.map(l => l.relay_number === rn ? { ...l, hien_thi_ttcds: !l.hien_thi_ttcds } : l);
                             setControlLines(updated);
@@ -1051,7 +1201,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
             <div className="control-group">
               <label>Nhiệt độ đặt: {getSetpointValue(device)}°C</label>
               <input type="range" min="16" max="30" step="1" value={getSetpointValue(device)} onChange={handleTempChange} className="slider-range" />
-              <div className="temp-marks"><span>16°C</span><span>30°C</span></div>
+              <div className="temp-marks"><span>16?C</span><span>30?C</span></div>
             </div>
           )}
 
@@ -1139,7 +1289,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
                     <td className="timestamp-cell">
                       {ev.timestamp
                         ? new Date(ev.timestamp * 1000).toLocaleString('vi-VN')
-                        : '—'}
+                        : '?'}
                     </td>
                     <td>
                       <span className={`event-type-badge ${evType}`}>
@@ -1177,7 +1327,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
         <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--iot-on-surface)' }}>Trường dữ liệu thiết bị</h2>
         <div className="keys-toolbar" style={{ marginBottom: 0 }}>
           <button className="btn-ghost" onClick={handleDetectKeys} disabled={detecting}>
-            {detecting ? '⏳ Đang nhận diện...' : '🔍 Tự động nhận diện'}
+            {detecting ? 'Đang nhận diện...' : 'Tự động nhận diện'}
           </button>
           <button className="btn-secondary" onClick={() => {
             setKeyEditId(null); setKeyForm({ khoa: '', don_vi: '', mo_ta: '' });
@@ -1196,7 +1346,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
         <p style={{ color: 'var(--iot-outline)' }}>Đang tải...</p>
       ) : dataKeys.length === 0 ? (
         <div className="empty-state">
-          <span className="empty-state-icon">📭</span>
+          <span className="empty-state-icon">📋</span>
           <p>Chưa có trường dữ liệu nào được định nghĩa.</p>
           <p><small>Nhấn <b>"+ Thêm field"</b> hoặc <b>"Tự động nhận diện"</b> để bắt đầu.</small></p>
         </div>
@@ -1217,11 +1367,11 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
                 <tr key={k.id}>
                   <td style={{ color: 'var(--iot-outline)' }}>{idx + 1}</td>
                   <td><span className="event-tag">{k.khoa}</span></td>
-                  <td>{k.don_vi || <span style={{ color: 'var(--iot-outline)' }}>—</span>}</td>
-                  <td style={{ color: 'var(--iot-secondary)', fontSize: '12px' }}>{k.mo_ta || '—'}</td>
+                  <td>{k.don_vi || <span style={{ color: 'var(--iot-outline)' }}>?</span>}</td>
+                  <td style={{ color: 'var(--iot-secondary)', fontSize: '12px' }}>{k.mo_ta || '?'}</td>
                   <td>
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <button className="btn-ghost" onClick={() => handleKeyEdit(k)} style={{ padding: '4px 10px', fontSize: '12px' }}>✏️ Sửa</button>
+                      <button className="btn-ghost" onClick={() => handleKeyEdit(k)} style={{ padding: '4px 10px', fontSize: '12px' }}>✎ Sửa</button>
                       <button className="btn-danger-ghost" onClick={() => handleKeyDelete(k)} style={{ padding: '4px 10px', fontSize: '12px' }}>🗑 Xóa</button>
                     </div>
                   </td>
@@ -1283,23 +1433,23 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
       {/* Tab Navigation */}
       <div className="detail-tabs">
         <button className={`detail-tab${activeTab === 'overview' ? ' active' : ''}`} onClick={() => setActiveTab('overview')}>
-          📊 Tổng quan
+          📋 Tổng quan
         </button>
         <button className={`detail-tab${activeTab === 'datakeys' ? ' active' : ''}`} onClick={() => { setActiveTab('datakeys'); setKeyMsg(null); }}>
-          🔑 Trường dữ liệu ({dataKeys.length})
+          📊 Trường dữ liệu ({dataKeys.length})
         </button>
       </div>
 
-      {/* Hero — luon hien thi phia tren tabs */}
+      {/* Hero - luon hien thi phia tren tabs */}
       <div className="detail-hero">
         <div className="hero-icon">
-          {type === 'sensor' ? '🌡️' : type === 'air_conditioner' ? '❄️' : '💡'}
+          {type === 'sensor' ? '📡' : type === 'air_conditioner' ? '❄️' : '⚡'}
         </div>
         <div className="hero-info">
           <h1>{device.ten_thiet_bi || device.ma_thiet_bi}</h1>
           <p className="device-id-mono">{device.ma_thiet_bi}</p>
           <p className="room-badge">
-            {device.ten_phong || (device.phong_id != null && device.phong_id !== undefined ? `Phòng #${device.phong_id}` : 'Chưa gắn phòng')}
+            {device.ten_phong || (device.phong_id != null && device.phong_id !== undefined ? `Phòng #${device.phong_id}` : 'Chưa gán phòng')}
           </p>
         </div>
       </div>
@@ -1324,7 +1474,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
         )}
       </div>
 
-      {/* Modal — Add/Edit Key */}
+      {/* Modal ? Add/Edit Key */}
       {keyFormVisible && (
         <div className="modal-backdrop">
           <div className="modal">
@@ -1357,7 +1507,7 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
                 <input
                   value={keyForm.mo_ta}
                   onChange={e => setKeyForm({ ...keyForm, mo_ta: e.target.value })}
-                  placeholder="VD: Nhiệt độ phòng, Dòng CO2..."
+                  placeholder="VD: Nhiệt độ phòng, Độ ẩm CO2..."
                 />
               </label>
               <div className="form-actions">
@@ -1373,3 +1523,6 @@ ${isHttp ? '    sendHttpData();\n' : ''}${isMqtt ? '    sendMqttData();\n' : ''}
 };
 
 export default DeviceDetail;
+
+
+

@@ -1,19 +1,11 @@
 -- =========================================================
--- Migration: Tach bang phong thanh phong (thiet bi) va nhom (sinh vien)
--- Chay tren MySQL 5.7
--- Da chay thanh cong tren Docker MySQL container
+-- Migration: Tao bang nhom, nhom_thanh_vien, seed data
+-- Chay tren MySQL 5.7 / Docker
+-- Phien ban: dua tren schema moi (phong khong con lop_hoc_id/ten_nhom/loai_phong)
+-- Idempotent: an toan khi chay nhieu lan
 -- =========================================================
---
--- Trang thai sau khi chay:
---   - Bang nhom: tao thanh cong, 4 nhom
---   - Bang nhom_thanh_vien: tao thanh cong
---   - thiet_bi.nhom_id: da them, 4 thiet bi da co nhom_id
---   - custom_dashboards.nhom_id: da them
---   - phong: da xoa ten_nhom, loai_phong, lop_hoc_id
---   - phong_nhom_thanh_vien: da xoa (du lieu thanh vien da mat truoc khi migration chay)
---
 
--- Buoc 1: Tao bang nhom
+-- Buoc 1: Tao bang nhom (skip neu da ton tai)
 CREATE TABLE IF NOT EXISTS `nhom` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `ten_nhom` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Ten nhom, VD: Nhom Arduino',
@@ -24,12 +16,10 @@ CREATE TABLE IF NOT EXISTS `nhom` (
   `ngay_tao` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_nhom_lop_hoc` (`lop_hoc_id`),
-  KEY `idx_nhom_giao_vien` (`giao_vien_id`),
-  CONSTRAINT `nhom_lop_hoc_fk` FOREIGN KEY (`lop_hoc_id`) REFERENCES `lop_hoc` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `nhom_giao_vien_fk` FOREIGN KEY (`giao_vien_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE CASCADE
+  KEY `idx_nhom_giao_vien` (`giao_vien_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Buoc 2: Tao bang nhom_thanh_vien
+-- Buoc 2: Tao bang nhom_thanh_vien (skip neu da ton tai)
 CREATE TABLE IF NOT EXISTS `nhom_thanh_vien` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `nhom_id` INT NOT NULL,
@@ -39,118 +29,55 @@ CREATE TABLE IF NOT EXISTS `nhom_thanh_vien` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_nhom_user` (`nhom_id`, `user_id`),
   KEY `idx_nhom_tv_nhom` (`nhom_id`),
-  KEY `idx_nhom_tv_user` (`user_id`),
-  CONSTRAINT `nhom_tv_nhom_fk` FOREIGN KEY (`nhom_id`) REFERENCES `nhom` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `nhom_tv_user_fk` FOREIGN KEY (`user_id`) REFERENCES `nguoi_dung` (`id`) ON DELETE CASCADE
+  KEY `idx_nhom_tv_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Buoc 3: Them cot nhom_id vao bang thiet_bi
-SET @exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-  WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'thiet_bi' AND COLUMN_NAME = 'nhom_id');
-SET @sql = IF(@exists = 0,
-  'ALTER TABLE `thiet_bi` ADD COLUMN `nhom_id` INT DEFAULT NULL COMMENT ''FK toi bang nhom. NULL = khong thuoc nhom nao.'' AFTER `nguoi_so_huu_id`',
-  'SELECT ''thiet_bi.nhom_id already exists'' AS msg');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
-SET @exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
-  WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'thiet_bi' AND CONSTRAINT_NAME = 'thiet_bi_nhom_fk');
-SET @sql = IF(@exists = 0,
-  'ALTER TABLE `thiet_bi` ADD CONSTRAINT `thiet_bi_nhom_fk` FOREIGN KEY (`nhom_id`) REFERENCES `nhom` (`id`) ON DELETE SET NULL',
-  'SELECT ''thiet_bi_nhom_fk already exists'' AS msg');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
--- Buoc 4: Them cot nhom_id vao bang custom_dashboards
-SET @exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-  WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'custom_dashboards' AND COLUMN_NAME = 'nhom_id');
-SET @sql = IF(@exists = 0,
-  'ALTER TABLE `custom_dashboards` ADD COLUMN `nhom_id` INT DEFAULT NULL COMMENT ''FK toi bang nhom.'' AFTER `lop_hoc_id`',
-  'SELECT ''custom_dashboards.nhom_id already exists'' AS msg');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
-SET @exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
-  WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'custom_dashboards' AND CONSTRAINT_NAME = 'custom_dashboards_nhom_fk');
-SET @sql = IF(@exists = 0,
-  'ALTER TABLE `custom_dashboards` ADD CONSTRAINT `custom_dashboards_nhom_fk` FOREIGN KEY (`nhom_id`) REFERENCES `nhom` (`id`) ON DELETE SET NULL',
-  'SELECT ''custom_dashboards_nhom_fk already exists'' AS msg');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
--- Buoc 5: Di chuyen phong (loai_phong='nhom') sang bang nhom
+-- Buoc 3: Seed bang nhom (1 nhom moi moi lop hoc, giao vien chu nhiem la giao_vien_id)
 INSERT INTO nhom (ten_nhom, mo_ta, lop_hoc_id, giao_vien_id, ma_nhom, ngay_tao)
-SELECT p.ten_nhom, p.mo_ta, p.lop_hoc_id,
-       COALESCE(p.nguoi_quan_ly_id, p.nguoi_so_huu_id),
-       p.ma_phong, p.ngay_tao
-FROM phong p
-WHERE p.loai_phong = 'nhom';
+SELECT
+  CONCAT('Nhom ', lh.ten_lop) AS ten_nhom,
+  CONCAT('Nhom hoc tap lop ', lh.ten_lop) AS mo_ta,
+  lh.id AS lop_hoc_id,
+  COALESCE(lh.giao_vien_id, 1) AS giao_vien_id,
+  CONCAT('NHOM_', lh.id, '_1') AS ma_nhom,
+  NOW() AS ngay_tao
+FROM lop_hoc lh
+WHERE NOT EXISTS (SELECT 1 FROM nhom n WHERE n.lop_hoc_id = lh.id);
 
--- Buoc 6: Di chuyen thanh vien (neu phong_nhom_thanh_vien con ton tai)
--- Chi chay neu bang nguon con ton tai
-SET @src_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES
-  WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'phong_nhom_thanh_vien');
-SET @sql = IF(@src_exists > 0,
-  CONCAT(
-    'DROP TEMPORARY TABLE IF EXISTS _m; ',
-    'CREATE TEMPORARY TABLE _m AS SELECT p.id AS phong_id, n.id AS nhom_id FROM phong p JOIN nhom n ON n.lop_hoc_id = p.lop_hoc_id AND n.ma_nhom = p.ma_phong WHERE p.loai_phong = ''nhom''; ',
-    'INSERT INTO nhom_thanh_vien (nhom_id, user_id, vai_tro_trong_nhom, ngay_tham_gia) SELECT m.nhom_id, pnt.user_id, pnt.vai_tro_trong_nhom, pnt.ngay_tham_gia FROM phong_nhom_thanh_vien pnt JOIN _m m ON pnt.phong_id = m.phong_id; ',
-    'DROP TEMPORARY TABLE IF EXISTS _m;'
-  ),
-  'SELECT ''phong_nhom_thanh_vien already gone, skipping member migration'' AS msg');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+-- Buoc 4: Copy thanh vien cu tu bang phong_nhom_thanh_vien (neu con ton tai)
+-- Bang phong khong con lop_hoc_id nen khong JOIN duoc, chi copy truc tiep
+DROP PROCEDURE IF EXISTS _migrate_members;
+DELIMITER //
+CREATE PROCEDURE _migrate_members()
+BEGIN
+  DECLARE src_exists INT DEFAULT 0;
+  SELECT COUNT(*) INTO src_exists FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'phong_nhom_thanh_vien';
 
--- Buoc 7: Cap nhat nhom_id cho thiet bi (thiet bi thuoc nhom nao)
-DROP TEMPORARY TABLE IF EXISTS _m2;
-CREATE TEMPORARY TABLE _m2 AS
-SELECT p.id AS phong_id, n.id AS nhom_id
-FROM phong p
-JOIN nhom n ON n.lop_hoc_id = p.lop_hoc_id AND n.ma_nhom = p.ma_phong;
-UPDATE thiet_bi t JOIN _m2 m ON t.phong_id = m.phong_id
-SET t.nhom_id = m.nhom_id WHERE t.nhom_id IS NULL;
-DROP TEMPORARY TABLE IF EXISTS _m2;
+  IF src_exists > 0 THEN
+    -- Bang phong cu co: lop_hoc_id, ma_phong, loai_phong, ten_nhom
+    -- Chi copy thanh vien khi con bang nguon
+    INSERT INTO nhom_thanh_vien (nhom_id, user_id, vai_tro_trong_nhom, ngay_tham_gia)
+    SELECT n.id, pnt.user_id, pnt.vai_tro_trong_nhom, pnt.ngay_tham_gia
+    FROM phong_nhom_thanh_vien pnt
+    JOIN nhom n ON n.ma_nhom = pnt.ma_phong
+    WHERE pnt.loai_phong = 'nhom'
+      AND NOT EXISTS (
+        SELECT 1 FROM nhom_thanh_vien ntv
+        WHERE ntv.nhom_id = n.id AND ntv.user_id = pnt.user_id
+      );
+  ELSE
+    SELECT 'phong_nhom_thanh_vien already gone, skipping' AS msg;
+  END IF;
+END //
+DELIMITER ;
+CALL _migrate_members();
+DROP PROCEDURE _migrate_members;
 
--- Buoc 8: Cap nhat nhom_id cho custom_dashboards
-DROP TEMPORARY TABLE IF EXISTS _dm;
-CREATE TEMPORARY TABLE _dm AS
-SELECT d.id AS dashboard_id, n.id AS nhom_id
-FROM custom_dashboards d
-JOIN phong p ON d.phong_id = p.id
-JOIN nhom n ON n.lop_hoc_id = p.lop_hoc_id AND n.ma_nhom = p.ma_phong;
-UPDATE custom_dashboards d JOIN _dm m ON d.id = m.dashboard_id
-SET d.nhom_id = m.nhom_id WHERE d.nhom_id IS NULL;
-DROP TEMPORARY TABLE IF EXISTS _dm;
-
--- Buoc 9: Xoa bang phong_nhom_thanh_vien cu (neu con ton tai)
+-- Buoc 5: Xoa bang phong_nhom_thanh_vien cu (neu con ton tai)
 SET @exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES
   WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'phong_nhom_thanh_vien');
 SET @sql = IF(@exists > 0, 'DROP TABLE `phong_nhom_thanh_vien`', 'SELECT ''phong_nhom_thanh_vien already gone'' AS msg');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- Buoc 10: Xoa cac cot thua trong bang phong (MySQL 5.7)
-SET @exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-  WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'phong' AND COLUMN_NAME = 'ten_nhom');
-SET @sql = IF(@exists > 0, 'ALTER TABLE `phong` DROP COLUMN `ten_nhom`', 'SELECT ''ten_nhom already removed'' AS msg');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
-SET @exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-  WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'phong' AND COLUMN_NAME = 'loai_phong');
-SET @sql = IF(@exists > 0, 'ALTER TABLE `phong` DROP COLUMN `loai_phong`', 'SELECT ''loai_phong already removed'' AS msg');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
-SET @exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-  WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'phong' AND COLUMN_NAME = 'lop_hoc_id');
-SET @sql = IF(@exists > 0, 'ALTER TABLE `phong` DROP COLUMN `lop_hoc_id`', 'SELECT ''lop_hoc_id already removed'' AS msg');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
--- Xoa FK va index thua
-SET @exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
-  WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'phong' AND CONSTRAINT_NAME = 'phong_lop_hoc_fk');
-SET @sql = IF(@exists > 0, 'ALTER TABLE `phong` DROP FOREIGN KEY `phong_lop_hoc_fk`', 'SELECT ''phong_lop_hoc_fk already removed'' AS msg');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
-SET @exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-  WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'phong' AND INDEX_NAME = 'idx_phong_lop_hoc');
-SET @sql = IF(@exists > 0, 'ALTER TABLE `phong` DROP INDEX `idx_phong_lop_hoc`', 'SELECT ''idx_phong_lop_hoc already removed'' AS msg');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-
-SET @exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-  WHERE TABLE_SCHEMA = 'iot_data' AND TABLE_NAME = 'phong' AND INDEX_NAME = 'idx_phong_lop_hoc_nhom');
-SET @sql = IF(@exists > 0, 'ALTER TABLE `phong` DROP INDEX `idx_phong_lop_hoc_nhom`', 'SELECT ''idx_phong_lop_hoc_nhom already removed'' AS msg');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SELECT 'Migration split_phong_nhom completed' AS status;
