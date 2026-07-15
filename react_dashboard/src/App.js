@@ -146,6 +146,43 @@ function App() {
     return () => clearInterval(id);
   }, [token, isLoggedIn, refreshTokenSilently]);
 
+  // ── Listen for 401 events from services.js interceptor ──────────────────
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const handleTokenExpired = () => {
+      // Chi logout khi nhan event tu interceptor (khong phai refresh/auth request)
+      handleLogout();
+    };
+    window.addEventListener('auth:token-expired', handleTokenExpired);
+    return () => window.removeEventListener('auth:token-expired', handleTokenExpired);
+  }, [isLoggedIn]);
+
+  // ── Listen for impersonate events from ClassManagement ────────────────
+  useEffect(() => {
+    const handleImpersonate = (e) => {
+      const { token: newToken, role, pages } = e.detail;
+      // Update localStorage first
+      localStorage.setItem('token', newToken);
+      localStorage.setItem('userRole', role);
+      localStorage.setItem('allowedPages', JSON.stringify(pages));
+      // Update state
+      setToken(newToken);
+      setUserRole(role);
+      setAllowedPages(pages);
+      // Use setTimeout to ensure state is updated before API calls
+      setTimeout(() => {
+        fetchMe(newToken).then(res => {
+          setUserInfo({ ...res.data });
+        }).catch(() => {});
+        loadCustomDashboards(newToken);
+      }, 0);
+      // Reload page to refresh all components
+      window.location.reload();
+    };
+    window.addEventListener('auth:impersonate', handleImpersonate);
+    return () => window.removeEventListener('auth:impersonate', handleImpersonate);
+  }, []);
+
   const loadDevices = async (authToken = null) => {
     const tokenToUse = authToken || token;
     if (!tokenToUse) return;

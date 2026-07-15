@@ -2,17 +2,23 @@ import axios from 'axios';
 import { API_BASE } from './config/api';
 
 // Global 401 handler: moi API call qua axios default deu chay qua day.
-// Khi token het han (access hoac refresh), tu dong clear state + reload ve login.
+// Chi dispatch event khi 401, de App.js xu ly logout thong qua state.
+// Tra ve Promise.reject(error) de code goi API co the xu ly rieng (khong bi logout ngay).
+const AUTH_ENDPOINTS = ['/auth/me', '/refresh', '/token', '/impersonate'];
+
 axios.interceptors.response.use(
   response => response,
   error => {
     if (error.response?.status === 401) {
-      try {
-        localStorage.clear();
-      } catch (e) {
-        // Bo qua loi localStorage (SSR / private mode)
+      const url = error.config?.url || '';
+      const isAuthEndpoint = AUTH_ENDPOINTS.some(ep => url.includes(ep));
+      if (!isAuthEndpoint) {
+        // Chi dispatch event, khong clear localStorage ngay
+        // App.js se lang nghe va xu ly logout
+        window.dispatchEvent(new CustomEvent('auth:token-expired', {
+          detail: { url, method: error.config?.method }
+        }));
       }
-      window.location.href = '/';
     }
     return Promise.reject(error);
   }

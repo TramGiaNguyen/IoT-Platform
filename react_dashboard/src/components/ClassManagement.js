@@ -248,6 +248,7 @@ export default function ClassManagement({ token, onBack, onClassChanged, workspa
 function ClassDetailPanel({ cls, token, onClose, onChanged }) {
   const [activeTab, setActiveTab] = useState('students'); // 'students' | 'groups'
   const [classData, setClassData] = useState(cls);
+  const pendingRef = useRef(false); // Chan race condition voi realtime updates
 
   return (
     <div className="modal-backdrop">
@@ -293,8 +294,10 @@ function StudentTab({ cls, token, onChanged }) {
   const [bulkResult, setBulkResult] = useState(null);
   const [bulkError, setBulkError] = useState(null);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const pendingRef = useRef(false);
 
   const loadStudents = useCallback(async () => {
+    if (pendingRef.current) return;
     setLoading(true);
     try {
       const res = await listClassStudents(cls.id, token);
@@ -323,10 +326,14 @@ function StudentTab({ cls, token, onChanged }) {
     if (!window.confirm(`Đăng nhập vào tài khoản "${student.ten}"?`)) return;
     try {
       const res = await impersonateUser(student.id, token);
-      localStorage.setItem('token', res.data.access_token);
-      localStorage.setItem('userRole', res.data.vai_tro);
-      localStorage.setItem('allowedPages', JSON.stringify(res.data.allowed_pages || []));
-      window.location.reload();
+      // Dispatch event de App.js xu ly impersonate thay vi reload trang
+      window.dispatchEvent(new CustomEvent('auth:impersonate', {
+        detail: {
+          token: res.data.access_token,
+          role: res.data.vai_tro,
+          pages: res.data.allowed_pages || []
+        }
+      }));
     } catch (err) {
       alert('Đăng nhập thất bại: ' + (err.response?.data?.detail || err.message));
     }
@@ -519,25 +526,37 @@ function StudentPickerModal({ cls, token, onClose, onAdded }) {
     setPickerAdding(true);
     setPickerError(null);
     const ids = Array.from(pickerSelected);
-    const results = await Promise.allSettled(
-      ids.map(id => addStudentToClass(cls.id, id, token))
-    );
-    const failed = results.filter(r => r.status === 'rejected');
+    let has401 = false;
+    let errorMessages = [];
+
+    for (const id of ids) {
+      try {
+        await addStudentToClass(cls.id, id, token);
+      } catch (err) {
+        if (err.response?.status === 401) {
+          has401 = true;
+          break;
+        } else {
+          errorMessages.push(err.response?.data?.detail || err.message);
+        }
+      }
+    }
+
     setPickerAdding(false);
 
-    if (failed.length > 0) {
-      const first = failed[0].reason;
-      setPickerError((first?.response?.data?.detail || first?.message || 'Lỗi') +
-        (failed.length > 1 ? ` (${failed.length}/${ids.length} thất bại)` : ''));
+    if (has401) {
+      setPickerError('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
+      return;
     }
 
-    const successCount = ids.length - failed.length;
-    if (successCount > 0) {
-      onAdded();
-      // Reload picker (bỏ những SV đã thêm) + clear selection
-      setPickerSelected(new Set());
-      loadPickerStudents(pickerSearch);
+    if (errorMessages.length > 0) {
+      setPickerError(errorMessages[0] + (errorMessages.length > 1 ? ` (+${errorMessages.length - 1} lỗi khác)` : ''));
     }
+
+    // Thanh cong - reload picker + clear selection
+    onAdded();
+    setPickerSelected(new Set());
+    loadPickerStudents(pickerSearch);
   };
 
   return (
@@ -644,8 +663,10 @@ function GroupTab({ cls, token, onChanged }) {
   const [groupMembers, setGroupMembers] = useState([]);
   const [groupStudents, setGroupStudents] = useState([]);
   const [memberLoading, setMemberLoading] = useState(false);
+  const pendingRef = useRef(false);
 
   const loadGroups = useCallback(async () => {
+    if (pendingRef.current) return;
     setLoading(true);
     try {
       const res = await listClassGroups(cls.id, token);
@@ -702,6 +723,7 @@ function GroupTab({ cls, token, onChanged }) {
 
   const handleOpenGroup = async (g) => {
     if (openGroupId === g.id) { setOpenGroupId(null); setGroupMembers([]); setGroupStudents([]); return; }
+    pendingRef.current = true;
     setOpenGroupId(g.id);
     setMemberLoading(true);
     try {
@@ -710,26 +732,26 @@ function GroupTab({ cls, token, onChanged }) {
       const stuRes = await listClassStudents(cls.id, token);
       const allStu = stuRes.data.students || [];
       const inThisGroup = new Set((memRes.data.members || []).map(m => m.id));
+      // Lay member_ids tu groups state (da co san) thay vi goi API moi
       const otherGroupMembers = new Set();
-      for (const grp of groups) {
-        if (grp.id !== g.id) {
-          try {
-            const r = await listGroupMembers(grp.id, token);
-            (r.data.members || []).forEach(m => otherGroupMembers.add(m.id));
-          } catch (_) {}
+      groups.forEach(grp => {
+        if (grp.id !== g.id && grp.member_ids) {
+          grp.member_ids.forEach(id => otherGroupMembers.add(id));
         }
-      }
+      });
       setGroupStudents(allStu.filter(s => !inThisGroup.has(s.id) && !otherGroupMembers.has(s.id)));
     } catch (err) {
       console.error('Load group members failed', err);
       setGroupMembers([]); setGroupStudents([]);
     } finally {
       setMemberLoading(false);
+      pendingRef.current = false;
     }
   };
 
   const handleAddMember = async (studentId) => {
     if (!openGroupId) return;
+    pendingRef.current = true;
     try {
       await addGroupMember(openGroupId, studentId, token);
       const memRes = await listGroupMembers(openGroupId, token);
@@ -737,20 +759,33 @@ function GroupTab({ cls, token, onChanged }) {
       loadGroups(); onChanged();
       setGroupStudents(prev => prev.filter(s => s.id !== studentId));
     } catch (err) {
-      alert('Lỗi thêm thành viên: ' + (err.response?.data?.detail || err.message));
+      if (err.response?.status === 401) {
+        alert('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
+      } else {
+        alert('Lỗi thêm thành viên: ' + (err.response?.data?.detail || err.message));
+      }
+    } finally {
+      pendingRef.current = false;
     }
   };
 
   const handleRemoveMember = async (studentId, studentName) => {
     if (!openGroupId) return;
     if (!window.confirm(`Gỡ "${studentName}" khỏi nhóm?`)) return;
+    pendingRef.current = true;
     try {
       await removeGroupMember(openGroupId, studentId, token);
       const memRes = await listGroupMembers(openGroupId, token);
       setGroupMembers(memRes.data.members || []);
       loadGroups(); onChanged();
     } catch (err) {
-      alert('Lỗi gỡ thành viên: ' + (err.response?.data?.detail || err.message));
+      if (err.response?.status === 401) {
+        alert('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
+      } else {
+        alert('Lỗi gỡ thành viên: ' + (err.response?.data?.detail || err.message));
+      }
+    } finally {
+      pendingRef.current = false;
     }
   };
 
