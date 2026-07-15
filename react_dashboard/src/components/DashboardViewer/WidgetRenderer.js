@@ -87,7 +87,7 @@ export function LineChartWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKeys = widget.cau_hinh?.data_keys || [];
-  const timeRange = widget.cau_hinh?.time_range || '1h';
+  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   const loadData = async () => {
     try {
@@ -139,12 +139,26 @@ export function LineChartWidget({ widget, token, dashboardId }) {
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px' }}>
-      {widget.ten_widget && (
-        <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px' }}>
-          {widget.ten_widget}
-        </h4>
-      )}
-      <ResponsiveContainer width="100%" height="100%">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        {widget.ten_widget && (
+          <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>
+            {widget.ten_widget}
+          </h4>
+        )}
+        <select
+          value={timeRange}
+          onChange={(e) => setTimeRange(e.target.value)}
+          className="widget-time-range-select"
+          style={{ flexShrink: 0 }}
+        >
+          <option value="1h">1h</option>
+          <option value="6h">6h</option>
+          <option value="24h">24h</option>
+          <option value="7d">7d</option>
+          <option value="30d">30d</option>
+        </select>
+      </div>
+      <ResponsiveContainer width="100%" height="calc(100% - 40px)">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1f2a44" />
           <XAxis 
@@ -179,7 +193,7 @@ export function AreaChartWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKeys = widget.cau_hinh?.data_keys || [];
-  const timeRange = widget.cau_hinh?.time_range || '1h';
+  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   const loadData = async () => {
     try {
@@ -230,12 +244,26 @@ export function AreaChartWidget({ widget, token, dashboardId }) {
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px' }}>
-      {widget.ten_widget && (
-        <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px' }}>
-          {widget.ten_widget}
-        </h4>
-      )}
-      <ResponsiveContainer width="100%" height="100%">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        {widget.ten_widget && (
+          <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>
+            {widget.ten_widget}
+          </h4>
+        )}
+        <select
+          value={timeRange}
+          onChange={(e) => setTimeRange(e.target.value)}
+          className="widget-time-range-select"
+          style={{ flexShrink: 0 }}
+        >
+          <option value="1h">1h</option>
+          <option value="6h">6h</option>
+          <option value="24h">24h</option>
+          <option value="7d">7d</option>
+          <option value="30d">30d</option>
+        </select>
+      </div>
+      <ResponsiveContainer width="100%" height="calc(100% - 40px)">
         <AreaChart data={data}>
           <defs>
             {dataKeys.map((key, idx) => {
@@ -284,7 +312,7 @@ export function BarChartWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKeys = widget.cau_hinh?.data_keys || [];
-  const timeRange = widget.cau_hinh?.time_range || '1h';
+  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   const loadData = async () => {
     try {
@@ -332,16 +360,28 @@ export function BarChartWidget({ widget, token, dashboardId }) {
     );
   }
 
-
-
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px' }}>
-      {widget.ten_widget && (
-        <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px' }}>
-          {widget.ten_widget}
-        </h4>
-      )}
-      <ResponsiveContainer width="100%" height="100%">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        {widget.ten_widget && (
+          <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>
+            {widget.ten_widget}
+          </h4>
+        )}
+        <select
+          value={timeRange}
+          onChange={(e) => setTimeRange(e.target.value)}
+          className="widget-time-range-select"
+          style={{ flexShrink: 0 }}
+        >
+          <option value="1h">1h</option>
+          <option value="6h">6h</option>
+          <option value="24h">24h</option>
+          <option value="7d">7d</option>
+          <option value="30d">30d</option>
+        </select>
+      </div>
+      <ResponsiveContainer width="100%" height="calc(100% - 40px)">
         <BarChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1f2a44" />
           <XAxis 
@@ -368,13 +408,14 @@ export function GaugeWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKey = widget.cau_hinh?.data_keys?.[0];
+  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   const loadData = async () => {
     try {
       const res = await fetchWidgetData(
         dashboardId,
         widget.id,
-        widget.cau_hinh?.time_range || '1h',
+        timeRange,
         null,
         token
       );
@@ -394,7 +435,7 @@ export function GaugeWidget({ widget, token, dashboardId }) {
     loadData();
     const interval = setInterval(loadData, 10000); // Refresh every 10s for gauge
     return () => clearInterval(interval);
-  }, [widget.id]);
+  }, [widget.id, timeRange]);
 
   // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
   const latest = useDeviceRealtime(deviceId, dataKey ? [dataKey] : []);
@@ -427,11 +468,25 @@ export function GaugeWidget({ widget, token, dashboardId }) {
       height: '100%',
       padding: '20px'
     }}>
-      {widget.ten_widget && (
-        <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 16px 0', fontSize: '14px' }}>
-          {widget.ten_widget}
-        </h4>
-      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
+        {widget.ten_widget && (
+          <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>
+            {widget.ten_widget}
+          </h4>
+        )}
+        <select
+          value={timeRange}
+          onChange={(e) => setTimeRange(e.target.value)}
+          className="widget-time-range-select"
+          style={{ flexShrink: 0 }}
+        >
+          <option value="1h">1h</option>
+          <option value="6h">6h</option>
+          <option value="24h">24h</option>
+          <option value="7d">7d</option>
+          <option value="30d">30d</option>
+        </select>
+      </div>
       <div style={{
         width: '140px',
         height: '140px',
@@ -472,13 +527,14 @@ export function StatCardWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKey = widget.cau_hinh?.data_keys?.[0];
+  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   const loadData = async () => {
     try {
       const res = await fetchWidgetData(
         dashboardId,
         widget.id,
-        widget.cau_hinh?.time_range || '1h',
+        timeRange,
         null,
         token
       );
@@ -498,7 +554,7 @@ export function StatCardWidget({ widget, token, dashboardId }) {
     loadData();
     const interval = setInterval(loadData, 10000);
     return () => clearInterval(interval);
-  }, [widget.id]);
+  }, [widget.id, timeRange]);
 
   // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
   const latest = useDeviceRealtime(deviceId, dataKey ? [dataKey] : []);
@@ -526,11 +582,25 @@ export function StatCardWidget({ widget, token, dashboardId }) {
       padding: '20px',
       textAlign: 'center'
     }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
+        <span style={{ fontSize: '12px', color: 'var(--bdu-muted)' }}>
+          {widget.cau_hinh?.label || widget.ten_widget || 'Value'}
+        </span>
+        <select
+          value={timeRange}
+          onChange={(e) => setTimeRange(e.target.value)}
+          className="widget-time-range-select"
+          style={{ flexShrink: 0 }}
+        >
+          <option value="1h">1h</option>
+          <option value="6h">6h</option>
+          <option value="24h">24h</option>
+          <option value="7d">7d</option>
+          <option value="30d">30d</option>
+        </select>
+      </div>
       <div style={{ fontSize: '40px', fontWeight: 'bold', color: 'var(--bdu-cyan)', marginBottom: '8px' }}>
         {data?.toFixed(1) || '--'}
-      </div>
-      <div style={{ fontSize: '14px', color: 'var(--bdu-muted)' }}>
-        {widget.cau_hinh?.label || widget.ten_widget || 'Value'}
       </div>
       <div style={{ fontSize: '12px', color: 'var(--bdu-muted)', marginTop: '4px' }}>
         {widget.cau_hinh?.unit || ''}
@@ -879,7 +949,7 @@ export function ScatterPlotWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const xKey = widget.cau_hinh?.x_key;
   const yKey = widget.cau_hinh?.y_key;
-  const timeRange = widget.cau_hinh?.time_range || '1h';
+  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   const loadData = async () => {
     try {
@@ -907,7 +977,21 @@ export function ScatterPlotWidget({ widget, token, dashboardId }) {
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px' }}>
-      {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 8px 0', fontSize: 14 }}>{widget.ten_widget}</h4>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: 14 }}>{widget.ten_widget}</h4>}
+        <select
+          value={timeRange}
+          onChange={(e) => setTimeRange(e.target.value)}
+          className="widget-time-range-select"
+          style={{ flexShrink: 0 }}
+        >
+          <option value="1h">1h</option>
+          <option value="6h">6h</option>
+          <option value="24h">24h</option>
+          <option value="7d">7d</option>
+          <option value="30d">30d</option>
+        </select>
+      </div>
       <div style={{ fontSize: 11, color: 'var(--bdu-muted)', marginBottom: 4 }}>{xKey} (X) vs {yKey} (Y) — {data.length} điểm</div>
       {data.length === 0 ? (
         <div style={{ textAlign: 'center', color: 'var(--bdu-muted)', fontSize: 12, marginTop: 20 }}>Chưa có dữ liệu</div>
@@ -1438,13 +1522,14 @@ export function LCDDisplayWidget({ widget, token, dashboardId }) {
   const deviceId = widget.cau_hinh?.device_id;
   const dataKey = widget.cau_hinh?.data_keys?.[0] || 'lcd_text';
   const lineCount = widget.cau_hinh?.line_count || 2;
+  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   useEffect(() => {
     // Load data periodically
     const loadData = async () => {
       if (!deviceId) return;
       try {
-        const res = await fetchWidgetData(dashboardId, widget.id, '1h', null, token);
+        const res = await fetchWidgetData(dashboardId, widget.id, timeRange, null, token);
         const latest = res.data.data?.[res.data.data.length - 1];
         if (latest && latest[dataKey]) {
           const text = String(latest[dataKey]);
@@ -1457,14 +1542,28 @@ export function LCDDisplayWidget({ widget, token, dashboardId }) {
     loadData();
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
-  }, [deviceId, dataKey, lineCount]);
+  }, [deviceId, dataKey, lineCount, timeRange]);
 
   const bgColor = widget.cau_hinh?.bg_color || '#1a3a2a';
   const textColor = widget.cau_hinh?.text_color || '#00ff88';
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-      {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 8px 0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
+        {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
+        <select
+          value={timeRange}
+          onChange={(e) => setTimeRange(e.target.value)}
+          className="widget-time-range-select"
+          style={{ flexShrink: 0 }}
+        >
+          <option value="1h">1h</option>
+          <option value="6h">6h</option>
+          <option value="24h">24h</option>
+          <option value="7d">7d</option>
+          <option value="30d">30d</option>
+        </select>
+      </div>
       <div style={{
         width: '100%',
         maxWidth: '280px',
@@ -1501,12 +1600,13 @@ export function LEDIndicatorWidget({ widget, token, dashboardId }) {
   const [isOn, setIsOn] = useState(false);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKey = widget.cau_hinh?.data_keys?.[0] || 'led_state';
+  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   useEffect(() => {
     const loadData = async () => {
       if (!deviceId) return;
       try {
-        const res = await fetchWidgetData(dashboardId, widget.id, '1h', null, token);
+        const res = await fetchWidgetData(dashboardId, widget.id, timeRange, null, token);
         const latest = res.data.data?.[res.data.data.length - 1];
         if (latest && dataKey in latest) {
           const val = String(latest[dataKey]).toLowerCase();
@@ -1519,13 +1619,27 @@ export function LEDIndicatorWidget({ widget, token, dashboardId }) {
     loadData();
     const interval = setInterval(loadData, 3000);
     return () => clearInterval(interval);
-  }, [deviceId, dataKey]);
+  }, [deviceId, dataKey, timeRange]);
 
   const ledColor = widget.cau_hinh?.color || '#22c55e';
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-      {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 8px 0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
+        {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
+        <select
+          value={timeRange}
+          onChange={(e) => setTimeRange(e.target.value)}
+          className="widget-time-range-select"
+          style={{ flexShrink: 0 }}
+        >
+          <option value="1h">1h</option>
+          <option value="6h">6h</option>
+          <option value="24h">24h</option>
+          <option value="7d">7d</option>
+          <option value="30d">30d</option>
+        </select>
+      </div>
       <div style={{
         width: '48px',
         height: '48px',
@@ -1654,12 +1768,13 @@ export function GradientRampWidget({ widget, token, dashboardId }) {
   const unit = widget.cau_hinh?.unit || '°C';
   const lowColor = widget.cau_hinh?.low_color || '#22d3ee';
   const highColor = widget.cau_hinh?.high_color || '#ef4444';
+  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   useEffect(() => {
     const loadData = async () => {
       if (!deviceId) return;
       try {
-        const res = await fetchWidgetData(dashboardId, widget.id, '1h', null, token);
+        const res = await fetchWidgetData(dashboardId, widget.id, timeRange, null, token);
         const latest = res.data.data?.[res.data.data.length - 1];
         if (latest && dataKey in latest) {
           setValue(parseFloat(latest[dataKey]) || 0);
@@ -1671,7 +1786,7 @@ export function GradientRampWidget({ widget, token, dashboardId }) {
     loadData();
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
-  }, [deviceId, dataKey]);
+  }, [deviceId, dataKey, timeRange]);
 
   const percentage = Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
 
@@ -1684,7 +1799,21 @@ export function GradientRampWidget({ widget, token, dashboardId }) {
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-      {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 8px 0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
+        {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
+        <select
+          value={timeRange}
+          onChange={(e) => setTimeRange(e.target.value)}
+          className="widget-time-range-select"
+          style={{ flexShrink: 0 }}
+        >
+          <option value="1h">1h</option>
+          <option value="6h">6h</option>
+          <option value="24h">24h</option>
+          <option value="7d">7d</option>
+          <option value="30d">30d</option>
+        </select>
+      </div>
       <div style={{ width: '100%' }}>
         <div style={{
           width: '100%',
