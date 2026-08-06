@@ -591,3 +591,26 @@ export const removeGroupMember = (groupId, userId, token) =>
   axios.delete(`${API_BASE}/groups/${groupId}/members/${userId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+
+// =========================================================
+// Standalone ESP Controller Config
+// =========================================================
+export const fetchStandaloneConfig = (deviceId, token) =>
+  axios.get(`${API_BASE}/devices/${deviceId}/standalone-config`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data);
+
+export const saveStandaloneConfig = (deviceId, config, token) =>
+  axios.post(`${API_BASE}/devices/${deviceId}/standalone-config`, config, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const updateStandaloneConfig = (deviceId, config, token) =>
+  axios.put(`${API_BASE}/devices/${deviceId}/standalone-config`, config, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const deleteStandaloneConfig = (deviceId, token) =>
+  axios.delete(`${API_BASE}/devices/${deviceId}/standalone-config`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });

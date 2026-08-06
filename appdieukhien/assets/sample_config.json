@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "1.0",
+  "version": "1.0",
+  "boardType": "esp32",
+  "orientation": "portrait",
+  "deviceCode": "ESP001",
+  "devicePreset": "iphone-12",
+  "customWidth": 390,
+  "customHeight": 844,
+  "apSsid": "ESP_Control_ESP001",
+  "apPassword": "12345678",
+  "serverPort": 80,
+  "serverEndpoint": "control",
+  "apLocalIp": "192.168.4.1",
+  "apGateway": "192.168.4.1",
+  "apSubnet": "255.255.255.0",
+  "controls": [
+    {
+      "id": "w_btn_light_01",
+      "type": "button",
+      "label": "Light",
+      "x": 0, "y": 0, "width": 2, "height": 2,
+      "pinType": "virtual", "gpioName": "LIGHT", "gpioMode": "output",
+      "virtualPin": 0, "gpio": [2],
+      "onValue": 1, "offValue": 0, "invert": false,
+      "customIcon": "💡", "customColor": "#00e5ff"
+    },
+    {
+      "id": "w_toggle_fan_02",
+      "type": "toggle",
+      "label": "Fan",
+      "x": 2, "y": 0, "width": 2, "height": 2,
+      "pinType": "virtual", "gpioName": "FAN", "gpioMode": "output",
+      "virtualPin": 1, "gpio": [4],
+      "onValue": 1, "offValue": 0, "invert": false,
+      "customIcon": "🌀", "customColor": "#22c55e"
+    },
+    {
+      "id": "w_slider_bright_03",
+      "type": "slider",
+      "label": "Brightness",
+      "x": 0, "y": 2, "width": 4, "height": 2,
+      "pinType": "virtual", "gpioName": "LED_DIMMER", "gpioMode": "pwm",
+      "virtualPin": 2, "gpio": [5],
+      "min": 0, "max": 255, "value": 128, "step": 1,
+      "customColor": "#eab308"
+    },
+    {
+      "id": "w_knob_volume_04",
+      "type": "knob",
+      "label": "Volume",
+      "x": 0, "y": 4, "width": 2, "height": 2,
+      "pinType": "virtual", "gpioName": "AUDIO_VOL", "gpioMode": "pwm",
+      "virtualPin": 3, "gpio": [18],
+      "min": 0, "max": 100, "value": 50, "step": 1,
+      "customColor": "#3b82f6"
+    },
+    {
+      "id": "w_dpad_nav_05",
+      "type": "dpad",
+      "label": "Nav",
+      "x": 4, "y": 4, "width": 3, "height": 3,
+      "pinType": "virtual", "gpioName": "NAV_PAD", "gpioMode": "input",
+      "virtualPin": 4, "gpio": [32, 33, 34, 35],
+      "customColor": "#8b5cf6"
+    },
+    {
+      "id": "w_joy_full_06",
+      "type": "joystick_full",
+      "label": "Joystick",
+      "x": 0, "y": 6, "width": 3, "height": 3,
+      "pinType": "virtual", "gpioName": "JOYSTICK_FULL", "gpioMode": "input",
+      "virtualPin": 8, "gpio": [34, 35],
+      "orientation": "both", "autoCenter": true,
+      "deadzone": 5, "sensitivity": 1.0,
+      "min": 0, "max": 255, "value": 128,
+      "customColor": "#14b8a6"
+    },
+    {
+      "id": "w_color_pick_07",
+      "type": "color_picker",
+      "label": "RGB LED",
+      "x": 3, "y": 6, "width": 4, "height": 3,
+      "pinType": "virtual", "gpioName": "RGB_LED", "gpioMode": "pwm",
+      "virtualPin": 10, "gpio": [25, 26, 27],
+      "customColor": "#ec4899"
+    },
+    {
+      "id": "w_checkbox_08",
+      "type": "checkbox",
+      "label": "Buzzer",
+      "x": 0, "y": 9, "width": 2, "height": 2,
+      "pinType": "virtual", "gpioName": "BUZZER", "gpioMode": "output",
+      "virtualPin": 13, "gpio": [12],
+      "onValue": 1, "offValue": 0, "invert": false,
+      "customIcon": "🔔"
+    },
+    {
+      "id": "w_icon_plug_09",
+      "type": "icon_button",
+      "label": "Plug",
+      "x": 2, "y": 9, "width": 2, "height": 2,
+      "pinType": "virtual", "gpioName": "PLUG", "gpioMode": "output",
+      "virtualPin": 14, "gpio": [13],
+      "onValue": 1, "offValue": 0, "invert": false,
+      "customIcon": "🔌"
+    }
+  ],
+  "exportedAt": "2026-07-31T15:00:00.000Z"
+}

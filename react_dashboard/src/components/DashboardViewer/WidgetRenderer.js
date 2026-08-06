@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ResponsiveContainer, LineChart, AreaChart, BarChart, PieChart, Pie, Cell, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ComposedChart } from 'recharts';
 import { fetchWidgetData, controlRelay } from '../../services';
 import { API_BASE } from '../../config/api';
@@ -9,10 +9,13 @@ import '../../styles/dashboard-builder.css';
 function useDeviceRealtime(deviceId, dataKeys) {
   const { lastEventAt, getDeviceLatest } = useRealtime();
   const [latestValue, setLatestValue] = useState({});
+  // Ref de tranh stale closure
+  const getDeviceLatestRef = useRef(getDeviceLatest);
+  useEffect(() => { getDeviceLatestRef.current = getDeviceLatest; }, [getDeviceLatest]);
 
   useEffect(() => {
     if (!deviceId || !lastEventAt) return;
-    const latest = getDeviceLatest(deviceId);
+    const latest = getDeviceLatestRef.current(deviceId);
     if (!latest) return;
     const extracted = {};
     for (const key of dataKeys) {
@@ -29,7 +32,7 @@ function useDeviceRealtime(deviceId, dataKeys) {
       }
       return changed ? extracted : prev;
     });
-  }, [lastEventAt, deviceId]);
+  }, [lastEventAt, deviceId, dataKeys, getDeviceLatest]);
 
   return latestValue;
 }
@@ -87,9 +90,9 @@ export function LineChartWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKeys = widget.cau_hinh?.data_keys || [];
-  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
+  const timeRange = widget.cau_hinh?.time_range || '1h';
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const res = await fetchWidgetData(
         dashboardId,
@@ -102,30 +105,22 @@ export function LineChartWidget({ widget, token, dashboardId }) {
         .map(item => ({
           ...item,
           timestamp: new Date(item.timestamp * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-          timestampValue: item.timestamp // Keep original timestamp for sorting
+          timestampValue: item.timestamp
         }))
-        .sort((a, b) => a.timestampValue - b.timestampValue); // Ensure ascending order (oldest to newest)
+        .sort((a, b) => a.timestampValue - b.timestampValue);
       setData(chartData);
     } catch (err) {
       console.error('Failed to load widget data:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [widget.id, timeRange, dashboardId, token]);
 
-  // Initial load and periodic refresh
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30000); // Refresh every 30s
+    const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
-  }, [widget.id, timeRange]);
-
-  // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
-  const latest = useDeviceRealtime(deviceId, dataKeys);
-  useEffect(() => {
-    if (!latest || Object.keys(latest).length === 0) return;
-    makeRealtimeMerger(setData)(latest);
-  }, [latest]);
+  }, [loadData]);
 
   if (loading) {
     return (
@@ -139,26 +134,12 @@ export function LineChartWidget({ widget, token, dashboardId }) {
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        {widget.ten_widget && (
-          <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>
-            {widget.ten_widget}
-          </h4>
-        )}
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value)}
-          className="widget-time-range-select"
-          style={{ flexShrink: 0 }}
-        >
-          <option value="1h">1h</option>
-          <option value="6h">6h</option>
-          <option value="24h">24h</option>
-          <option value="7d">7d</option>
-          <option value="30d">30d</option>
-        </select>
-      </div>
-      <ResponsiveContainer width="100%" height="calc(100% - 40px)">
+      {widget.ten_widget && (
+        <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px' }}>
+          {widget.ten_widget}
+        </h4>
+      )}
+      <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1f2a44" />
           <XAxis 
@@ -193,9 +174,9 @@ export function AreaChartWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKeys = widget.cau_hinh?.data_keys || [];
-  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
+  const timeRange = widget.cau_hinh?.time_range || '1h';
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const res = await fetchWidgetData(
         dashboardId,
@@ -208,30 +189,23 @@ export function AreaChartWidget({ widget, token, dashboardId }) {
         .map(item => ({
           ...item,
           timestamp: new Date(item.timestamp * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-          timestampValue: item.timestamp // Keep original timestamp for sorting
+          timestampValue: item.timestamp
         }))
-        .sort((a, b) => a.timestampValue - b.timestampValue); // Ensure ascending order (oldest to newest)
+        .sort((a, b) => a.timestampValue - b.timestampValue);
       setData(chartData);
     } catch (err) {
       console.error('Failed to load widget data:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [widget.id, timeRange, dashboardId, token]);
 
-  // Initial load and periodic refresh
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30000); // Refresh every 30s
+    const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
-  }, [widget.id, timeRange]);
+  }, [loadData]);
 
-  // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
-  const latestArea = useDeviceRealtime(deviceId, dataKeys);
-  useEffect(() => {
-    if (!latestArea || Object.keys(latestArea).length === 0) return;
-    makeRealtimeMerger(setData)(latestArea);
-  }, [latestArea]);
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--bdu-muted)' }}>
@@ -244,26 +218,12 @@ export function AreaChartWidget({ widget, token, dashboardId }) {
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        {widget.ten_widget && (
-          <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>
-            {widget.ten_widget}
-          </h4>
-        )}
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value)}
-          className="widget-time-range-select"
-          style={{ flexShrink: 0 }}
-        >
-          <option value="1h">1h</option>
-          <option value="6h">6h</option>
-          <option value="24h">24h</option>
-          <option value="7d">7d</option>
-          <option value="30d">30d</option>
-        </select>
-      </div>
-      <ResponsiveContainer width="100%" height="calc(100% - 40px)">
+      {widget.ten_widget && (
+        <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px' }}>
+          {widget.ten_widget}
+        </h4>
+      )}
+      <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <defs>
             {dataKeys.map((key, idx) => {
@@ -312,9 +272,9 @@ export function BarChartWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKeys = widget.cau_hinh?.data_keys || [];
-  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
+  const timeRange = widget.cau_hinh?.time_range || '1h';
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const res = await fetchWidgetData(
         dashboardId,
@@ -327,30 +287,22 @@ export function BarChartWidget({ widget, token, dashboardId }) {
         .map(item => ({
           ...item,
           timestamp: new Date(item.timestamp * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-          timestampValue: item.timestamp // Keep original timestamp for sorting
+          timestampValue: item.timestamp
         }))
-        .sort((a, b) => a.timestampValue - b.timestampValue); // Ensure ascending order (oldest to newest)
+        .sort((a, b) => a.timestampValue - b.timestampValue);
       setData(chartData);
     } catch (err) {
       console.error('Failed to load widget data:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [widget.id, timeRange, dashboardId, token]);
 
-  // Initial load and periodic refresh
   useEffect(() => {
     loadData();
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
-  }, [widget.id, timeRange]);
-
-  // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
-  const latest = useDeviceRealtime(deviceId, dataKeys);
-  useEffect(() => {
-    if (!latest || Object.keys(latest).length === 0) return;
-    makeRealtimeMerger(setData)(latest);
-  }, [latest]);
+  }, [loadData]);
 
   if (loading) {
     return (
@@ -362,26 +314,12 @@ export function BarChartWidget({ widget, token, dashboardId }) {
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        {widget.ten_widget && (
-          <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>
-            {widget.ten_widget}
-          </h4>
-        )}
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value)}
-          className="widget-time-range-select"
-          style={{ flexShrink: 0 }}
-        >
-          <option value="1h">1h</option>
-          <option value="6h">6h</option>
-          <option value="24h">24h</option>
-          <option value="7d">7d</option>
-          <option value="30d">30d</option>
-        </select>
-      </div>
-      <ResponsiveContainer width="100%" height="calc(100% - 40px)">
+      {widget.ten_widget && (
+        <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px' }}>
+          {widget.ten_widget}
+        </h4>
+      )}
+      <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1f2a44" />
           <XAxis 
@@ -395,7 +333,7 @@ export function BarChartWidget({ widget, token, dashboardId }) {
           <Tooltip contentStyle={{ backgroundColor: 'var(--bdu-card)', border: '1px solid var(--bdu-card-border)', color: 'var(--bdu-text)' }} />
           <Legend />
           {dataKeys.map((key, idx) => (
-            <Bar key={key} dataKey={key} fill={COLORS[idx % COLORS.length]} name={key} />
+            <Bar key={key} dataKey={key} fill={(widget.cau_hinh?.colors || {})[key] || COLORS[idx % COLORS.length]} name={key} />
           ))}
         </BarChart>
       </ResponsiveContainer>
@@ -408,14 +346,13 @@ export function GaugeWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKey = widget.cau_hinh?.data_keys?.[0];
-  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const res = await fetchWidgetData(
         dashboardId,
         widget.id,
-        timeRange,
+        '1h',
         null,
         token
       );
@@ -429,22 +366,13 @@ export function GaugeWidget({ widget, token, dashboardId }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [widget.id, dashboardId, token, dataKey]);
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 10000); // Refresh every 10s for gauge
+    const interval = setInterval(loadData, 10000);
     return () => clearInterval(interval);
-  }, [widget.id, timeRange]);
-
-  // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
-  const latest = useDeviceRealtime(deviceId, dataKey ? [dataKey] : []);
-  useEffect(() => {
-    if (!latest || Object.keys(latest).length === 0) return;
-    if (dataKey && latest[dataKey] !== undefined) {
-      setData(unwrapValue(latest[dataKey]));
-    }
-  }, [latest]);
+  }, [loadData]);
 
   if (loading) {
     return (
@@ -466,27 +394,13 @@ export function GaugeWidget({ widget, token, dashboardId }) {
       alignItems: 'center',
       justifyContent: 'center',
       height: '100%',
-      padding: '20px'
+      padding: '12px'
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
-        {widget.ten_widget && (
-          <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>
-            {widget.ten_widget}
-          </h4>
-        )}
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value)}
-          className="widget-time-range-select"
-          style={{ flexShrink: 0 }}
-        >
-          <option value="1h">1h</option>
-          <option value="6h">6h</option>
-          <option value="24h">24h</option>
-          <option value="7d">7d</option>
-          <option value="30d">30d</option>
-        </select>
-      </div>
+      {widget.ten_widget && (
+        <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px', textAlign: 'center', width: '100%' }}>
+          {widget.ten_widget}
+        </h4>
+      )}
       <div style={{
         width: '140px',
         height: '140px',
@@ -527,14 +441,13 @@ export function StatCardWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKey = widget.cau_hinh?.data_keys?.[0];
-  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const res = await fetchWidgetData(
         dashboardId,
         widget.id,
-        timeRange,
+        '1h',
         null,
         token
       );
@@ -548,21 +461,13 @@ export function StatCardWidget({ widget, token, dashboardId }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [widget.id, dashboardId, token, dataKey]);
 
   useEffect(() => {
     loadData();
     const interval = setInterval(loadData, 10000);
     return () => clearInterval(interval);
-  }, [widget.id, timeRange]);
-
-  // Realtime: subscribe qua RealtimeProvider (1 WS shared cho toan app)
-  const latest = useDeviceRealtime(deviceId, dataKey ? [dataKey] : []);
-  useEffect(() => {
-    if (!latest || dataKey === undefined) return;
-    const v = latest[dataKey];
-    if (v !== undefined) setData(unwrapValue(v));
-  }, [latest]);
+  }, [loadData]);
 
   if (loading) {
     return (
@@ -579,26 +484,12 @@ export function StatCardWidget({ widget, token, dashboardId }) {
       alignItems: 'center',
       justifyContent: 'center',
       height: '100%',
-      padding: '20px',
+      padding: '12px',
       textAlign: 'center'
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
-        <span style={{ fontSize: '12px', color: 'var(--bdu-muted)' }}>
-          {widget.cau_hinh?.label || widget.ten_widget || 'Value'}
-        </span>
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value)}
-          className="widget-time-range-select"
-          style={{ flexShrink: 0 }}
-        >
-          <option value="1h">1h</option>
-          <option value="6h">6h</option>
-          <option value="24h">24h</option>
-          <option value="7d">7d</option>
-          <option value="30d">30d</option>
-        </select>
-      </div>
+      <span style={{ fontSize: '12px', color: 'var(--bdu-muted)', marginBottom: '8px' }}>
+        {widget.cau_hinh?.label || widget.ten_widget || 'Value'}
+      </span>
       <div style={{ fontSize: '40px', fontWeight: 'bold', color: 'var(--bdu-cyan)', marginBottom: '8px' }}>
         {data?.toFixed(1) || '--'}
       </div>
@@ -621,7 +512,7 @@ export function PieChartWidget({ widget, token, dashboardId }) {
       const res = await fetchWidgetData(
         dashboardId,
         widget.id,
-        widget.cau_hinh?.time_range || '24h',
+        '24h',
         null,
         token
       );
@@ -673,7 +564,7 @@ export function PieChartWidget({ widget, token, dashboardId }) {
     loadData();
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
-  }, [widget.id, widget.cau_hinh?.time_range, widget.cau_hinh?.pie_category, pieLimit]);
+  }, [widget.id, widget.cau_hinh?.pie_category, pieLimit]);
 
   if (loading) {
     return (
@@ -949,9 +840,9 @@ export function ScatterPlotWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const xKey = widget.cau_hinh?.x_key;
   const yKey = widget.cau_hinh?.y_key;
-  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
+  const timeRange = widget.cau_hinh?.time_range || '1h';
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const res = await fetchWidgetData(dashboardId, widget.id, timeRange, widget.id.toString().startsWith('temp-') ? widget.cau_hinh : null, token);
       const pts = (res.data.data || [])
@@ -963,8 +854,9 @@ export function ScatterPlotWidget({ widget, token, dashboardId }) {
         }));
       setData(pts);
     } catch (err) { console.error('ScatterPlot load err', err); } finally { setLoading(false); }
-  };
-  useEffect(() => { loadData(); const i = setInterval(loadData, 30000); return () => clearInterval(i); }, [widget.id, timeRange]);
+  }, [widget.id, timeRange, dashboardId, token, xKey, yKey]);
+
+  useEffect(() => { loadData(); const i = setInterval(loadData, 30000); return () => clearInterval(i); }, [loadData]);
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--bdu-muted)' }}>Đang tải...</div>;
   if (!xKey || !yKey) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--bdu-muted)', fontSize: 12 }}>⚠️ Chưa cấu hình X/Y key</div>;
@@ -975,23 +867,11 @@ export function ScatterPlotWidget({ widget, token, dashboardId }) {
   const px = x => 8 + ((x - minX) / ((maxX - minX) || 1)) * 84;
   const py = y => 78 - ((y - minY) / ((maxY - minY) || 1)) * 68;
 
+  const pointColor = widget.cau_hinh?.point_color || '#22d3ee';
+
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: 14 }}>{widget.ten_widget}</h4>}
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value)}
-          className="widget-time-range-select"
-          style={{ flexShrink: 0 }}
-        >
-          <option value="1h">1h</option>
-          <option value="6h">6h</option>
-          <option value="24h">24h</option>
-          <option value="7d">7d</option>
-          <option value="30d">30d</option>
-        </select>
-      </div>
+      {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: 14 }}>{widget.ten_widget}</h4>}
       <div style={{ fontSize: 11, color: 'var(--bdu-muted)', marginBottom: 4 }}>{xKey} (X) vs {yKey} (Y) — {data.length} điểm</div>
       {data.length === 0 ? (
         <div style={{ textAlign: 'center', color: 'var(--bdu-muted)', fontSize: 12, marginTop: 20 }}>Chưa có dữ liệu</div>
@@ -1000,7 +880,7 @@ export function ScatterPlotWidget({ widget, token, dashboardId }) {
           <line x1="8" y1="10" x2="8" y2="78" stroke="#1f2a44" strokeWidth="0.5"/>
           <line x1="8" y1="78" x2="92" y2="78" stroke="#1f2a44" strokeWidth="0.5"/>
           {data.map((d, i) => (
-            <circle key={i} cx={px(d.x)} cy={py(d.y)} r="1.8" fill="#22d3ee" opacity="0.75">
+            <circle key={i} cx={px(d.x)} cy={py(d.y)} r="2.5" fill={pointColor} opacity="0.85">
               <title>{`${xKey}: ${d.x}, ${yKey}: ${d.y} @ ${d.t}`}</title>
             </circle>
           ))}
@@ -1056,6 +936,20 @@ export function HeatmapWidget({ widget, token, dashboardId }) {
         <div style={{ textAlign: 'center', color: 'var(--bdu-muted)', fontSize: 12, marginTop: 20 }}>Chưa có đủ dữ liệu heatmap</div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
+          {/* Color legend gradient bar */}
+          {vals.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <span style={{ color: 'var(--bdu-muted)', fontSize: 9, whiteSpace: 'nowrap' }}>{minV.toFixed(1)}</span>
+              <div style={{
+                flex: 1,
+                height: 10,
+                borderRadius: 5,
+                background: `linear-gradient(90deg, ${colorScale(minV)}, ${colorScale((minV + maxV) / 2)}, ${colorScale(maxV)})`
+              }} />
+              <span style={{ color: 'var(--bdu-muted)', fontSize: 9, whiteSpace: 'nowrap' }}>{maxV.toFixed(1)}</span>
+              <span style={{ color: 'var(--bdu-muted)', fontSize: 9, marginLeft: 4 }}>Mức hoạt động</span>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: `40px repeat(24, 18px)`, gap: 2, minWidth: 'max-content' }}>
             <div />
             {hours.map(h => <div key={h} style={{ color: 'var(--bdu-muted)', fontSize: 8, textAlign: 'center' }}>{h}</div>)}
@@ -1064,10 +958,41 @@ export function HeatmapWidget({ widget, token, dashboardId }) {
                 <div style={{ color: 'var(--bdu-muted)', fontSize: 9, display: 'flex', alignItems: 'center' }}>{day}</div>
                 {hours.map(h => {
                   const cell = data.find(d => d.day === day && d.hour === h);
-                  return <div key={h} style={{ width: 18, height: 16, background: cell ? colorScale(cell.avg) : '#1f2a44', borderRadius: 2 }} title={cell ? `${cell.avg.toFixed(1)}` : 'N/A'} />;
+                  const bgColor = cell ? colorScale(cell.avg) : '#1f2a44';
+                  // Determine text color based on brightness
+                  const rgb = bgColor.match(/\d+/g) || [0, 0, 0];
+                  const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000;
+                  const textColor = brightness > 128 ? '#0f1929' : '#fff';
+                  return (
+                    <div
+                      key={h}
+                      style={{
+                        width: 18,
+                        height: 16,
+                        background: bgColor,
+                        borderRadius: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 7,
+                        color: cell ? textColor : 'transparent',
+                        fontWeight: 600,
+                        cursor: 'default'
+                      }}
+                      title={`${cell?.day} ${cell?.hour}:00\nGiá trị TB: ${cell?.avg.toFixed(2)}\nSố mẫu: ${cell?.values.length}`}
+                    >
+                      {cell ? cell.avg.toFixed(0) : ''}
+                    </div>
+                  );
                 })}
               </React.Fragment>
             ))}
+          </div>
+          {/* Legend explanation */}
+          <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 9, color: 'var(--bdu-muted)' }}>
+            <span>■ Càng xanh = thấp</span>
+            <span>■ Càng đỏ = cao</span>
+            <span>■ Ô trống = không có dữ liệu</span>
           </div>
         </div>
       )}
@@ -1081,7 +1006,17 @@ export function EventTimelineWidget({ widget, token, dashboardId }) {
   const [loading, setLoading] = useState(true);
   const statusKey = widget.cau_hinh?.data_keys?.[0] || 'state';
   const timeRange = widget.cau_hinh?.time_range || '6h';
-  const STATUS_COLORS = { ON: '#22c55e', OFF: '#4b5563', ERROR: '#ef4444', ALARM: '#f59e0b', WARNING: '#f59e0b', RUNNING: '#22c55e', STOPPED: '#4b5563', MAINTENANCE: '#8b5cf6' };
+  const STATUS_COLORS = {
+    ON: '#22c55e', OFF: '#475569', ERROR: '#ef4444',
+    ALARM: '#f59e0b', WARNING: '#f59e0b', RUNNING: '#22c55e',
+    STOPPED: '#475569', MAINTENANCE: '#a78bfa',
+    IDLE: '#64748b', ACTIVE: '#22c55e', PAUSED: '#f59e0b'
+  };
+  const STATUS_ICONS = {
+    ON: '●', OFF: '○', ERROR: '✕', ALARM: '◆',
+    WARNING: '◆', RUNNING: '▶', STOPPED: '■',
+    MAINTENANCE: '◆', IDLE: '○', ACTIVE: '●', PAUSED: '❚❚'
+  };
 
   const loadData = async () => {
     try {
@@ -1109,21 +1044,57 @@ export function EventTimelineWidget({ widget, token, dashboardId }) {
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px' }}>
       {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 8px 0', fontSize: 14 }}>{widget.ten_widget}</h4>}
-      <div style={{ position: 'relative', height: '36px', background: 'var(--bdu-card-hover)', borderRadius: 4, border: '1px solid var(--bdu-card-border)', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', height: '40px', background: '#0f1929', borderRadius: 6, border: '1px solid #1e2d4a', overflow: 'hidden' }}>
         {data.map((evt, i) => {
           const nextT = data[i + 1]?.t || maxT;
           const left = pxOf(evt.t), width = Math.max(0.3, pxOf(nextT) - left);
-          return <div key={i} title={`${evt.ts}: ${evt.status}`} style={{ position: 'absolute', left: `${left}%`, width: `${width}%`, top: 4, height: 28, background: STATUS_COLORS[evt.status] || '#64748b', opacity: 0.85 }} />;
+          const color = STATUS_COLORS[evt.status] || '#64748b';
+          return (
+            <div key={i} title={`${evt.ts}: ${evt.status}`} style={{
+              position: 'absolute',
+              left: `${left}%`,
+              width: `${width}%`,
+              top: 4,
+              height: 32,
+              background: color,
+              opacity: 0.9,
+              boxShadow: `0 0 8px ${color}60`,
+              border: `1px solid ${color}`,
+              borderRadius: 4,
+              display: 'flex',
+              alignItems: 'center',
+              overflow: 'hidden'
+            }}>
+              {width > 8 && (
+                <span style={{
+                  fontSize: 9,
+                  color: '#fff',
+                  fontWeight: 700,
+                  paddingLeft: 4,
+                  textShadow: '0 1px 3px rgba(0,0,0,0.6)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  {evt.status}
+                </span>
+              )}
+            </div>
+          );
         })}
       </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
         {[...new Set(data.map(d => d.status))].map(s => (
-          <span key={s} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'var(--bdu-muted)' }}>
-            <span style={{ width: 8, height: 8, background: STATUS_COLORS[s] || '#64748b', display: 'inline-block', borderRadius: 2 }} />{s}
+          <span key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--bdu-muted)', fontWeight: 500 }}>
+            <span style={{ fontSize: 11, color: STATUS_COLORS[s] || '#64748b' }}>
+              {STATUS_ICONS[s] || '■'}
+            </span>
+            <span style={{ width: 10, height: 10, background: STATUS_COLORS[s] || '#64748b', display: 'inline-block', borderRadius: 2 }} />
+            {s}
           </span>
         ))}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 9, color: 'var(--bdu-muted)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 9, color: 'var(--bdu-muted)' }}>
         <span>{data[0].ts}</span><span>{data[data.length - 1].ts}</span>
       </div>
     </div>
@@ -1522,14 +1493,12 @@ export function LCDDisplayWidget({ widget, token, dashboardId }) {
   const deviceId = widget.cau_hinh?.device_id;
   const dataKey = widget.cau_hinh?.data_keys?.[0] || 'lcd_text';
   const lineCount = widget.cau_hinh?.line_count || 2;
-  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   useEffect(() => {
-    // Load data periodically
     const loadData = async () => {
       if (!deviceId) return;
       try {
-        const res = await fetchWidgetData(dashboardId, widget.id, timeRange, null, token);
+        const res = await fetchWidgetData(dashboardId, widget.id, '1h', null, token);
         const latest = res.data.data?.[res.data.data.length - 1];
         if (latest && latest[dataKey]) {
           const text = String(latest[dataKey]);
@@ -1542,28 +1511,14 @@ export function LCDDisplayWidget({ widget, token, dashboardId }) {
     loadData();
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
-  }, [deviceId, dataKey, lineCount, timeRange]);
+  }, [deviceId, dataKey, lineCount, dashboardId, widget.id, token]);
 
   const bgColor = widget.cau_hinh?.bg_color || '#1a3a2a';
   const textColor = widget.cau_hinh?.text_color || '#00ff88';
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
-        {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value)}
-          className="widget-time-range-select"
-          style={{ flexShrink: 0 }}
-        >
-          <option value="1h">1h</option>
-          <option value="6h">6h</option>
-          <option value="24h">24h</option>
-          <option value="7d">7d</option>
-          <option value="30d">30d</option>
-        </select>
-      </div>
+      {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px', width: '100%', textAlign: 'center' }}>{widget.ten_widget}</h4>}
       <div style={{
         width: '100%',
         maxWidth: '280px',
@@ -1600,13 +1555,12 @@ export function LEDIndicatorWidget({ widget, token, dashboardId }) {
   const [isOn, setIsOn] = useState(false);
   const deviceId = widget.cau_hinh?.device_id;
   const dataKey = widget.cau_hinh?.data_keys?.[0] || 'led_state';
-  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   useEffect(() => {
     const loadData = async () => {
       if (!deviceId) return;
       try {
-        const res = await fetchWidgetData(dashboardId, widget.id, timeRange, null, token);
+        const res = await fetchWidgetData(dashboardId, widget.id, '1h', null, token);
         const latest = res.data.data?.[res.data.data.length - 1];
         if (latest && dataKey in latest) {
           const val = String(latest[dataKey]).toLowerCase();
@@ -1619,27 +1573,13 @@ export function LEDIndicatorWidget({ widget, token, dashboardId }) {
     loadData();
     const interval = setInterval(loadData, 3000);
     return () => clearInterval(interval);
-  }, [deviceId, dataKey, timeRange]);
+  }, [deviceId, dataKey, dashboardId, widget.id, token]);
 
   const ledColor = widget.cau_hinh?.color || '#22c55e';
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
-        {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value)}
-          className="widget-time-range-select"
-          style={{ flexShrink: 0 }}
-        >
-          <option value="1h">1h</option>
-          <option value="6h">6h</option>
-          <option value="24h">24h</option>
-          <option value="7d">7d</option>
-          <option value="30d">30d</option>
-        </select>
-      </div>
+      {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px', width: '100%', textAlign: 'center' }}>{widget.ten_widget}</h4>}
       <div style={{
         width: '48px',
         height: '48px',
@@ -1768,13 +1708,12 @@ export function GradientRampWidget({ widget, token, dashboardId }) {
   const unit = widget.cau_hinh?.unit || '°C';
   const lowColor = widget.cau_hinh?.low_color || '#22d3ee';
   const highColor = widget.cau_hinh?.high_color || '#ef4444';
-  const [timeRange, setTimeRange] = useState(widget.cau_hinh?.time_range || '1h');
 
   useEffect(() => {
     const loadData = async () => {
       if (!deviceId) return;
       try {
-        const res = await fetchWidgetData(dashboardId, widget.id, timeRange, null, token);
+        const res = await fetchWidgetData(dashboardId, widget.id, '1h', null, token);
         const latest = res.data.data?.[res.data.data.length - 1];
         if (latest && dataKey in latest) {
           setValue(parseFloat(latest[dataKey]) || 0);
@@ -1786,7 +1725,7 @@ export function GradientRampWidget({ widget, token, dashboardId }) {
     loadData();
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
-  }, [deviceId, dataKey, timeRange]);
+  }, [deviceId, dataKey, dashboardId, widget.id, token]);
 
   const percentage = Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
 
@@ -1799,21 +1738,7 @@ export function GradientRampWidget({ widget, token, dashboardId }) {
 
   return (
     <div style={{ width: '100%', height: '100%', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '8px' }}>
-        {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0', fontSize: '14px' }}>{widget.ten_widget}</h4>}
-        <select
-          value={timeRange}
-          onChange={(e) => setTimeRange(e.target.value)}
-          className="widget-time-range-select"
-          style={{ flexShrink: 0 }}
-        >
-          <option value="1h">1h</option>
-          <option value="6h">6h</option>
-          <option value="24h">24h</option>
-          <option value="7d">7d</option>
-          <option value="30d">30d</option>
-        </select>
-      </div>
+      {widget.ten_widget && <h4 style={{ color: 'var(--bdu-text)', margin: '0 0 12px 0', fontSize: '14px', width: '100%', textAlign: 'center' }}>{widget.ten_widget}</h4>}
       <div style={{ width: '100%' }}>
         <div style={{
           width: '100%',

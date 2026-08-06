@@ -11,6 +11,10 @@ const _host = typeof window !== 'undefined'
 
 export const API_BASE = process.env.REACT_APP_API_BASE || `http://${_host}:8000`;
 
+if (typeof window !== 'undefined') {
+  console.info('[IoT] API_BASE =', API_BASE, '| hostname =', _host);
+}
+
 const base = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
 export const WS_URL = process.env.REACT_APP_WS_URL || (
   base.startsWith('https')

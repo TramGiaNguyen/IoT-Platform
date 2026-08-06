@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchDeviceKeys, createDeviceKey, updateDeviceKey, deleteDeviceKey, detectDeviceKeys, fetchControlLines, saveControlLines, controlRelay, updateEdgeControlUrl, fetchDeviceFullConfig } from '../services';
+import { fetchDeviceKeys, createDeviceKey, updateDeviceKey, deleteDeviceKey, detectDeviceKeys, fetchControlLines, saveControlLines, controlRelay, updateEdgeControlUrl, fetchDeviceFullConfig, fetchStandaloneConfig, saveStandaloneConfig, updateStandaloneConfig } from '../services';
 import axios from 'axios';
 import SmartClassroomDashboard from './SmartClassroomDashboard';
 import { API_BASE } from '../config/api';
@@ -15,12 +15,12 @@ const DEFAULT_EDGE_BODY_TEMPLATE = `{
 
 const DEVICE_API_TIMEOUT_MS = 30000;
 
-const DeviceDetail = ({ deviceId, token, onBack }) => {
+const DeviceDetail = ({ deviceId, token, onBack, onOpenStandaloneBuilder }) => {
   const tokenRef = useRef(token);
   useEffect(() => { tokenRef.current = token; }, [token]);
 
   const { cache } = useGlobalCache();
-  const { lastEventAt, getDeviceLatest } = useRealtime();
+  const { lastEventAt, getDeviceLatest, latestByDevice } = useRealtime();
   const [device, setDevice] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [events, setEvents] = useState([]);
@@ -41,6 +41,15 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
   const relayRangeTimersRef = useRef({});
+  // Ref de tranh xu ly cung 1 event 2 lan (khi lastEventAt thay doi nhung data giu nguyen)
+  const latestEventRef = useRef(null);
+  // Ref cho getDeviceLatest de tranh stale closure
+  const getDeviceLatestRef = useRef(getDeviceLatest);
+  useEffect(() => { getDeviceLatestRef.current = getDeviceLatest; }, [getDeviceLatest]);
+
+  // Track ma_thiet_bi (string) de lookup realtime events tu Kafka (dung device_id string)
+  // Khoi tao tu deviceId prop ngay de tranh maThietBi = null khi effect dau tien chay
+  const [maThietBi, setMaThietBi] = useState(deviceId ? String(deviceId) : null);
 
   const CONTROL_TYPES = [
     { value: 'on_off', label: 'Công tắc ON/OFF', states: ['ON', 'OFF'] },
@@ -58,6 +67,11 @@ const DeviceDetail = ({ deviceId, token, onBack }) => {
   const [editingTopic, setEditingTopic] = useState('');
   const [editingHienThiTtcds, setEditingHienThiTtcds] = useState(true);
   const [editingControlType, setEditingControlType] = useState('on_off');
+
+  // Edge control
+  const [showStandaloneBuilder, setShowStandaloneBuilder] = useState(false);
+  const [standaloneConfig, setStandaloneConfig] = useState(null);
+  const [standaloneLoading, setStandaloneLoading] = useState(false);
 
   // Edge
   const [edgeUrlDraft, setEdgeUrlDraft] = useState('');
@@ -873,16 +887,20 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
                 secret_key: cfg?.data?.credentials?.secret_key || data.secret_key,
               };
               setDevice(merged);
+              // Track ma_thiet_bi de lookup realtime events
+              if (merged.ma_thiet_bi) setMaThietBi(merged.ma_thiet_bi);
               setLoading(false);
             })
             .catch(() => {
               if (!abortCtrl.signal.aborted) {
                 setDevice(data);
+                if (data.ma_thiet_bi) setMaThietBi(data.ma_thiet_bi);
                 setLoading(false);
               }
             });
         } else {
           setDevice(data);
+          if (data.ma_thiet_bi) setMaThietBi(data.ma_thiet_bi);
           setLoading(false);
         }
       })
@@ -900,6 +918,28 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
     return () => { abortCtrl.abort(); };
   }, [deviceId]);
 
+  // Load standalone ESP controller config
+  const loadStandaloneConfig = useCallback(async () => {
+    if (!deviceId || !token) return;
+    try {
+      setStandaloneLoading(true);
+      const res = await fetchStandaloneConfig(deviceId, token);
+      if (res.data) {
+        setStandaloneConfig(res.data);
+      }
+    } catch (err) {
+      console.log('No standalone config found for this device');
+    } finally {
+      setStandaloneLoading(false);
+    }
+  }, [deviceId, token]);
+
+  useEffect(() => {
+    if (deviceId && token) {
+      loadStandaloneConfig();
+    }
+  }, [deviceId, token, loadStandaloneConfig]);
+
   useEffect(() => {
     if (!deviceId) return;
     loadEvents(1);
@@ -911,10 +951,15 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
         `${API_BASE}/events/${deviceId}?page=${targetPage}&page_size=${pageSize}`,
         { headers: { Authorization: `Bearer ${tokenRef.current}` }, timeout: DEVICE_API_TIMEOUT_MS }
       );
-      const sortedEvents = (res.data.events || []).sort((a, b) => b.timestamp - a.timestamp);
+      const rawEvents = res.data.events || [];
+
+      // LOC BO record timestamp = 0/null (hien thi 1970)
+      const filteredEvents = rawEvents.filter(e => e.timestamp && e.timestamp > 0);
+
+      const sortedEvents = filteredEvents.sort((a, b) => b.timestamp - a.timestamp);
       setEvents(sortedEvents);
       setPage(res.data.page || targetPage);
-      prepareChartData(res.data.events || []);
+      prepareChartData(filteredEvents);
     } catch (err) {
       if (!silent) console.error('Error loading events:', err);
     }
@@ -922,6 +967,7 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
 
   const prepareChartData = (eventsList) => {
     const data = [...eventsList]
+      .filter(e => e.timestamp && e.timestamp > 0)  // LOC BO record timestamp = 0/null (hien thi 1970)
       .sort((a, b) => a.timestamp - b.timestamp)
       .slice(-50)
       .map(e => ({
@@ -934,13 +980,37 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
   // Realtime: lang nghe tu RealtimeProvider (WS da duoc mo 1 lan o App level).
   // Khi co sensor event cho deviceId nay, cap nhat events list, chart, device.data.
   useEffect(() => {
-    if (!deviceId || !lastEventAt) return;
-    const latest = getDeviceLatest(deviceId);
-    const keys = Object.keys(latest || {});
+    if (!deviceId) return;
+
+    // Dung getDeviceLatestRef de tranh stale closure
+    const getLatest = getDeviceLatestRef.current;
+
+    // Tim kiem voi nhieu ID possibility (Kafka event dung string ma_thiet_bi)
+    const possibleIds = [maThietBi, deviceId, String(deviceId)].filter(Boolean);
+    let latest = {};
+
+    for (const id of possibleIds) {
+      const found = getLatest(id);
+      if (found && Object.keys(found).length > 0) {
+        latest = found;
+        break;
+      }
+    }
+
+    const keys = Object.keys(latest);
     if (keys.length === 0) return;
 
+    // ts from event is Unix timestamp in SECONDS (not milliseconds)
     const ts = Math.max(...Object.values(latest).map(v => v.ts || 0));
-    const newEvent = { device_id: deviceId, timestamp: Math.floor(ts / 1000), data: latest };
+    // Chi xu ly neu timestamp hop le (khong phai 1970)
+    if (!ts || ts < 1000000000) return;
+
+    // Deduplicate by timestamp
+    if (latestEventRef.current && latestEventRef.current === ts) return;
+    latestEventRef.current = ts;
+
+    // timestamp stored in SECONDS (Unix epoch), converted to ms for Date constructor
+    const newEvent = { device_id: possibleIds[0] || deviceId, timestamp: Math.floor(ts), data: latest };
     setEvents(prev => {
       if (prev[0] && prev[0].timestamp === newEvent.timestamp) return prev;
       return [newEvent, ...prev].slice(0, 100);
@@ -948,8 +1018,12 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
     setChartData(prev => {
       const newPoint = {
         ...newEvent,
-        timeStr: new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        timeStr: new Date(ts * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       };
+      // Chi append khi co data moi thuc su (khac timestamp cuoi cung)
+      if (prev.length > 0 && prev[prev.length - 1].timestamp === newEvent.timestamp) {
+        return prev;
+      }
       return [...prev, newPoint].slice(-200);
     });
     setDevice(prev => {
@@ -958,15 +1032,16 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
       for (const [k, v] of Object.entries(latest)) {
         flatData[k] = typeof v === 'object' ? v.value : v;
       }
-      return { ...prev, last_seen: Math.floor(ts / 1000), data: { ...(prev.data || {}), ...flatData } };
+      return { ...prev, last_seen: Math.floor(ts), data: { ...(prev.data || {}), ...flatData } };
     });
-  }, [lastEventAt, deviceId]);
+  }, [lastEventAt, deviceId, maThietBi, getDeviceLatest, latestByDevice]);
 
   // --- Status helpers ---
   const getStatus = (deviceObj) => {
     if (!deviceObj) return { status: 'offline' };
     const rawLastSeen = Number(deviceObj.last_seen ?? 0);
-    if (!rawLastSeen) return { status: 'offline' };
+    // Defensive: bo qua timestamp 1970 (timestamp < 1 Jan 2001 = 1000000000)
+    if (!rawLastSeen || rawLastSeen < 1000000000) return { status: 'offline' };
     const lastSeen = rawLastSeen > 1e12 ? rawLastSeen : rawLastSeen * 1000;
     const diffMinutes = (Date.now() - lastSeen) / 1000 / 60;
     if (diffMinutes < 2) return { status: 'online' };
@@ -1009,6 +1084,14 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
           >
             {sampleCopied ? 'Đã copy!' : `Đã Copy code mẫu (${(device.protocol || 'mqtt').toUpperCase()})`}
           </button>
+          <button
+            className="btn-ghost"
+            onClick={() => onOpenStandaloneBuilder?.(deviceId)}
+            title="Thiết lập điều khiển nội bộ - HTTP"
+            style={{ color: 'var(--iot-warning)', borderColor: 'rgba(245,158,11,0.3)' }}
+          >
+            Thiết lập điều khiển nội bộ - HTTP
+          </button>
         </div>
       </div>
     );
@@ -1048,7 +1131,7 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
     if (ctrlType === 'momentary') {
       return (
         <button className="power-btn-large" onClick={onToggle} style={{ background: 'var(--iot-primary)', color: '#001f24' }}>
-          NH?N
+          NHẤN
         </button>
       );
     }
@@ -1058,7 +1141,7 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
         <div className="three-way-group">
           {states.map(s => (
             <button key={s} className={`three-way-btn${relayState === s ? ' active' : ''}`} onClick={() => onThreeWay(s)}>
-              {relayState === s ? '?ANG ' + s : s}
+              {relayState === s ? 'ĐANG ' + s : s}
             </button>
           ))}
         </div>
@@ -1066,7 +1149,7 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
     }
     const isOn = relayState === 'ON';
     return (
-      <button className={`power-btn${isOn ? ' is-on' : ''}`} onClick={onToggle} title={isOn ? '?ANG B?T' : '?ANG T?T'}>
+      <button className={`power-btn${isOn ? ' is-on' : ''}`} onClick={onToggle} title={isOn ? 'ĐANG BẬT' : 'ĐANG TẮT'}>
         <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>{isOn ? 'power' : 'power_off'}</span>
       </button>
     );
@@ -1282,12 +1365,14 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
                 </td>
               </tr>
             ) : (
-              events.map((ev, i) => {
+              events
+                .filter(ev => ev.timestamp && ev.timestamp > 0)  // Loc bo record 1970
+                .map((ev, i) => {
                 const evType = getEventType(ev);
                 return (
                   <tr key={i}>
                     <td className="timestamp-cell">
-                      {ev.timestamp
+                      {(ev.timestamp && ev.timestamp > 0)
                         ? new Date(ev.timestamp * 1000).toLocaleString('vi-VN')
                         : '?'}
                     </td>
@@ -1301,14 +1386,25 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
                       </span>
                     </td>
                     <td className="json-cell">
-                      {Object.entries(ev)
-                        .filter(([k]) => !['device_id', 'timestamp', '_id', 'data_update', 'relay_toggle', 'event_type'].includes(k))
-                        .slice(0, 8)
-                        .map(([k, v]) => (
-                          <span key={k} className="kv-pair">
-                            {k}: <b>{typeof v === 'object' && v !== null ? JSON.stringify(v).slice(0, 40) : String(v)}</b>
-                          </span>
-                        ))}
+                      {(() => {
+                        // Build flat key-value pairs: handle nested data object and {value, ts} wrapper
+                        const entries = [];
+                        const source = ev.data && typeof ev.data === 'object' ? ev.data : ev;
+                        for (const [k, v] of Object.entries(source)) {
+                          if (['device_id', 'timestamp', '_id', 'data_update', 'relay_toggle', 'event_type'].includes(k)) continue;
+                          let displayValue = v;
+                          if (typeof v === 'object' && v !== null && 'value' in v) {
+                            displayValue = v.value;
+                          }
+                          if (entries.length >= 8) break;
+                          entries.push(
+                            <span key={k} className="kv-pair">
+                              {k}: <b>{typeof displayValue === 'object' ? JSON.stringify(displayValue).slice(0, 40) : String(displayValue)}</b>
+                            </span>
+                          );
+                        }
+                        return entries;
+                      })()}
                     </td>
                   </tr>
                 );

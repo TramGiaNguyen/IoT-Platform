@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { fetchDevices, fetchDashboards, refreshToken, fetchMe, changePassword, fetchTeacherDevices } from './services';
+import { fetchDevices, fetchDashboards, refreshToken, fetchMe, changePassword, fetchTeacherDevices, fetchDeviceFullConfig } from './services';
 import Login from './components/Login';
 import ActivityTracker from './components/ActivityTracker';
 import DeviceSetupWizard from './components/DeviceSetupWizard';
@@ -16,6 +16,7 @@ import ClassManagement from './components/ClassManagement';
 import DashboardManagement from './components/DashboardManagement';
 import DashboardViewer from './components/DashboardViewer/DashboardViewer';
 import RoomDetail from './components/RoomDetail';
+import StandaloneControllerBuilderPage from './components/StandaloneControllerBuilderPage';
 import { canAccessPage } from './config/pages';
 import { GlobalCacheProvider, useGlobalCache } from './context/GlobalCache';
 import { RealtimeProvider, useRealtime } from './context/RealtimeProvider';
@@ -75,6 +76,9 @@ function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [standaloneDeviceId, setStandaloneDeviceId] = useState(null);
+  const [standaloneDeviceLoading, setStandaloneDeviceLoading] = useState(false);
+  const [standaloneDeviceData, setStandaloneDeviceData] = useState(null);
   const [userRole, setUserRole] = useState(() => localStorage.getItem('userRole') || '');
   const [allowedPages, setAllowedPages] = useState(() => {
     try {
@@ -437,6 +441,12 @@ function App() {
           setCurrentView={setCurrentView}
           selectedDeviceId={selectedDeviceId}
           setSelectedDeviceId={setSelectedDeviceId}
+          standaloneDeviceId={standaloneDeviceId}
+          setStandaloneDeviceId={setStandaloneDeviceId}
+          standaloneDeviceLoading={standaloneDeviceLoading}
+          standaloneDeviceData={standaloneDeviceData}
+          setStandaloneDeviceLoading={setStandaloneDeviceLoading}
+          setStandaloneDeviceData={setStandaloneDeviceData}
           userRole={userRole}
           isAdmin={isAdmin}
           isLoggedIn={isLoggedIn}
@@ -470,7 +480,11 @@ function App() {
 // AppContentWithTracker runs INSIDE GlobalCacheProvider — can call useGlobalCache() + uses onLogout
 function AppContentWithTracker({
   token, devices, setDevices, currentView, setCurrentView,
-  selectedDeviceId, setSelectedDeviceId, userRole, isAdmin, isLoggedIn,
+  selectedDeviceId, setSelectedDeviceId,
+  standaloneDeviceId, setStandaloneDeviceId,
+  standaloneDeviceLoading, standaloneDeviceData,
+  setStandaloneDeviceLoading, setStandaloneDeviceData,
+  userRole, isAdmin, isLoggedIn,
   customDashboards,
   userInfo, setUserInfo, workspaceContext, setWorkspaceContext, fetchUserInfo,
   setIsLoggedIn, setToken, setRefreshTokenValue, setUserRole, setAllowedPages,
@@ -561,6 +575,7 @@ function AppContentWithTracker({
     if (currentView === 'classes') return 'Quản lý lớp học';
     if (currentView === 'classroom') return 'Lớp học';
     if (currentView === 'device-setup') return 'Thiết lập thiết bị';
+    if (currentView === 'standalone-builder') return '';
     return 'Tổng quan';
   })();
 
@@ -667,6 +682,10 @@ function AppContentWithTracker({
       } else if (hash.startsWith('#/devices/')) {
         setSelectedDeviceId(hash.replace('#/devices/', ''));
         setCurrentView('device-detail');
+      } else if (hash.startsWith('#/standalone-builder/')) {
+        const deviceId = hash.replace('#/standalone-builder/', '');
+        setStandaloneDeviceId(deviceId);
+        setCurrentView('standalone-builder');
       } else {
         setCurrentView('dashboard');
         setSelectedDeviceId(null);
@@ -677,11 +696,37 @@ function AppContentWithTracker({
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  // Fetch device data when standaloneDeviceId changes
+  useEffect(() => {
+    if (!standaloneDeviceId || !token) return;
+    // Skip if already in local devices list
+    const found = devices.find(d => String(d.id) === String(standaloneDeviceId));
+    if (found) {
+      setStandaloneDeviceData(found);
+      setStandaloneDeviceLoading(false);
+      return;
+    }
+    // Fetch from backend
+    setStandaloneDeviceLoading(true);
+    setStandaloneDeviceData(null);
+    fetchDeviceFullConfig(standaloneDeviceId, token)
+      .then(res => {
+        setStandaloneDeviceData(res.data);
+        setStandaloneDeviceLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to fetch device for standalone builder:', err);
+        setStandaloneDeviceLoading(false);
+      });
+  }, [standaloneDeviceId, token, devices]);
+
   let content = null;
   let activeTab = 'dashboard';
 
   if (currentView === 'device-detail' && selectedDeviceId) {
-    content = <DeviceDetail deviceId={selectedDeviceId} token={token} onBack={handleBackToDashboard} />;
+    content = <DeviceDetail deviceId={selectedDeviceId} token={token} onBack={handleBackToDashboard} onOpenStandaloneBuilder={(deviceId) => {
+      window.location.hash = `#/standalone-builder/${deviceId}`;
+    }} />;
     activeTab = 'dashboard';
   } else if (currentView === 'rules') {
     content = <RulesManagement token={token} onBack={handleBackToDashboard} userInfo={userInfo} workspaceContext={workspaceContext} />;
@@ -720,6 +765,29 @@ function AppContentWithTracker({
   } else if (currentView === 'dashboard-viewer' && selectedDeviceId) {
     content = <DashboardViewer dashboardId={parseInt(selectedDeviceId)} token={token} onBack={handleBackToDashboard} />;
     activeTab = 'dashboards-manage';
+  } else if (currentView === 'standalone-builder' && standaloneDeviceId) {
+    // Try local devices list first
+    const localDevice = devices.find(d => String(d.id) === String(standaloneDeviceId));
+    const device = localDevice || standaloneDeviceData;
+    if (!device) {
+      content = (
+        <div className="sc-page">
+          <div className="sc-page-loading">
+            <div className="loading-spinner"></div>
+            <span>Đang tải thiết bị...</span>
+          </div>
+        </div>
+      );
+    } else {
+      content = (
+        <StandaloneControllerBuilderPage
+          device={device}
+          token={token}
+          onBack={handleBackToDashboard}
+        />
+      );
+    }
+    activeTab = 'standalone-builder';
   } else {
     const isTeacher = userRole === 'teacher';
 content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onOpenRooms={openRooms} workspaceContext={workspaceContext} userInfo={userInfo} userRole={userRole} isAdmin={isAdmin} isTeacher={isTeacher} teacherRooms={teacherRooms} onOpenDevice={openDevice} onOpenAlerts={openAlerts} onWsStatusChange={setWsConnected} headerSearch={headerSearch} />;

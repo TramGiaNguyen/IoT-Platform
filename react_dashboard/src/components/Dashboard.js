@@ -86,9 +86,14 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       ? userInfo.primary_nhom_id
       : null;
 
-  const loadLatestAll = async (silent = false) => {
+  const loadLatestAll = useCallback(async (silent = false) => {
     try {
-      const res = await fetchDevicesLatestAll(token, effectiveWorkspaceId);
+      // Use effectiveWorkspaceId from closure - this is stable because it's computed from useState/props
+      const workspaceIdToUse =
+        isStudent && workspaceContext === 'nhom' && userInfo?.primary_nhom_id
+          ? userInfo.primary_nhom_id
+          : null;
+      const res = await fetchDevicesLatestAll(token, workspaceIdToUse);
       const payload = res.data.devices || [];
       const mappedDevices = payload.map((d) => ({
         ma_thiet_bi: d.device_id, ten_thiet_bi: d.ten_thiet_bi,
@@ -119,7 +124,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     } finally {
       if (!silent) setLoading(false);
     }
-  };
+  }, [token, isStudent, workspaceContext, userInfo?.primary_nhom_id, updateCache]);
 
   const [roomsCount, setRoomsCount] = useState(0);
 
@@ -312,11 +317,14 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     const allowedIds = devicesIdsRef.current;
     if (!allowedIds || allowedIds.length === 0) return;
 
+    // Capture getDeviceLatest in ref to avoid stale closure
+    const getLatest = getDeviceLatest;
+
     setDeviceData((prev) => {
       let changed = false;
       const next = { ...prev };
       for (const devId of allowedIds) {
-        const latest = getDeviceLatest(devId);
+        const latest = getLatest(devId);
         if (!latest || Object.keys(latest).length === 0) continue;
         const cur = next[devId] || { device_id: devId, data: {} };
         const newData = { ...(cur.data || {}) };
@@ -332,7 +340,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       }
       return changed ? next : prev;
     });
-  }, [lastEventAt]);
+  }, [lastEventAt, getDeviceLatest]);
 
   // Forward WS status den AppHeader badge
   useEffect(() => {

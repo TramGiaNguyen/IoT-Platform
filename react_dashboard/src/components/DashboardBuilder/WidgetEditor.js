@@ -21,6 +21,7 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
   useEffect(() => {
     if (widget) {
       setFormData({
+        ...widget.cau_hinh,
         ten_widget: widget.ten_widget || '',
         device_id: widget.cau_hinh?.device_id || '',
         data_keys: widget.cau_hinh?.data_keys || [],
@@ -36,7 +37,6 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         source_type: widget.cau_hinh?.source_type || 'ip_camera',
         camera_id: widget.cau_hinh?.camera_id || '',
         client_device_id: widget.cau_hinh?.client_device_id || '',
-        ...widget.cau_hinh
       });
     }
   }, [widget]);
@@ -156,6 +156,7 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         y_key: formData.y_key,
         data_keys: [formData.x_key, formData.y_key].filter(Boolean),
         time_range: formData.time_range,
+        point_color: formData.point_color || '#22d3ee',
       };
     } else if (isVideoStream) {
       const sourceType = formData.source_type || 'ip_camera';
@@ -190,7 +191,6 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
       config = {
         device_id: formData.device_id,
         data_keys: formData.data_keys,
-        time_range: formData.time_range,
         line_count: formData.line_count || 2,
         bg_color: formData.bg_color || '#1a3a2a',
         text_color: formData.text_color || '#00ff88',
@@ -199,14 +199,12 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
       config = {
         device_id: formData.device_id,
         data_keys: formData.data_keys,
-        time_range: formData.time_range,
         color: formData.color || '#22c55e',
       };
     } else if (widgetType === 'level_display') {
       config = {
         device_id: formData.device_id,
         data_keys: formData.data_keys,
-        time_range: formData.time_range,
         orientation: formData.orientation || 'horizontal',
         min: formData.min || 0,
         max: formData.max || 100,
@@ -216,19 +214,34 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
       config = {
         device_id: formData.device_id,
         data_keys: formData.data_keys,
-        time_range: formData.time_range,
         min: formData.min || 0,
         max: formData.max || 100,
         unit: formData.unit || '°C',
         low_color: formData.low_color || '#22d3ee',
         high_color: formData.high_color || '#ef4444',
       };
+    } else if (widgetType === 'stat_card') {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        label: formData.label || '',
+        unit: formData.unit || '',
+        min: formData.min !== undefined ? formData.min : undefined,
+        max: formData.max !== undefined ? formData.max : undefined,
+      };
+    } else if (widgetType === 'gauge') {
+      config = {
+        device_id: formData.device_id,
+        data_keys: formData.data_keys,
+        unit: formData.unit || '',
+        min: formData.min !== undefined ? formData.min : undefined,
+        max: formData.max !== undefined ? formData.max : undefined,
+      };
     } else if (widgetType === 'pie_chart') {
       config = {
         device_id: formData.device_id,
         data_keys: formData.data_keys,
         labels: formData.labels || '',
-        time_range: formData.time_range || '24h',
         pie_limit: Number(formData.pie_limit) || 5,
         pie_category: formData.pie_category === true,
       };
@@ -382,7 +395,7 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
         </div>
       )}
 
-      {widget?.widget_type !== 'relay_button' && (
+      {['line_chart', 'area_chart', 'bar_chart', 'scatter_plot', 'multi_axis_line', 'event_timeline', 'heatmap'].includes(widget?.widget_type) && (
         <div className="form-row">
           <label>Time Range</label>
           <select
@@ -519,6 +532,15 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
               <option value="">-- Chọn key --</option>
               {availableKeys.map(k => { const key = k.khoa || k; return <option key={key} value={key}>{key}</option>; })}
             </select>
+          </div>
+          <div className="form-row">
+            <label>Màu điểm</label>
+            <input
+              type="color"
+              value={formData.point_color || '#22d3ee'}
+              onChange={(e) => setFormData({ ...formData, point_color: e.target.value })}
+              className="db-color-input"
+            />
           </div>
         </>
       )}

@@ -2165,6 +2165,236 @@ def update_edge_control_url(
         conn.close()
 
 
+# ===================== STANDALONE ESP CONTROLLER CONFIG =====================
+
+class StandaloneConfigRequest(BaseModel):
+    ap_ssid: str = Field(default="ESP_Control")
+    ap_password: str = Field(default="12345678")
+    board_type: Optional[str] = Field(default="esp32")
+    orientation: Optional[str] = Field(default="portrait")
+    server_port: Optional[int] = Field(default=80)
+    server_endpoint: Optional[str] = Field(default="control")
+    ap_local_ip: Optional[str] = Field(default="192.168.4.1")
+    ap_gateway: Optional[str] = Field(default="192.168.4.1")
+    ap_subnet: Optional[str] = Field(default="255.255.255.0")
+    device_code: Optional[str] = Field(default=None)
+    controls: List[dict] = Field(default_factory=list)
+
+
+@router.get("/devices/{device_id}/standalone-config")
+def get_standalone_config(
+    device_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Lấy cấu hình ESP Standalone Controller của thiết bị.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """SELECT ap_ssid, ap_password, board_type, orientation, server_port,
+                      server_endpoint, ap_local_ip, ap_gateway, ap_subnet,
+                      device_code, controls
+               FROM standalone_configs WHERE device_id = %s""",
+            (device_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "apSsid": row["ap_ssid"],
+            "apPassword": row["ap_password"],
+            "boardType": row.get("board_type"),
+            "orientation": row.get("orientation"),
+            "serverPort": row.get("server_port"),
+            "serverEndpoint": row.get("server_endpoint"),
+            "apLocalIp": row.get("ap_local_ip"),
+            "apGateway": row.get("ap_gateway"),
+            "apSubnet": row.get("ap_subnet"),
+            "deviceCode": row.get("device_code"),
+            "controls": json.loads(row["controls"]) if isinstance(row["controls"], str) else row["controls"],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi lấy standalone config: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/devices/{device_id}/standalone-config")
+def create_standalone_config(
+    device_id: str,
+    body: StandaloneConfigRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Tạo mới cấu hình ESP Standalone Controller cho thiết bị.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """INSERT INTO standalone_configs
+               (device_id, ap_ssid, ap_password, board_type, orientation, server_port,
+                server_endpoint, ap_local_ip, ap_gateway, ap_subnet, device_code, controls)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (device_id, body.ap_ssid, body.ap_password, body.board_type or 'esp32',
+             body.orientation or 'portrait', body.server_port or 80,
+             body.server_endpoint or 'control', body.ap_local_ip or '192.168.4.1',
+             body.ap_gateway or '192.168.4.1', body.ap_subnet or '255.255.255.0',
+             body.device_code, json.dumps(body.controls))
+        )
+        conn.commit()
+        return {
+            "message": "ok",
+            "device_id": device_id,
+            "apSsid": body.ap_ssid,
+            "apPassword": body.ap_password,
+            "boardType": body.board_type,
+            "orientation": body.orientation,
+            "serverPort": body.server_port,
+            "serverEndpoint": body.server_endpoint,
+            "apLocalIp": body.ap_local_ip,
+            "apGateway": body.ap_gateway,
+            "apSubnet": body.ap_subnet,
+            "deviceCode": body.device_code,
+            "controls": body.controls,
+        }
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Lỗi tạo standalone config: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.put("/devices/{device_id}/standalone-config")
+def update_standalone_config(
+    device_id: str,
+    body: StandaloneConfigRequest,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Cập nhật cấu hình ESP Standalone Controller cho thiết bị.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """INSERT INTO standalone_configs
+               (device_id, ap_ssid, ap_password, board_type, orientation, server_port,
+                server_endpoint, ap_local_ip, ap_gateway, ap_subnet, device_code, controls)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON DUPLICATE KEY UPDATE
+               ap_ssid = VALUES(ap_ssid),
+               ap_password = VALUES(ap_password),
+               board_type = VALUES(board_type),
+               orientation = VALUES(orientation),
+               server_port = VALUES(server_port),
+               server_endpoint = VALUES(server_endpoint),
+               ap_local_ip = VALUES(ap_local_ip),
+               ap_gateway = VALUES(ap_gateway),
+               ap_subnet = VALUES(ap_subnet),
+               device_code = VALUES(device_code),
+               controls = VALUES(controls),
+               updated_at = CURRENT_TIMESTAMP""",
+            (device_id, body.ap_ssid, body.ap_password, body.board_type or 'esp32',
+             body.orientation or 'portrait', body.server_port or 80,
+             body.server_endpoint or 'control', body.ap_local_ip or '192.168.4.1',
+             body.ap_gateway or '192.168.4.1', body.ap_subnet or '255.255.255.0',
+             body.device_code, json.dumps(body.controls))
+        )
+        conn.commit()
+        return {
+            "message": "ok",
+            "device_id": device_id,
+            "apSsid": body.ap_ssid,
+            "apPassword": body.ap_password,
+            "boardType": body.board_type,
+            "orientation": body.orientation,
+            "serverPort": body.server_port,
+            "serverEndpoint": body.server_endpoint,
+            "apLocalIp": body.ap_local_ip,
+            "apGateway": body.ap_gateway,
+            "apSubnet": body.ap_subnet,
+            "deviceCode": body.device_code,
+            "controls": body.controls,
+        }
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Lỗi cập nhật standalone config: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/public/standalone-config/{device_code}")
+def get_public_standalone_config(device_code: str):
+    """
+    Public endpoint (no auth) để Flutter app fetch config theo device_code.
+    Trả về đúng schema JSON giống file export từ React Dashboard.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """SELECT ap_ssid, ap_password, board_type, orientation, server_port,
+                      server_endpoint, ap_local_ip, ap_gateway, ap_subnet,
+                      device_code, controls
+               FROM standalone_configs WHERE device_code = %s OR device_id = %s
+               ORDER BY updated_at DESC LIMIT 1""",
+            (device_code, device_code)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy config cho device_code này")
+        return {
+            "schemaVersion": "1.0",
+            "version": "1.0",
+            "boardType": row.get("board_type") or "esp32",
+            "orientation": row.get("orientation") or "portrait",
+            "deviceCode": row.get("device_code") or device_code,
+            "apSsid": row["ap_ssid"],
+            "apPassword": row["ap_password"],
+            "serverPort": row.get("server_port") or 80,
+            "serverEndpoint": row.get("server_endpoint") or "control",
+            "apLocalIp": row.get("ap_local_ip") or "192.168.4.1",
+            "apGateway": row.get("ap_gateway") or "192.168.4.1",
+            "apSubnet": row.get("ap_subnet") or "255.255.255.0",
+            "controls": json.loads(row["controls"]) if isinstance(row["controls"], str) else row["controls"],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi lấy standalone config: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.delete("/devices/{device_id}/standalone-config")
+def delete_standalone_config(
+    device_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Xóa cấu hình ESP Standalone Controller của thiết bị.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM standalone_configs WHERE device_id = %s", (device_id,))
+        conn.commit()
+        return {"message": "ok", "device_id": device_id}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Lỗi xóa standalone config: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
 @router.get("/devices/{device_id}/full-config")
 def get_full_config(
     device_id: str,

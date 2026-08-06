@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import WidgetRenderer from '../DashboardViewer/WidgetRenderer';
 import '../../styles/dashboard-builder.css';
 
@@ -166,23 +166,4 @@ function WidgetPreview({ widget, onSelect, onDelete, token, dashboardId, isPrevi
   );
 }
 
-// Custom comparator: chi re-render khi widget props thay doi that su
-// Tranh render lai khi parent re-render nhung widget khong doi
-export default React.memo(WidgetPreview, (prev, next) => {
-  const pw = prev.widget;
-  const nw = next.widget;
-  return (
-    prev.isPreview === next.isPreview &&
-    prev.token === next.token &&
-    prev.dashboardId === next.dashboardId &&
-    pw.id === nw.id &&
-    pw.vi_tri_x === nw.vi_tri_x &&
-    pw.vi_tri_y === nw.vi_tri_y &&
-    pw.chieu_rong === nw.chieu_rong &&
-    pw.chieu_cao === nw.chieu_cao &&
-    pw.ten_widget === nw.ten_widget &&
-    pw.widget_type === nw.widget_type &&
-    pw.cau_hinh?.device_id === nw.cau_hinh?.device_id &&
-    pw.cau_hinh?.data_keys?.length === nw.cau_hinh?.data_keys?.length
-  );
-});
+export default WidgetPreview;

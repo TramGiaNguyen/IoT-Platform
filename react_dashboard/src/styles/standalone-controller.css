@@ -1,0 +1,2187 @@
+/* ============================================
+   Standalone Controller Builder — Phone Canvas
+   Tech UI theme (Light + Dark)
+   Design system: Navy #0b1326 + Cyan #00e5ff
+   ============================================ */
+
+/* Full Page Layout */
+.sc-page {
+  --iot-bg:           #0b1326;
+  --iot-panel:        #131b2e;
+  --iot-overlay:      #171f33;
+  --iot-high:         #222a3d;
+  --iot-lowest:       #060e20;
+  --iot-primary:      #00e5ff;
+  --iot-primary-dim:  #0891b2;
+  --iot-secondary:    #c1c6d7;
+  --iot-on-surface:   #dae2fd;
+  --iot-outline:      rgba(132, 147, 150, 0.2);
+  --iot-success:      #10b981;
+  --iot-warn:         #f59e0b;
+  --iot-danger:       #ef4444;
+  --font-sans:        "Geist", "Inter", system-ui, sans-serif;
+  --font-mono:        "JetBrains Mono", monospace;
+
+  height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  background-color: var(--iot-bg);
+  color: var(--iot-on-surface);
+  font-family: var(--font-sans);
+  padding: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Page Header */
+.sc-page-header {
+  padding: 12px 20px;
+  background: var(--iot-panel);
+  border-bottom: 1px solid rgba(132, 147, 150, 0.18);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.sc-page-back-btn {
+  background: transparent;
+  border: 1px solid rgba(132, 147, 150, 0.25);
+  color: var(--iot-on-surface);
+  cursor: pointer;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.sc-page-back-btn:hover {
+  border-color: var(--iot-primary);
+  color: var(--iot-primary);
+  background: rgba(0, 229, 255, 0.06);
+}
+
+.sc-page-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.sc-page-title h2 {
+  margin: 0;
+  color: var(--iot-on-surface);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.sc-page-device-info {
+  color: var(--iot-outline);
+  font-size: 12px;
+}
+
+.sc-page-controls {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sc-page-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sc-page-content .sc-builder {
+  flex: 1;
+  border-radius: 0;
+  border: none;
+  max-height: unset;
+  margin: 0;
+}
+
+.sc-page-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  color: var(--iot-outline);
+}
+
+.loading-spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid var(--iot-high);
+  border-top-color: var(--iot-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.4);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.sc-page-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  color: #ef4444;
+}
+
+.sc-builder {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: transparent;
+}
+
+/* Toolbar */
+.sc-toolbar {
+  padding: 10px 16px;
+  background: var(--iot-panel);
+  border-bottom: 1px solid rgba(132, 147, 150, 0.18);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  min-height: 56px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.sc-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sc-toolbar-label {
+  font-size: 10px;
+  color: var(--iot-primary);
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  display: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.sc-toolbar-label::before {
+  content: "";
+  width: 3px;
+  height: 12px;
+  background: var(--iot-primary);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Orientation Toggle */
+.sc-orientation-toggle {
+  display: flex;
+  background: var(--iot-lowest);
+  border-radius: 8px;
+  padding: 4px;
+  border: 1px solid rgba(132, 147, 150, 0.25);
+}
+
+.sc-orientation-btn {
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--iot-secondary);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+}
+
+.sc-orientation-btn .icon {
+  transition: transform 0.3s;
+  display: inline-block;
+  font-size: 16px;
+}
+
+.sc-orientation-btn.landscape .icon {
+  transform: rotate(90deg);
+}
+
+.sc-orientation-btn.active {
+  background: var(--iot-primary);
+  color: #001f24;
+  font-weight: 700;
+}
+
+.sc-orientation-btn:hover:not(.active) {
+  background: var(--iot-high);
+  color: var(--iot-on-surface);
+}
+
+/* Device Preset Selector */
+.sc-device-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-device-select select {
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(132, 147, 150, 0.25);
+  background: var(--iot-lowest);
+  color: var(--iot-on-surface);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  min-width: 150px;
+  max-width: 180px;
+  transition: border-color 0.2s ease;
+  height: 36px;
+}
+
+.sc-device-select select:focus {
+  outline: none;
+  border-color: var(--iot-primary);
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.12);
+}
+
+.sc-device-custom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+}
+
+.sc-device-custom input {
+  width: 56px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(132, 147, 150, 0.25);
+  background: var(--iot-lowest);
+  color: var(--iot-on-surface);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  height: 36px;
+  transition: border-color 0.2s ease;
+}
+
+.sc-device-custom span {
+  color: var(--iot-outline);
+  font-size: 11px;
+}
+
+/* Wifi inputs */
+.sc-wifi-inputs {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sc-wifi-input {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 1 180px;
+  min-width: 0;
+}
+
+.sc-wifi-input label {
+  font-size: 9px;
+  color: var(--iot-outline);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  display: block;
+}
+
+.sc-wifi-input input {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(132, 147, 150, 0.25);
+  background: var(--iot-lowest);
+  color: var(--iot-on-surface);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  width: 100%;
+  transition: border-color 0.2s ease;
+}
+
+.sc-wifi-input input:focus {
+  outline: none;
+  border-color: var(--iot-primary);
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.12);
+}
+
+/* Zoom controls */
+.sc-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--iot-lowest);
+  border: 1px solid rgba(132, 147, 150, 0.25);
+  border-radius: 8px;
+  padding: 2px;
+  height: 36px;
+}
+
+.sc-zoom-controls button {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--iot-on-surface);
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.sc-zoom-controls button:hover {
+  background: var(--iot-primary);
+  color: #001f24;
+}
+
+.sc-zoom-controls span {
+  font-size: 12px;
+  color: var(--iot-on-surface);
+  min-width: 44px;
+  text-align: center;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.sc-zoom-controls span:hover {
+  color: var(--iot-primary);
+}
+
+/* Main content area */
+.sc-main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Widget Palette */
+.sc-palette {
+  width: 200px;
+  min-width: 200px;
+  background: var(--iot-panel);
+  border-right: 1px solid rgba(132, 147, 150, 0.18);
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.sc-palette-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--iot-primary);
+  font-family: var(--font-mono);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-palette-title::before {
+  content: "";
+  width: 3px;
+  height: 14px;
+  background: var(--iot-primary);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.sc-palette-widgets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sc-palette-widget {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--iot-lowest);
+  border: 1px solid rgba(132, 147, 150, 0.2);
+  border-radius: 12px;
+  cursor: grab;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.sc-palette-widget:hover {
+  border-color: var(--iot-primary);
+  background: rgba(0, 229, 255, 0.06);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.sc-palette-widget:active {
+  cursor: grabbing;
+}
+
+.sc-palette-widget.dragging {
+  opacity: 0.5;
+}
+
+.sc-palette-widget-icon {
+  font-size: 20px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(0, 229, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.sc-palette-widget-info {
+  flex: 1;
+}
+
+.sc-palette-widget-label {
+  font-size: 13px;
+  color: var(--iot-on-surface);
+  font-weight: 500;
+}
+
+.sc-palette-widget-size {
+  font-size: 11px;
+  color: var(--iot-outline);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+}
+
+/* Phone Canvas Area */
+.sc-canvas-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow: auto;
+  background: var(--iot-bg);
+  position: relative;
+  min-height: 70vh;
+}
+
+.sc-canvas-area::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(132, 147, 150, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(132, 147, 150, 0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+
+/* Phone Frame */
+.sc-phone-frame {
+  position: relative;
+  background: var(--iot-lowest);
+  border-radius: 40px;
+  padding: 8px;
+  box-shadow:
+    0 0 0 2px var(--iot-primary),
+    0 0 0 4px var(--iot-lowest),
+    0 0 40px rgba(0, 229, 255, 0.2),
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    inset 0 0 20px rgba(0, 229, 255, 0.03);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1;
+}
+
+.sc-phone-frame.portrait {
+  width: 360px;
+  min-height: 400px;
+  max-height: 100%;
+}
+
+.sc-phone-frame.landscape {
+  /* JS kiểm soát width/height qua inline style */
+}
+
+/* Phone notch / camera */
+.sc-phone-notch {
+  position: absolute;
+  width: 120px;
+  height: 28px;
+  background: #000;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Portrait: notch at top center */
+.sc-phone-frame.portrait .sc-phone-notch {
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 0 0 16px 16px;
+}
+
+/* Landscape: notch on left side */
+.sc-phone-frame.landscape .sc-phone-notch {
+  top: 50%;
+  left: 8px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 120px;
+  border-radius: 0 16px 16px 0;
+}
+
+.sc-phone-notch::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: #222;
+  border-radius: 50%;
+  box-shadow: inset 0 0 3px rgba(255, 255, 255, 0.1);
+}
+
+.sc-phone-notch::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: #111;
+  border-radius: 50%;
+  border: 1px solid #333;
+}
+
+/* Phone screen / canvas */
+.sc-phone-screen {
+  width: 100%;
+  height: 100%;
+  background: var(--iot-panel);
+  border-radius: 32px;
+  overflow: hidden;
+  position: relative;
+}
+
+.sc-phone-canvas {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.sc-phone-canvas.drag-over {
+  background-color: rgba(0, 229, 255, 0.08);
+  border: 2px dashed var(--iot-primary);
+}
+
+/* Canvas widgets */
+.sc-canvas-widget {
+  position: absolute;
+  background: var(--iot-lowest);
+  border: 2px solid rgba(132, 147, 150, 0.2);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: move;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  overflow: hidden;
+}
+
+.sc-canvas-widget:hover {
+  border-color: var(--iot-primary);
+  background: rgba(0, 229, 255, 0.06);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.25);
+}
+
+.sc-canvas-widget.selected {
+  border: 2px solid var(--iot-primary);
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.3), 0 0 20px rgba(0, 229, 255, 0.4);
+}
+
+.sc-canvas-widget.dragging {
+  opacity: 0.7;
+  z-index: 100;
+}
+
+.sc-canvas-widget-icon {
+  font-size: 32px;
+  margin-bottom: 4px;
+}
+
+.sc-canvas-widget-label {
+  font-size: 10px;
+  color: var(--iot-on-surface);
+  text-align: center;
+  padding: 0 4px;
+}
+
+.sc-canvas-widget-delete {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  background: #ef4444;
+  border: none;
+  border-radius: 50%;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.sc-canvas-widget:hover .sc-canvas-widget-delete {
+  display: flex;
+}
+
+/* Resize handles */
+.sc-canvas-widget .resize-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: var(--iot-primary);
+  border: 2px solid var(--iot-bg);
+  border-radius: 3px;
+  display: none;
+  z-index: 5;
+  touch-action: none;
+}
+
+.sc-canvas-widget .resize-handle.nw { top: -7px; left: -7px; cursor: nw-resize; }
+.sc-canvas-widget .resize-handle.ne { top: -7px; right: -7px; cursor: ne-resize; }
+.sc-canvas-widget .resize-handle.sw { bottom: -7px; left: -7px; cursor: sw-resize; }
+.sc-canvas-widget .resize-handle.se { bottom: -7px; right: -7px; cursor: se-resize; }
+
+.sc-canvas-widget.selected .resize-handle {
+  display: block;
+  box-shadow: 0 0 6px var(--iot-primary);
+}
+
+.sc-canvas-widget.selected .resize-handle:hover {
+  background: #33ecff;
+  box-shadow: 0 0 10px var(--iot-primary);
+}
+
+/* Empty canvas message */
+.sc-canvas-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: var(--iot-outline);
+  pointer-events: none;
+}
+
+.sc-canvas-empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.sc-canvas-empty-text {
+  font-size: 14px;
+  max-width: 180px;
+  line-height: 1.4;
+}
+
+/* Footer */
+.sc-footer {
+  padding: 10px 16px;
+  background: var(--iot-panel);
+  border-top: 1px solid rgba(132, 147, 150, 0.18);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 56px;
+}
+
+.sc-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sc-msg {
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.sc-msg.success {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--iot-success);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.sc-msg.error {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--iot-danger);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.sc-footer-right {
+  display: flex;
+  gap: 10px;
+}
+
+/* Buttons */
+.sc-btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-btn-icon {
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  justify-content: center;
+  font-size: 16px;
+  gap: 0;
+}
+
+.sc-btn-secondary {
+  background: transparent;
+  border: 1px solid rgba(132, 147, 150, 0.25);
+  color: var(--iot-secondary);
+}
+
+.sc-btn-secondary:hover {
+  border-color: var(--iot-primary);
+  color: var(--iot-primary);
+  background: rgba(0, 229, 255, 0.06);
+}
+
+.sc-btn-primary {
+  background: var(--iot-primary);
+  border: none;
+  color: #001f24;
+  font-weight: 700;
+}
+
+.sc-btn-primary:hover {
+  background: #33ecff;
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
+}
+
+.sc-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.sc-btn-export {
+  background: linear-gradient(135deg, #00e5ff, #0891b2);
+  border: none;
+  color: #001f24;
+  font-weight: 700;
+}
+
+.sc-btn-export:hover {
+  background: linear-gradient(135deg, #33ecff, #00e5ff);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
+}
+
+/* Grid info */
+.sc-grid-info {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  font-size: 10px;
+  color: var(--iot-outline);
+  background: rgba(0, 0, 0, 0.5);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* Preview Modal */
+.sc-preview-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  z-index: 2000;
+}
+
+.sc-preview-header {
+  padding: 16px 24px;
+  background: var(--iot-panel);
+  border-bottom: 1px solid rgba(132, 147, 150, 0.18);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sc-preview-header span {
+  color: var(--iot-on-surface);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sc-preview-close {
+  background: transparent;
+  border: 1px solid rgba(132, 147, 150, 0.25);
+  color: var(--iot-on-surface);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sc-preview-close:hover {
+  border-color: var(--iot-primary);
+  color: var(--iot-primary);
+}
+
+.sc-preview-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--iot-bg);
+}
+
+.sc-preview-phone {
+  background: var(--iot-lowest);
+  border-radius: 32px;
+  padding: 8px;
+  box-shadow: 0 0 0 2px var(--iot-primary), 0 0 40px rgba(0, 229, 255, 0.3);
+}
+
+.sc-preview-screen {
+  width: 360px;
+  height: 640px;
+  background: #fff;
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.sc-preview-phone.landscape .sc-preview-screen {
+  width: 640px;
+  height: 360px;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .sc-main {
+    flex-direction: column;
+  }
+
+  .sc-palette {
+    width: 100%;
+    min-width: unset;
+    max-height: 200px;
+    border-right: none;
+    border-bottom: 1px solid rgba(132, 147, 150, 0.18);
+  }
+
+  .sc-palette-widgets {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .sc-palette-widget {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+  }
+
+  .sc-canvas-area {
+    padding: 16px;
+    min-height: 60vh;
+  }
+
+  .sc-toolbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 56px;
+  }
+
+  .sc-wifi-inputs {
+    flex-basis: 100%;
+  }
+}
+
+/* ============================================
+   Widget Preview (canvas builder)
+   Scoped styles cho từng loại widget preview
+   ============================================ */
+.sc-wp-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  background: var(--iot-lowest);
+  border-radius: 4px;
+  outline: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sc-wp-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--iot-primary);
+  cursor: pointer;
+  border: 2px solid var(--iot-bg);
+  box-shadow: 0 0 4px rgba(0, 229, 255, 0.4);
+}
+
+.sc-wp-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--iot-primary);
+  cursor: pointer;
+  border: 2px solid var(--iot-bg);
+}
+
+.sc-wp-range:focus { outline: none; }
+
+.sc-wp-value-display {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--iot-primary);
+  text-align: center;
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+
+.sc-wp-label {
+  font-size: 10px;
+  color: var(--iot-secondary);
+  text-align: center;
+  margin-top: 2px;
+}
+
+.sc-wp-joystick-values {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: var(--iot-outline);
+  font-family: var(--font-mono);
+}
+
+.sc-wp-color-preview {
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.sc-wp-num-btn,
+.sc-wp-stepper-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--iot-outline);
+  background: var(--iot-lowest);
+  color: var(--iot-primary);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-sans);
+}
+
+.sc-wp-num-btn:hover,
+.sc-wp-stepper-btn:hover {
+  background: var(--iot-primary);
+  color: #001f24;
+}
+
+.sc-wp-stepper-btn.dec:hover { background: var(--iot-danger); color: white; }
+.sc-wp-stepper-btn.inc:hover { background: var(--iot-success); color: white; }
+
+.sc-wp-num-input {
+  width: 50px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--iot-outline);
+  background: var(--iot-lowest);
+  color: var(--iot-primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  font-family: var(--font-mono);
+}
+
+.sc-wp-num-input:focus {
+  outline: none;
+  border-color: var(--iot-primary);
+}
+
+.sc-wp-toggle-track.off {
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.4);
+}
+
+.sc-wp-toggle-track.on {
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+.sc-wp-dpad-btn {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sc-wp-dpad-btn:focus { outline: none; }
+
+.sc-wp-default-icon {
+  font-size: 24px;
+}
+
+.sc-wp-default-label {
+  font-size: 10px;
+  color: var(--iot-outline);
+  text-align: center;
+}
+
+/* Larger touch targets on touch devices */
+@media (hover: none) {
+  .sc-wp-num-btn,
+  .sc-wp-stepper-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .sc-canvas-widget .resize-handle {
+    width: 20px;
+    height: 20px;
+  }
+
+  .sc-canvas-widget .resize-handle.nw { top: -10px; left: -10px; }
+  .sc-canvas-widget .resize-handle.ne { top: -10px; right: -10px; }
+  .sc-canvas-widget .resize-handle.sw { bottom: -10px; left: -10px; }
+  .sc-canvas-widget .resize-handle.se { bottom: -10px; right: -10px; }
+
+  .sc-canvas-widget-delete {
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
+  }
+}
+
+/* ============================================
+   Light Theme Overrides
+   Áp dụng khi <body data-theme="light">
+   Đồng bộ với DeviceDetail.css / dashboard-builder.css
+   ============================================ */
+[data-theme="light"] .sc-page {
+  --iot-bg:          #f7f9fb;
+  --iot-panel:       #ffffff;
+  --iot-overlay:     #f2f4f6;
+  --iot-high:        #eceef0;
+  --iot-lowest:      #e6e8ea;
+  --iot-primary:     #00e5ff;
+  --iot-primary-dim: #006875;
+  --iot-secondary:   #3b494c;
+  --iot-on-surface:  #191c1e;
+  --iot-outline:     rgba(107, 122, 125, 0.35);
+  --iot-success:     #16a34a;
+  --iot-warn:        #d97706;
+  --iot-danger:      #dc2626;
+  background: #f7f9fb;
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-page-header,
+[data-theme="light"] .sc-toolbar,
+[data-theme="light"] .sc-footer,
+[data-theme="light"] .sc-palette {
+  background: #ffffff;
+  border-color: rgba(186, 201, 204, 0.6);
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-page-header {
+  border-bottom-color: rgba(186, 201, 204, 0.6);
+}
+
+[data-theme="light"] .sc-toolbar {
+  border-bottom-color: rgba(186, 201, 204, 0.6);
+}
+
+[data-theme="light"] .sc-footer {
+  border-top-color: rgba(186, 201, 204, 0.6);
+}
+
+[data-theme="light"] .sc-palette {
+  border-right-color: rgba(186, 201, 204, 0.6);
+}
+
+[data-theme="light"] .sc-palette-title,
+[data-theme="light"] .sc-toolbar-label,
+[data-theme="light"] .sc-wifi-input label {
+  color: #006875;
+}
+
+[data-theme="light"] .sc-palette-title::before,
+[data-theme="light"] .sc-toolbar-label::before {
+  background: #006875;
+}
+
+[data-theme="light"] .sc-device-select select,
+[data-theme="light"] .sc-device-custom input,
+[data-theme="light"] .sc-wifi-input input {
+  background: #f2f4f6;
+  border-color: rgba(186, 201, 204, 0.8);
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-device-select select:focus,
+[data-theme="light"] .sc-device-custom input:focus,
+[data-theme="light"] .sc-wifi-input input:focus {
+  background: #ffffff;
+  border-color: #00e5ff;
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.18);
+}
+
+[data-theme="light"] .sc-orientation-toggle,
+[data-theme="light"] .sc-zoom-controls {
+  background: #f2f4f6;
+  border-color: rgba(186, 201, 204, 0.8);
+}
+
+[data-theme="light"] .sc-orientation-btn {
+  color: #3b494c;
+}
+
+[data-theme="light"] .sc-orientation-btn.active {
+  background: #00e5ff;
+  color: #00626e;
+}
+
+[data-theme="light"] .sc-orientation-btn:hover:not(.active) {
+  background: rgba(0, 229, 255, 0.12);
+  color: #006875;
+}
+
+[data-theme="light"] .sc-zoom-controls button {
+  color: #3b494c;
+}
+
+[data-theme="light"] .sc-zoom-controls button:hover {
+  background: #006875;
+  color: #ffffff;
+}
+
+[data-theme="light"] .sc-zoom-controls span {
+  color: #3b494c;
+}
+
+[data-theme="light"] .sc-palette-widget {
+  background: #f2f4f6;
+  border-color: rgba(186, 201, 204, 0.8);
+}
+
+[data-theme="light"] .sc-palette-widget:hover {
+  background: #ffffff;
+  border-color: #00e5ff;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
+}
+
+[data-theme="light"] .sc-palette-widget-icon {
+  background: rgba(0, 229, 255, 0.15);
+  color: #006875;
+}
+
+[data-theme="light"] .sc-palette-widget-label {
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-palette-widget-size {
+  color: #6b7a7d;
+}
+
+[data-theme="light"] .sc-canvas-area {
+  background: #f2f4f6;
+}
+
+[data-theme="light"] .sc-canvas-area::before {
+  background-image:
+    linear-gradient(to right, rgba(186, 201, 204, 0.5) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(186, 201, 204, 0.5) 1px, transparent 1px);
+}
+
+[data-theme="light"] .sc-phone-frame {
+  background: #1f2937;
+  box-shadow:
+    0 0 0 2px #00e5ff,
+    0 0 0 4px #1f2937,
+    0 8px 28px rgba(15, 23, 42, 0.18),
+    inset 0 0 20px rgba(0, 229, 255, 0.04);
+}
+
+[data-theme="light"] .sc-phone-screen {
+  background: #ffffff;
+}
+
+[data-theme="light"] .sc-phone-canvas {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
+}
+
+[data-theme="light"] .sc-canvas-widget {
+  background: #f7f9fb;
+  border-color: rgba(186, 201, 204, 0.9);
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-canvas-widget:hover {
+  background: #ffffff;
+  border-color: #00e5ff;
+}
+
+[data-theme="light"] .sc-canvas-widget-label {
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-canvas-widget.selected {
+  border-color: #00e5ff;
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.25), 0 0 16px rgba(0, 229, 255, 0.35);
+}
+
+[data-theme="light"] .sc-canvas-empty,
+[data-theme="light"] .sc-canvas-empty-text {
+  color: #6b7a7d;
+}
+
+[data-theme="light"] .sc-page-back-btn,
+[data-theme="light"] .sc-btn-secondary {
+  background: transparent;
+  border-color: rgba(186, 201, 204, 0.9);
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-page-back-btn:hover,
+[data-theme="light"] .sc-btn-secondary:hover {
+  background: rgba(0, 229, 255, 0.1);
+  border-color: #00e5ff;
+  color: #006875;
+}
+
+[data-theme="light"] .sc-btn-primary {
+  background: #006875;
+  color: #ffffff;
+  border: 1px solid #006875;
+}
+
+[data-theme="light"] .sc-btn-primary:hover {
+  background: #00e5ff;
+  color: #00626e;
+  border-color: #00e5ff;
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.35);
+}
+
+[data-theme="light"] .sc-btn-export {
+  background: linear-gradient(135deg, #006875, #00e5ff);
+  color: #ffffff;
+}
+
+[data-theme="light"] .sc-btn-export:hover {
+  background: linear-gradient(135deg, #00e5ff, #33ecff);
+  color: #00626e;
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.35);
+}
+
+[data-theme="light"] .sc-msg.success {
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+  border-color: rgba(22, 163, 74, 0.35);
+}
+
+[data-theme="light"] .sc-msg.error {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
+[data-theme="light"] .sc-grid-info {
+  color: #ffffff;
+  background: rgba(15, 23, 42, 0.7);
+}
+
+[data-theme="light"] .sc-preview-overlay {
+  background: rgba(15, 23, 42, 0.55);
+}
+
+[data-theme="light"] .sc-preview-header {
+  background: #ffffff;
+  border-bottom-color: rgba(186, 201, 204, 0.8);
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-preview-header span {
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-preview-close {
+  border-color: rgba(186, 201, 204, 0.9);
+  color: #3b494c;
+}
+
+[data-theme="light"] .sc-preview-close:hover {
+  border-color: #00e5ff;
+  color: #006875;
+}
+
+[data-theme="light"] .sc-preview-content {
+  background: #f2f4f6;
+}
+
+[data-theme="light"] .loading-spinner {
+  border-color: rgba(186, 201, 204, 0.8);
+  border-top-color: #006875;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.25);
+}
+
+[data-theme="light"] .sc-page-loading {
+  color: #6b7a7d;
+}
+
+[data-theme="light"] .sc-page-error {
+  color: #dc2626;
+}
+
+[data-theme="light"] .sc-page-title h2 {
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-page-device-info {
+  color: #6b7a7d;
+}
+
+/* Light theme overrides for widget preview components */
+[data-theme="light"] .sc-wp-range {
+  background: #e6e8ea;
+}
+
+[data-theme="light"] .sc-wp-range::-webkit-slider-thumb {
+  background: #006875;
+  border-color: #ffffff;
+  box-shadow: 0 0 4px rgba(0, 104, 117, 0.4);
+}
+
+[data-theme="light"] .sc-wp-range::-moz-range-thumb {
+  background: #006875;
+  border-color: #ffffff;
+}
+
+[data-theme="light"] .sc-wp-value-display {
+  color: #006875;
+}
+
+[data-theme="light"] .sc-wp-label {
+  color: #3b494c;
+}
+
+[data-theme="light"] .sc-wp-joystick-values {
+  color: #6b7a7d;
+}
+
+[data-theme="light"] .sc-wp-num-btn,
+[data-theme="light"] .sc-wp-stepper-btn {
+  background: #f2f4f6;
+  border-color: rgba(186, 201, 204, 0.9);
+  color: #006875;
+}
+
+[data-theme="light"] .sc-wp-num-btn:hover,
+[data-theme="light"] .sc-wp-stepper-btn:hover {
+  background: #006875;
+  color: #ffffff;
+  border-color: #006875;
+}
+
+[data-theme="light"] .sc-wp-stepper-btn.dec:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+[data-theme="light"] .sc-wp-stepper-btn.inc:hover {
+  background: #16a34a;
+  border-color: #16a34a;
+}
+
+[data-theme="light"] .sc-wp-num-input {
+  background: #ffffff;
+  border-color: rgba(186, 201, 204, 0.9);
+  color: #006875;
+}
+
+[data-theme="light"] .sc-wp-num-input:focus {
+  border-color: #00e5ff;
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.18);
+}
+
+[data-theme="light"] .sc-wp-toggle-track {
+  background: #e6e8ea;
+  border-color: rgba(186, 201, 204, 0.9);
+}
+
+[data-theme="light"] .sc-wp-toggle-track.on {
+  background: #16a34a;
+  border-color: #16a34a;
+}
+
+[data-theme="light"] .sc-wp-dpad-btn {
+  background: #f2f4f6;
+  border-color: rgba(186, 201, 204, 0.9);
+  color: #3b494c;
+}
+
+[data-theme="light"] .sc-wp-dpad-btn.active {
+  background: #00e5ff;
+  border-color: #00e5ff;
+  color: #00626e;
+}
+
+[data-theme="light"] .sc-wp-color-preview {
+  border-color: rgba(186, 201, 204, 0.9);
+}
+
+[data-theme="light"] .sc-canvas-widget.selected .resize-handle {
+  border-color: #ffffff;
+  box-shadow: 0 0 8px rgba(0, 104, 117, 0.5);
+}
+
+[data-theme="light"] .sc-canvas-widget.selected .resize-handle:hover {
+  background: #00e5ff;
+}
+
+[data-theme="light"] .sc-wp-default-label {
+  color: #6b7a7d;
+}
+
+[data-theme="light"] .sc-wp-knob {
+  filter: brightness(1.05);
+}
+
+[data-theme="light"] .sc-wp-icon-btn {
+  filter: brightness(1.0);
+}
+
+/* ============================================
+   Widget Config Panel
+   Panel cấu hình chi tiết cho mỗi widget
+   ============================================ */
+.sc-config-panel {
+  width: 320px;
+  min-width: 320px;
+  background: var(--iot-panel);
+  border-left: 1px solid rgba(132, 147, 150, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header */
+.sc-config-header {
+  padding: 16px;
+  background: var(--iot-lowest);
+  border-bottom: 1px solid rgba(132, 147, 150, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sc-config-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sc-config-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.sc-config-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--iot-on-surface);
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-config-close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--iot-outline);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--iot-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.sc-config-close:hover {
+  border-color: var(--iot-danger);
+  color: var(--iot-danger);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Tabs */
+.sc-config-tabs {
+  display: flex;
+  background: var(--iot-lowest);
+  border-bottom: 1px solid rgba(132, 147, 150, 0.18);
+  padding: 4px;
+  gap: 4px;
+}
+
+.sc-config-tab {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--iot-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sc-config-tab:hover {
+  background: var(--iot-high);
+  color: var(--iot-on-surface);
+}
+
+.sc-config-tab.active {
+  background: var(--iot-primary);
+  color: #001f24;
+  font-weight: 600;
+}
+
+/* Content */
+.sc-config-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.sc-config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Fields */
+.sc-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sc-config-field > label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--iot-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sc-config-field-group {
+  display: flex;
+  gap: 8px;
+}
+
+.sc-config-field-group .sc-config-field {
+  flex: 1;
+}
+
+.sc-config-input {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(132, 147, 150, 0.25);
+  background: var(--iot-lowest);
+  color: var(--iot-on-surface);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  transition: all 0.2s;
+}
+
+.sc-config-input:focus {
+  outline: none;
+  border-color: var(--iot-primary);
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.15);
+}
+
+.sc-config-input.sc-config-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.sc-config-input.sc-config-small {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.sc-config-select {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(132, 147, 150, 0.25);
+  background: var(--iot-lowest);
+  color: var(--iot-on-surface);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sc-config-select:focus {
+  outline: none;
+  border-color: var(--iot-primary);
+}
+
+.sc-config-hint {
+  font-size: 10px;
+  color: var(--iot-outline);
+  font-style: italic;
+}
+
+.sc-config-info {
+  font-size: 11px;
+  color: var(--iot-secondary);
+  line-height: 1.4;
+  padding: 8px 10px;
+  background: var(--iot-lowest);
+  border-radius: 6px;
+  border-left: 3px solid var(--iot-primary);
+}
+
+/* Pin Mapping */
+.sc-config-pins {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sc-config-pin-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-config-pin-label {
+  font-size: 11px;
+  color: var(--iot-secondary);
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.sc-config-pin-row .sc-config-select {
+  flex: 1;
+}
+
+/* GPIO Warning */
+.sc-config-warning {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+}
+
+.sc-config-warning-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.sc-config-warning-text {
+  font-size: 11px;
+  color: var(--iot-danger);
+  line-height: 1.4;
+}
+
+.sc-config-warning-text strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Checkbox */
+.sc-config-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--iot-on-surface);
+  cursor: pointer;
+}
+
+.sc-config-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--iot-primary);
+  cursor: pointer;
+}
+
+/* Color Presets */
+.sc-config-color-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.sc-config-color-preset {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sc-config-color-preset:hover {
+  transform: scale(1.1);
+}
+
+.sc-config-color-preset.active {
+  border-color: var(--iot-on-surface);
+  box-shadow: 0 0 0 2px var(--iot-primary);
+}
+
+/* Color Input */
+.sc-config-color-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sc-config-color-input {
+  width: 40px;
+  height: 36px;
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px solid rgba(132, 147, 150, 0.25);
+  background: var(--iot-lowest);
+  cursor: pointer;
+}
+
+/* Icon Selection */
+.sc-config-icons {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.sc-config-icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid rgba(132, 147, 150, 0.25);
+  background: var(--iot-lowest);
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sc-config-icon-btn:hover {
+  border-color: var(--iot-primary);
+  background: rgba(0, 229, 255, 0.1);
+}
+
+.sc-config-icon-btn.active {
+  border-color: var(--iot-primary);
+  background: var(--iot-primary);
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.3);
+}
+
+/* Preview */
+.sc-config-preview {
+  padding-top: 12px;
+  border-top: 1px solid rgba(132, 147, 150, 0.15);
+}
+
+.sc-config-preview > label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--iot-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.sc-config-preview-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 10px;
+  border: 2px solid;
+  min-height: 80px;
+}
+
+.sc-config-preview-icon {
+  font-size: 28px;
+}
+
+.sc-config-preview-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--iot-on-surface);
+  text-align: center;
+}
+
+/* Footer */
+.sc-config-footer {
+  padding: 16px;
+  background: var(--iot-lowest);
+  border-top: 1px solid rgba(132, 147, 150, 0.18);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+.sc-config-msg {
+  flex: 1;
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  margin-right: auto;
+  animation: sc-fade-in 0.2s ease-out;
+}
+
+.sc-config-msg.success {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--iot-success);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.sc-config-msg.error {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--iot-danger);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+@keyframes sc-fade-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+[data-theme="light"] .sc-config-msg.success {
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+}
+
+[data-theme="light"] .sc-config-msg.error {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+/* Responsive */
+@media (max-width: 1100px) {
+  .sc-config-panel {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 1000;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Light Theme */
+[data-theme="light"] .sc-config-panel {
+  background: #ffffff;
+  border-color: rgba(186, 201, 204, 0.6);
+}
+
+[data-theme="light"] .sc-config-header {
+  background: #f2f4f6;
+  border-color: rgba(186, 201, 204, 0.6);
+}
+
+[data-theme="light"] .sc-config-name {
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-config-close {
+  border-color: rgba(186, 201, 204, 0.8);
+  color: #3b494c;
+}
+
+[data-theme="light"] .sc-config-close:hover {
+  border-color: #dc2626;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.1);
+}
+
+[data-theme="light"] .sc-config-tabs {
+  background: #f2f4f6;
+  border-color: rgba(186, 201, 204, 0.6);
+}
+
+[data-theme="light"] .sc-config-tab {
+  color: #3b494c;
+}
+
+[data-theme="light"] .sc-config-tab:hover {
+  background: rgba(0, 104, 117, 0.1);
+  color: #006875;
+}
+
+[data-theme="light"] .sc-config-tab.active {
+  background: #006875;
+  color: #ffffff;
+}
+
+[data-theme="light"] .sc-config-content {
+  background: #ffffff;
+}
+
+[data-theme="light"] .sc-config-field > label {
+  color: #3b494c;
+}
+
+[data-theme="light"] .sc-config-input,
+[data-theme="light"] .sc-config-select {
+  background: #f2f4f6;
+  border-color: rgba(186, 201, 204, 0.8);
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-config-input:focus,
+[data-theme="light"] .sc-config-select:focus {
+  border-color: #00e5ff;
+  background: #ffffff;
+}
+
+[data-theme="light"] .sc-config-hint {
+  color: #6b7a7d;
+}
+
+[data-theme="light"] .sc-config-info {
+  background: #f2f4f6;
+  border-color: #00e5ff;
+  color: #3b494c;
+}
+
+[data-theme="light"] .sc-config-warning {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+[data-theme="light"] .sc-config-warning-text {
+  color: #dc2626;
+}
+
+[data-theme="light"] .sc-config-checkbox-label {
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-config-color-input {
+  background: #f2f4f6;
+  border-color: rgba(186, 201, 204, 0.8);
+}
+
+[data-theme="light"] .sc-config-icon-btn {
+  background: #f2f4f6;
+  border-color: rgba(186, 201, 204, 0.8);
+}
+
+[data-theme="light"] .sc-config-icon-btn:hover {
+  border-color: #006875;
+  background: rgba(0, 104, 117, 0.1);
+}
+
+[data-theme="light"] .sc-config-icon-btn.active {
+  border-color: #006875;
+  background: #00e5ff;
+}
+
+[data-theme="light"] .sc-config-preview-label {
+  color: #191c1e;
+}
+
+[data-theme="light"] .sc-config-footer {
+  background: #f2f4f6;
+  border-color: rgba(186, 201, 204, 0.6);
+}
+
+/* Orientation select styles */
+.sc-config-orientation-select {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.sc-config-orientation-btn {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--iot-outline);
+  border-radius: 6px;
+  background: var(--iot-lowest);
+  color: var(--iot-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.sc-config-orientation-btn:hover {
+  border-color: var(--iot-primary);
+  color: var(--iot-primary);
+  background: rgba(0, 229, 255, 0.05);
+}
+
+.sc-config-orientation-btn.active {
+  border-color: var(--iot-primary);
+  background: rgba(0, 229, 255, 0.15);
+  color: var(--iot-primary);
+}
+
+.sc-config-orientation-icon {
+  font-size: 18px;
+}
+
+/* Auto-center checkbox styles */
+.sc-config-auto-center {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(0, 229, 255, 0.05);
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  border-radius: 8px;
+}
+
+.sc-config-auto-center .sc-config-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--iot-on-surface);
+}
+
+.sc-config-auto-center input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--iot-primary);
+}
+
+/* WiFi inputs - Port styling */
+.sc-wifi-input input[type="number"] {
+  width: 70px;
+  min-width: 60px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.sc-wifi-input input[type="number"]::-webkit-inner-spin-button,
+.sc-wifi-input input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+}
+
+/* Wifi inputs - Endpoint styling */
+.sc-endpoint-input {
+  flex: 0 0 auto !important;
+}
+
+.sc-endpoint-input input[type="text"] {
+  width: 90px;
+  min-width: 80px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+/* Placeholder when no widget selected */
+.sc-config-placeholder {
+  width: 320px;
+  min-width: 320px;
+  background: var(--iot-panel);
+  border-left: 1px solid rgba(132, 147, 150, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: var(--iot-secondary);
+  font-size: 14px;
+  text-align: center;
+}
