@@ -630,7 +630,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                 Hoạt động hệ thống
               </h2>
             </div>
-            <LogStream token={token} wsUrl={WS_URL} devices={scopedDevices} maxEntries={80} />
+            <LogStream token={token} devices={scopedDevices} maxEntries={80} />
                 </div>
               </div>
 

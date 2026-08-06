@@ -40,6 +40,7 @@ export function RealtimeProvider({ children }) {
   const reconnectRef = useRef(null);
   const reconnectDelayRef = useRef(1000);
   const mountedRef = useRef(true);
+  const connectingRef = useRef(false);
 
   // Apply event to state
   const handleEvent = useCallback((msg) => {
@@ -99,16 +100,19 @@ export function RealtimeProvider({ children }) {
     mountedRef.current = true;
 
     const connect = () => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || connectingRef.current) return;
       try {
+        connectingRef.current = true;
         const ws = new WebSocket(WS_URL);
         wsRef.current = ws;
 
         ws.onopen = () => {
           if (!mountedRef.current) {
             try { ws.close(); } catch (_) {}
+            connectingRef.current = false;
             return;
           }
+          connectingRef.current = false;
           setConnected(true);
           reconnectDelayRef.current = 1000;
           console.debug('[Realtime] WS connected');
@@ -125,10 +129,11 @@ export function RealtimeProvider({ children }) {
         };
 
         ws.onerror = () => {
-          // onclose se xu ly reconnect
+          connectingRef.current = false;
         };
 
         ws.onclose = () => {
+          connectingRef.current = false;
           if (!mountedRef.current) return;
           setConnected(false);
           const delay = Math.min(reconnectDelayRef.current, 30000);
@@ -136,6 +141,7 @@ export function RealtimeProvider({ children }) {
           reconnectRef.current = setTimeout(connect, delay);
         };
       } catch (err) {
+        connectingRef.current = false;
         console.error('[Realtime] WS connect error:', err);
         reconnectRef.current = setTimeout(connect, 3000);
       }
@@ -145,6 +151,7 @@ export function RealtimeProvider({ children }) {
 
     return () => {
       mountedRef.current = false;
+      connectingRef.current = false;
       if (reconnectRef.current) {
         clearTimeout(reconnectRef.current);
         reconnectRef.current = null;

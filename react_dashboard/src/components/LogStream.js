@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useRealtime } from '../context/RealtimeProvider';
 
 const severityFor = (key, value) => {
   if (key === 'state' || key === 'power') {
@@ -43,12 +44,11 @@ const fmtTime = (ts) => {
   return `${hh}:${mm}:${ss}`;
 };
 
-const LogStream = ({ token, wsUrl, devices = [], maxEntries = 80, paused = false }) => {
+const LogStream = ({ token, devices = [], maxEntries = 80, paused = false }) => {
   const [entries, setEntries] = useState([]);
-  const [connected, setConnected] = useState(false);
-  const wsRef = useRef(null);
-  const reconnectRef = useRef(null);
-  const mountedRef = useRef(false);
+  const { connected, latestByDevice } = useRealtime();
+  const prevLatestRef = useRef({});
+  const mountedRef = useRef(true);
 
   const deviceMap = useMemo(() => {
     const m = new Map();
@@ -56,67 +56,45 @@ const LogStream = ({ token, wsUrl, devices = [], maxEntries = 80, paused = false
     return m;
   }, [devices]);
 
+  // Subscribe to latestByDevice changes from RealtimeProvider
   useEffect(() => {
-    mountedRef.current = true;
+    if (!mountedRef.current) return;
 
-    const connect = () => {
-      if (!mountedRef.current || wsRef.current) return;
-      try {
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-        ws.onopen = () => { if (mountedRef.current) setConnected(true); };
-        ws.onmessage = (e) => {
-          if (!mountedRef.current) return;
-          try {
-            const msg = JSON.parse(e.data);
-            const deviceId = String(msg.device_id || '');
-            if (!deviceId) return;
-            const ts = Number(msg.timestamp || Date.now() / 1000);
-            const payload = msg.data || msg;
+    const processDevice = (deviceId, data) => {
+      if (!deviceId || !data || typeof data !== 'object') return;
 
-            const isObject = typeof payload === 'object' && payload !== null;
-            if (!isObject) return;
+      const keys = Object.keys(data).filter(k => !['device_id', 'timestamp', 'type', 'last_update'].includes(k));
+      if (keys.length === 0) return;
 
-            const keys = Object.keys(payload).filter(k => !['device_id', 'timestamp', 'type'].includes(k));
-            if (keys.length === 0) return;
-
-            const newEntries = keys.map(k => {
-              const v = payload[k]?.value !== undefined ? payload[k].value : payload[k];
-              return {
-                id: `${deviceId}-${k}-${ts}-${Math.random().toString(36).slice(2, 6)}`,
-                timestamp: ts,
-                deviceId,
-                key: k,
-                value: v,
-                severity: severityFor(k, v)
-              };
-            });
-
-            setEntries(prev => [...newEntries, ...prev].slice(0, maxEntries));
-          } catch (e) { /* ignore */ }
+      const newEntries = keys.map(k => {
+        const v = data[k]?.value !== undefined ? data[k].value : data[k];
+        const ts = data[k]?.ts || Date.now() / 1000;
+        return {
+          id: `${deviceId}-${k}-${ts}-${Math.random().toString(36).slice(2, 6)}`,
+          timestamp: ts,
+          deviceId,
+          key: k,
+          value: v,
+          severity: severityFor(k, v)
         };
-        ws.onerror = () => { if (mountedRef.current) setConnected(false); };
-        ws.onclose = () => {
-          if (!mountedRef.current) return;
-          setConnected(false);
-          wsRef.current = null;
-          reconnectRef.current = setTimeout(connect, 3000);
-        };
-      } catch (e) {
-        reconnectRef.current = setTimeout(connect, 5000);
+      });
+
+      if (newEntries.length > 0) {
+        setEntries(prev => [...newEntries, ...prev].slice(0, maxEntries));
       }
     };
 
-    connect();
-    return () => {
-      mountedRef.current = false;
-      if (reconnectRef.current) clearTimeout(reconnectRef.current);
-      if (wsRef.current) {
-        try { wsRef.current.close(); } catch (e) {}
-        wsRef.current = null;
+    // Check all devices for updates
+    const prev = prevLatestRef.current;
+    for (const deviceId of Object.keys(latestByDevice)) {
+      const current = latestByDevice[deviceId];
+      const prevData = prev[deviceId];
+      if (current !== prevData) {
+        processDevice(deviceId, current);
+        prevLatestRef.current[deviceId] = current;
       }
-    };
-  }, [wsUrl, maxEntries]);
+    }
+  }, [latestByDevice, maxEntries]);
 
   const deviceName = (id) => {
     const d = deviceMap.get(String(id));
