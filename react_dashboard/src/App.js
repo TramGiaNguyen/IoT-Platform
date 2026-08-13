@@ -536,6 +536,10 @@ function App() {
           headerSearch={headerSearch}
           setHeaderSearch={setHeaderSearch}
           loadCustomDashboards={loadCustomDashboards}
+          showPasswordChange={showPasswordChange}
+          setShowPasswordChange={setShowPasswordChange}
+          passwordChangeUserId={passwordChangeUserId}
+          setPasswordChangeUserId={setPasswordChangeUserId}
         />
       </GlobalCacheProvider>
     </RealtimeProvider>
@@ -559,6 +563,8 @@ function AppContentWithTracker({
   wsConnected, setWsConnected, theme, setTheme, headerSearch, setHeaderSearch,
   sidebarCollapsed, setSidebarCollapsed,
   loadCustomDashboards,
+  showPasswordChange, setShowPasswordChange,
+  passwordChangeUserId, setPasswordChangeUserId,
 }) {
   const { updateCache, refetch, clearCache } = useGlobalCache();
   // Realtime WS status (from RealtimeProvider)
@@ -572,7 +578,7 @@ function AppContentWithTracker({
     };
     window.addEventListener('bdu-open-password-change', handler);
     return () => window.removeEventListener('bdu-open-password-change', handler);
-  }, [userInfo]);
+  }, [userInfo, setPasswordChangeUserId, setShowPasswordChange]);
 
   // Chỉ student mới có 2 workspace (cá nhân / nhóm). Admin và teacher quản lý
   // toàn bộ trong phạm vi quyền hạn của họ, không phân biệt personal/group.
