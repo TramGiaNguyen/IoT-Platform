@@ -164,6 +164,8 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
         last_seen: d.last_seen, phong_id: d.phong_id,
         ten_phong: d.ten_phong, ma_phong: d.ma_phong,
         nhom_id: d.nhom_id,
+        nguoi_so_huu_id: d.nguoi_so_huu_id,
+        nguoi_tao_id: d.nguoi_tao_id,
       }));
       console.debug('[Dashboard DEBUG] Setting devices', { count: mappedDevices.length });
       devicesIdsRef.current = mappedDevices.map(d => String(d.ma_thiet_bi));
