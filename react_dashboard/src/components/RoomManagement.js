@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { fetchRooms, fetchDevices, updateDeviceRoom, createRoom, updateRoom, deleteRoom } from '../services';
 import { API_BASE } from '../config/api';
-import { useCrudVersion } from '../context/RealtimeProvider';
+import { useCrudVersion, useRealtimePolling } from '../context/RealtimeProvider';
+import { copyToClipboard } from '../utils/clipboard';
 
 export default function RoomManagement({ token, onBack, workspaceContext = 'ca_nhan', userInfo = null }) {
   const [rooms, setRooms] = useState([]);
@@ -49,12 +50,13 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
   }, [loadRooms, loadDevices]);
 
   // Auto-refetch khi co CRUD event cho entity "room" tu tab khac
-  useEffect(() => {
-    if (roomsVersion > 0 && !pendingRef.current) {
-      loadRooms();
-      loadDevices();
-    }
-  }, [roomsVersion]);
+  // Hoac WS disconnected: polling moi 30s de bu events bi miss
+  const refetchBoth = useCallback(() => {
+    if (pendingRef.current) return;
+    loadRooms();
+    loadDevices();
+  }, [loadRooms, loadDevices]);
+  useRealtimePolling(roomsVersion, refetchBoth, [refetchBoth]);
 
   const resetForm = () => {
     setRoomForm({ ten_phong: '', ma_phong: '', vi_tri: '', mo_ta: '', nguoi_quan_ly_id: '' });
@@ -142,17 +144,17 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
     }
   };
 
-  const handleCopyApiUrl = (roomId) => {
+  const handleCopyApiUrl = async (roomId) => {
     // Build API URL with token
     const baseUrl = API_BASE.startsWith('http') ? API_BASE : `${window.location.origin}${API_BASE}`;
     const urlWithToken = `${baseUrl}/rooms/${roomId}/data?token=${token}`;
-    
-    navigator.clipboard.writeText(urlWithToken)
-      .then(() => alert('Đã copy API URL (có kèm token)!\n\nBạn có thể paste trực tiếp vào browser.'))
-      .catch((err) => {
-        console.error('Copy failed', err);
-        alert('Copy thất bại. Vui lòng thử lại.');
-      });
+
+    const ok = await copyToClipboard(urlWithToken);
+    if (ok) {
+      alert('Đã copy API URL (có kèm token)!\n\nBạn có thể paste trực tiếp vào browser.');
+    } else {
+      alert('Copy thất bại. Vui lòng copy thủ công:\n\n' + urlWithToken);
+    }
   };
 
   const handleDownloadApiDocs = async (room) => {

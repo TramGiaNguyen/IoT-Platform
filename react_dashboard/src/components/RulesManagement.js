@@ -14,7 +14,7 @@ import {
   deleteScheduledRule,
 } from '../services';
 import { useGlobalCache } from '../context/GlobalCache';
-import { useCrudVersion } from '../context/RealtimeProvider';
+import { useCrudVersion, useRealtimePolling } from '../context/RealtimeProvider';
 import RuleChainEditor from './RuleChainEditor';
 
 const operatorOptions = ['>', '<', '>=', '<=', '!=', '=', '=='];
@@ -368,15 +368,9 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
     }
   }, [activeTab, loadScheduledRules]);
 
-  // Realtime: tu refetch khi co CRUD rule tu tab khac
-  useEffect(() => {
-    if (rulesVersion > 0) loadRules();
-  }, [rulesVersion]);
-
-  // Realtime: tu refetch scheduled rules khi co CRUD scheduled_rule tu tab khac
-  useEffect(() => {
-    if (scheduledRulesVersion > 0) loadScheduledRules();
-  }, [scheduledRulesVersion]);
+  // Realtime: refetch khi rule/scheduled_rule CRUD event den, hoac WS disconnected polling 30s
+  useRealtimePolling(rulesVersion, loadRules, [loadRules]);
+  useRealtimePolling(scheduledRulesVersion, loadScheduledRules, [loadScheduledRules]);
 
   useEffect(() => {
     if (formVisible && formData.phong_id) {

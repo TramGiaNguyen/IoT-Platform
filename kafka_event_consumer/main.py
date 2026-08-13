@@ -143,6 +143,170 @@ def _track_last_seen(event: dict) -> None:
 atexit.register(_flush_last_seen_updates)
 
 
+# ===== AI Analytics pipeline =====
+import json as _json
+import threading as _threading
+from datetime import datetime as _dt
+
+AI_SCHEMA_DEBOUNCE_TTL = 60  # seconds between re-analysis per device
+AI_SCHEMA_LOCK_PREFIX = "ai:schema:"
+_ai_processing: dict = {}
+_ai_lock = _threading.Lock()
+
+# Lazy-load normalizer (avail after services/ copy)
+_normalizer = None
+def _get_normalizer():
+    global _normalizer
+    if _normalizer is None:
+        from services.ai_analytics.metric_normalizer import MetricNormalizer
+        _normalizer = MetricNormalizer()
+    return _normalizer
+
+
+def _is_ai_debounced(r, device_id: str) -> bool:
+    """Return True if this device was analyzed within the last TTL seconds."""
+    key = f"{AI_SCHEMA_LOCK_PREFIX}{device_id}"
+    return r.exists(key) == 1
+
+
+def _set_ai_debounce(r, device_id: str) -> None:
+    """Mark this device as recently analyzed (TTL seconds)."""
+    key = f"{AI_SCHEMA_LOCK_PREFIX}{device_id}"
+    r.set(key, "1", ex=AI_SCHEMA_DEBOUNCE_TTL)
+
+
+def _upsert_ai_analytics(device_id: str, result) -> None:
+    """
+    Upsert device_payload_schemas + metrics into MySQL.
+    Also marks thiet_bi.analyzed = 1 on first analysis.
+    Runs in the Kafka consumer thread (non-blocking per event).
+    """
+    if not device_id:
+        return
+
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**MYSQL_CONFIG)
+        cursor = conn.cursor(dictionary=True)
+
+        # ---- Upsert device_payload_schemas ----
+        fields_json = _json.dumps([
+            {
+                "path": m.source_path,
+                "data_type": type(m.value).__name__,
+                "role": "metric",
+                "semantic_type": None,
+                "semantic_confidence": 0.0,
+            }
+            for m in result.metrics
+        ])
+
+        # Upsert device_payload_schemas using only existing columns
+        # UNIQUE KEY (device_id, schema_hash) — duplicate means same schema hash, skip
+        cursor.execute("""
+            INSERT INTO device_payload_schemas
+                (device_id, schema_hash, schema_version, fields)
+            VALUES (%s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                schema_version = GREATEST(VALUES(schema_version), schema_version),
+                fields = VALUES(fields)
+        """, (
+            device_id,
+            result.schema_hash or "",
+            result.schema_version or 1,
+            fields_json,
+        ))
+        conn.commit()
+
+        # ---- Upsert each metric into metrics table ----
+        for metric in result.metrics:
+            semantic_type = "UNKNOWN_NUMERIC"
+            semantic_confidence = 0.0
+            unit = None
+            data_type = "FLOAT"
+
+            if hasattr(metric, 'value'):
+                if isinstance(metric.value, bool):
+                    data_type = "BOOL"
+                elif isinstance(metric.value, int):
+                    data_type = "INT"
+                elif isinstance(metric.value, str):
+                    data_type = "STRING"
+
+            # Insert or update metric
+            cursor.execute("""
+                INSERT INTO metrics
+                    (device_id, source_path, data_type, semantic_type, semantic_confidence, unit, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    data_type = VALUES(data_type),
+                    unit = VALUES(unit),
+                    status = IF(status = 'DISCOVERED', VALUES(status), status)
+            """, (
+                device_id,
+                metric.source_path,
+                data_type,
+                semantic_type,
+                semantic_confidence,
+                unit,
+                "LEARNING",
+            ))
+        conn.commit()
+
+        # ---- Mark device as analyzed (first time only) ----
+        cursor.execute("""
+            UPDATE thiet_bi
+            SET is_analyzed = 1
+            WHERE ma_thiet_bi = %s
+              AND (is_analyzed IS NULL OR is_analyzed = 0)
+        """, (device_id,))
+        conn.commit()
+
+    except Exception as e:
+        print(f"[AI-ANALYTICS] DB upsert error for {device_id}: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def _process_ai_event(event: dict, r) -> None:
+    """
+    Entry point called from consume_loop.
+    Debounce + normalize + upsert.
+    """
+    device_id = str(event.get("device_id") or "")
+    if not device_id:
+        return
+
+    # Debounce: skip if recently analyzed
+    if _is_ai_debounced(r, device_id):
+        return
+
+    # Mark debounce lock BEFORE processing (avoid duplicate parallel processing)
+    _set_ai_debounce(r, device_id)
+
+    try:
+        normalizer = _get_normalizer()
+        raw_bytes = _json.dumps(event).encode("utf-8")
+        result = normalizer.normalize(raw_payload=raw_bytes, device_id=device_id)
+
+        if result.errors and not result.metrics:
+            # Parse failed — silently skip
+            return
+
+        if result.metrics:
+            _upsert_ai_analytics(device_id, result)
+            print(f"[AI-ANALYTICS] Analyzed {device_id}: {len(result.metrics)} metrics, "
+                  f"hash={result.schema_hash[:16]}...")
+    except Exception as e:
+        print(f"[AI-ANALYTICS] Normalize error for {device_id}: {e}")
+
+
 # ===== Main consume loop =====
 def consume_loop() -> None:
     r = _create_redis_connection()
@@ -174,7 +338,7 @@ def consume_loop() -> None:
             if not value:
                 continue
             try:
-                event = json.loads(value.decode("utf-8"))
+                event = _json.loads(value.decode("utf-8"))
             except Exception as parse_err:
                 print(f"[KAFKA-CONSUMER] JSON parse error: {parse_err}")
                 continue
@@ -186,8 +350,25 @@ def consume_loop() -> None:
                 _flush_last_seen_updates()
 
             # Publish len Redis Pub/Sub cho WS bridge cua moi FastAPI worker
-            payload = json.dumps(event)
+            payload = _json.dumps(event)
             _redis_publish_with_retry(r, WS_CHANNEL, payload)
+
+            # Per-device channel: dung cho detect-keys "listen 10s" feature.
+            # Sub nhieu channel theo device_id, payload gom (device_id, data).
+            try:
+                dev_id = event.get("device_id")
+                if dev_id:
+                    dev_payload = _json.dumps({
+                        "device_id": dev_id,
+                        "data": event,
+                    })
+                    _redis_publish_with_retry(r, f"device-data:{dev_id}", dev_payload)
+            except Exception as _per_dev_err:
+                # Khong chan pipeline neu per-device publish fail
+                print(f"[KAFKA-CONSUMER] per-device publish failed: {_per_dev_err}")
+
+            # ---- AI Analytics pipeline ----
+            _process_ai_event(event, r)
     except KeyboardInterrupt:
         print("[KAFKA-CONSUMER] Shutting down...")
     finally:

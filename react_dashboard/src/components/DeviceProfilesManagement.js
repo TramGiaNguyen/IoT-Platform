@@ -6,7 +6,7 @@ import {
   deleteDeviceProfile,
   fetchDevices,
 } from '../services';
-import { useCrudVersion } from '../context/RealtimeProvider';
+import { useCrudVersion, useRealtimePolling } from '../context/RealtimeProvider';
 
 export default function DeviceProfilesManagement({ token, onBack, workspaceContext = 'ca_nhan', userInfo = null }) {
   const [profiles, setProfiles] = useState([]);
@@ -69,10 +69,8 @@ export default function DeviceProfilesManagement({ token, onBack, workspaceConte
     loadDevices();
   }, []);
 
-  // Realtime: refetch khi profile CRUD event den
-  useEffect(() => {
-    if (profilesVersion > 0) loadProfiles();
-  }, [profilesVersion]);
+  // Realtime: refetch khi profile CRUD event den, hoac WS disconnected polling 30s
+  useRealtimePolling(profilesVersion, loadProfiles, [token]);
 
   const parseConfig = (cfg) => {
     if (typeof cfg === 'string') {

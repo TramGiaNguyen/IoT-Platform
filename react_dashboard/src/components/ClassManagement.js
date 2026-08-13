@@ -6,7 +6,7 @@ import {
   listGroupMembers, addGroupMember, removeGroupMember,
   bulkImportClassStudents, fetchUnassignedStudents,
 } from '../services';
-import { useCrudVersion } from '../context/RealtimeProvider';
+import { useCrudVersion, useRealtimePolling } from '../context/RealtimeProvider';
 
 const MAX_STUDENTS_PER_CLASS = 100;
 const MAX_MEMBERS_PER_GROUP = 5;
@@ -54,21 +54,23 @@ export default function ClassManagement({ token, onBack, onClassChanged, workspa
   }, [loadClasses]);
 
   // Realtime: refetch khi class/group/student CRUD event den
-  useEffect(() => {
-    if (classesVersion > 0) loadClasses(currentPage);
-  }, [classesVersion]);
+  // Hoac WS disconnected: polling 30s de bu CRUD events bi miss
+  const refetchClassesCurrent = useCallback(() => loadClasses(currentPage), [loadClasses, currentPage]);
+  useRealtimePolling(classesVersion, refetchClassesCurrent, [refetchClassesCurrent]);
 
-  useEffect(() => {
-    if (groupsVersion > 0 && selectedClass) {
+  const refetchGroups = useCallback(() => {
+    if (selectedClass) {
       listClassGroups(selectedClass.id).then(r => setGroups(r.data.groups || r.data || [])).catch(() => {});
     }
-  }, [groupsVersion]);
+  }, [selectedClass]);
+  useRealtimePolling(groupsVersion, refetchGroups, [refetchGroups]);
 
-  useEffect(() => {
-    if (classStudentsVersion > 0 && selectedClass) {
+  const refetchStudents = useCallback(() => {
+    if (selectedClass) {
       listClassStudents(selectedClass.id).then(r => setStudents(r.data.students || r.data || [])).catch(() => {});
     }
-  }, [classStudentsVersion]);
+  }, [selectedClass]);
+  useRealtimePolling(classStudentsVersion, refetchStudents, [refetchStudents]);
 
   const handleCreateClass = async (e) => {
     e.preventDefault();

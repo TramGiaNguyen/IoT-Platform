@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { fetchAlerts, fetchDevices, fetchRooms, fetchClasses, acknowledgeAlert, resolveAlert } from '../services';
-import { useCrudVersion } from '../context/RealtimeProvider';
+import { useCrudVersion, useRealtimePolling } from '../context/RealtimeProvider';
 
 const PAGE_SIZE = 15;
 
@@ -10,6 +10,9 @@ const LOAI_LABELS = {
   rule_triggered: 'Rule kích hoạt',
   system_error: 'Lỗi hệ thống',
   emergency: 'Khẩn cấp',
+  ai_anomaly: 'Bất thường AI',
+  ai_health: 'Sức khỏe cảm biến',
+  ai_forecast: 'Dự đoán AI',
 };
 
 const MUC_DO_LABELS = {
@@ -53,6 +56,7 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
   const [filterDevice, setFilterDevice] = useState('');
   const [filterRoom, setFilterRoom] = useState('');
   const [filterClass, setFilterClass] = useState('');
+  const [filterNguon, setFilterNguon] = useState('');
   const [rooms, setRooms] = useState([]);
   const [classes, setClasses] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -135,10 +139,8 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
     loadAlerts();
   }, [loadAlerts]);
 
-  // Realtime: refetch khi alert CRUD event den (bo polling 30s)
-  useEffect(() => {
-    if (alertsVersion > 0) loadAlerts();
-  }, [alertsVersion]);
+  // Realtime: refetch khi alert CRUD event den, hoac WS disconnected polling 30s
+  useRealtimePolling(alertsVersion, loadAlerts, [loadAlerts]);
 
   useEffect(() => {
     loadDevices();
@@ -248,6 +250,17 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
             </option>
           ))}
         </select>
+        <select
+          value={filterNguon}
+          onChange={(e) => setFilterNguon(e.target.value)}
+          className="filter-select"
+        >
+          <option value="">Tất cả nguồn</option>
+          <option value="ai">AI Analytics</option>
+          <option value="device">Thiết bị</option>
+          <option value="rule">Rule</option>
+          <option value="system">Hệ thống</option>
+        </select>
       </div>
 
       {loading ? (
@@ -295,6 +308,15 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
                     <td>{a.thoi_gian_tao || '-'}</td>
                     <td>
                       <span className="loai-badge">{LOAI_LABELS[a.loai] || a.loai}</span>
+                      {(a.nguon === 'ai' || a.loai?.startsWith('ai_')) && (
+                        <span 
+                          className="ai-badge" 
+                          title="Cảnh báo từ AI Analytics"
+                          style={{marginLeft: '4px'}}
+                        >
+                          <span className="material-symbols-outlined" style={{fontSize: '12px'}}>psychology</span>
+                        </span>
+                      )}
                     </td>
                     <td>{a.ten_thiet_bi || a.device_id || '-'}</td>
                     <td>

@@ -17,18 +17,20 @@ import DashboardManagement from './components/DashboardManagement';
 import DashboardViewer from './components/DashboardViewer/DashboardViewer';
 import RoomDetail from './components/RoomDetail';
 import StandaloneControllerBuilderPage from './components/StandaloneControllerBuilderPage';
+import AIAnalytics from './components/AIAnalytics';
 import { canAccessPage } from './config/pages';
 import { GlobalCacheProvider, useGlobalCache } from './context/GlobalCache';
 import { RealtimeProvider, useRealtime } from './context/RealtimeProvider';
 import './styles/style.css';
 
 // Sync realtime WS connection state len App-level `wsConnected` (cho AppHeader badge)
+// Dong thoi expose forceReconnect de AppHeader nut "Reconnect ngay" co the goi.
 function useRealtimeSync(setWsConnected) {
-  const { connected } = useRealtime();
+  const { connected, forceReconnect } = useRealtime();
   useEffect(() => {
     setWsConnected(connected);
   }, [connected, setWsConnected]);
-  return { connected };
+  return { connected, forceReconnect };
 }
 
 // ── JWT helpers ────────────────────────────────────────────────────────────────
@@ -64,6 +66,58 @@ const isTokenValid = (token) => {
 const REFRESH_BEFORE_SECS = 10 * 60; // refresh when < 10 minutes left
 const PROACTIVE_CHECK_INTERVAL_MS = 60 * 1000; // check every 60s
 
+// Banner canh bao khi truy cap qua HTTP LAN IP (khong phai secure context)
+function InsecureContextBanner() {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  if (typeof window === 'undefined') return null;
+  if (window.isSecureContext) return null;
+
+  const isHttps = window.location.protocol === 'https:';
+  if (isHttps) return null;
+
+  return (
+    <div
+      role="alert"
+      style={{
+        position: 'relative',
+        zIndex: 9999,
+        padding: '10px 16px',
+        background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)',
+        color: '#1f2937',
+        fontSize: '13px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        borderBottom: '1px solid rgba(0,0,0,0.1)'
+      }}
+    >
+      <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>warning</span>
+      <div style={{ flex: 1, lineHeight: 1.4 }}>
+        <strong>Dang truy cap qua HTTP khong bao mat ({window.location.host}).</strong>{' '}
+        Mot so tinh nang bi gioi han: <strong>Camera/webcam se khong hoat dong</strong>, <strong>che do PWA offline bi tat</strong>.
+        Tinh nang copy clipboard van hoat dong binh thuong.
+        {' '}
+        De su dung camera, hay truy cap qua <code>localhost</code> hoac cau hinh HTTPS.
+      </div>
+      <button
+        onClick={() => setDismissed(true)}
+        style={{
+          background: 'transparent',
+          border: '1px solid rgba(0,0,0,0.2)',
+          color: '#1f2937',
+          padding: '4px 10px',
+          borderRadius: '6px',
+          cursor: 'pointer',
+          fontSize: '12px'
+        }}
+      >
+        Dong
+      </button>
+    </div>
+  );
+}
+
 function App() {
   // DEBUG: enable runtime logging when ?debug=ca9780 in URL
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === 'ca9780') {
@@ -76,6 +130,7 @@ function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [selectedAIDeviceId, setSelectedAIDeviceId] = useState(null);
   const [standaloneDeviceId, setStandaloneDeviceId] = useState(null);
   const [standaloneDeviceLoading, setStandaloneDeviceLoading] = useState(false);
   const [standaloneDeviceData, setStandaloneDeviceData] = useState(null);
@@ -313,9 +368,13 @@ function App() {
       }
     }
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch((err) => {
-        console.warn('[App] SW registration failed:', err);
-      });
+      if (window.isSecureContext) {
+        navigator.serviceWorker.register('/sw.js').catch((err) => {
+          console.warn('[App] SW registration failed:', err);
+        });
+      } else {
+        console.info('[App] Service Worker skipped (insecure context, e.g. HTTP LAN IP). PWA offline mode disabled.');
+      }
     }
   }, [authChecked, token, isLoggedIn, fetchUserInfo]);
 
@@ -441,6 +500,8 @@ function App() {
           setCurrentView={setCurrentView}
           selectedDeviceId={selectedDeviceId}
           setSelectedDeviceId={setSelectedDeviceId}
+          selectedAIDeviceId={selectedAIDeviceId}
+          setSelectedAIDeviceId={setSelectedAIDeviceId}
           standaloneDeviceId={standaloneDeviceId}
           setStandaloneDeviceId={setStandaloneDeviceId}
           standaloneDeviceLoading={standaloneDeviceLoading}
@@ -481,6 +542,7 @@ function App() {
 function AppContentWithTracker({
   token, devices, setDevices, currentView, setCurrentView,
   selectedDeviceId, setSelectedDeviceId,
+  selectedAIDeviceId, setSelectedAIDeviceId,
   standaloneDeviceId, setStandaloneDeviceId,
   standaloneDeviceLoading, standaloneDeviceData,
   setStandaloneDeviceLoading, setStandaloneDeviceData,
@@ -496,7 +558,7 @@ function AppContentWithTracker({
 }) {
   const { updateCache, refetch, clearCache } = useGlobalCache();
   // Realtime WS status (from RealtimeProvider)
-  const { connected: realtimeConnected } = useRealtimeSync(setWsConnected);
+  const { connected: realtimeConnected, forceReconnect: realtimeForceReconnect } = useRealtimeSync(setWsConnected);
 
   // Chỉ student mới có 2 workspace (cá nhân / nhóm). Admin và teacher quản lý
   // toàn bộ trong phạm vi quyền hạn của họ, không phân biệt personal/group.
@@ -585,6 +647,7 @@ function AppContentWithTracker({
     if (currentView === 'rules') return 'Cấu hình rule tự động hóa cho thiết bị';
     if (currentView === 'rooms') return 'Quản lý các phòng và thiết bị trong phòng';
     if (currentView === 'alerts') return 'Theo dõi và xử lý cảnh báo hệ thống';
+    if (currentView === 'ai-analytics') return 'Phân tích thông minh, dự đoán xu hướng và phát hiện bất thường';
     if (currentView === 'users') return 'Quản lý tài khoản người dùng';
     if (currentView === 'classes') return 'Quản lý lớp học và sinh viên';
     return '';
@@ -625,6 +688,12 @@ function AppContentWithTracker({
     setSelectedDeviceId(null);
   };
 
+  const openAIAnalytics = () => {
+    window.location.hash = '#/ai-analytics';
+    setCurrentView('ai-analytics');
+    setSelectedDeviceId(null);
+  };
+
   const openDeviceProfiles = () => {
     window.location.hash = '#/device-profiles';
     setCurrentView('device-profiles');
@@ -661,6 +730,13 @@ function AppContentWithTracker({
       } else if (hash.startsWith('#/alerts')) {
         setCurrentView('alerts');
         setSelectedDeviceId(null);
+      } else if (hash.startsWith('#/ai-analytics/') && hash !== '#/ai-analytics') {
+        const devId = decodeURIComponent(hash.replace('#/ai-analytics/', '').split('?')[0]);
+        setSelectedAIDeviceId(devId);
+        setCurrentView('ai-analytics');
+      } else if (hash.startsWith('#/ai-analytics')) {
+        setCurrentView('ai-analytics');
+        setSelectedAIDeviceId(null);
       } else if (hash.startsWith('#/device-profiles')) {
         setCurrentView('device-profiles');
         setSelectedDeviceId(null);
@@ -740,6 +816,24 @@ function AppContentWithTracker({
   } else if (currentView === 'alerts') {
     content = <AlarmsManagement token={token} onBack={handleBackToDashboard} workspaceContext={workspaceContext} userInfo={userInfo} />;
     activeTab = 'alerts';
+  } else if (currentView === 'ai-analytics') {
+    content = (
+      <AIAnalytics
+        token={token}
+        devices={devices}
+        onBack={handleBackToDashboard}
+        onOpenAlerts={openAlerts}
+        selectedDeviceId={selectedAIDeviceId}
+        onSelectDevice={(id) => {
+          if (id) {
+            window.location.hash = `#/ai-analytics/${encodeURIComponent(id)}`;
+          } else {
+            window.location.hash = '#/ai-analytics';
+          }
+        }}
+      />
+    );
+    activeTab = 'ai-analytics';
   } else if (currentView === 'device-profiles') {
     content = <DeviceProfilesManagement token={token} onBack={handleBackToDashboard} workspaceContext={workspaceContext} userInfo={userInfo} />;
     activeTab = 'device-profiles';
@@ -796,6 +890,7 @@ content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onO
 
   return (
     <>
+      <InsecureContextBanner />
       {isLoggedIn && <ActivityTracker onIdleTimeout={onLogout} />}
       <div className="app-shell">
         <aside className={`app-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
@@ -845,6 +940,12 @@ content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onO
             <button className={`sidebar-item ${activeTab === 'alerts' ? 'active' : ''}`} onClick={openAlerts}>
               <span className="material-symbols-outlined sidebar-icon">warning</span>
               <span>Quản lý cảnh báo</span>
+            </button>
+          )}
+          {canAccess('ai-analytics') && (
+            <button className={`sidebar-item ${activeTab === 'ai-analytics' ? 'active' : ''}`} onClick={openAIAnalytics}>
+              <span className="material-symbols-outlined sidebar-icon">psychology</span>
+              <span>AI Analytics</span>
             </button>
           )}
           {canAccess('device-profiles') && (
@@ -914,6 +1015,7 @@ content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onO
           searchValue={headerSearch}
           onSearchChange={handleHeaderSearch}
           wsConnected={wsConnected}
+          onForceReconnect={realtimeForceReconnect}
           userInfo={userInfo}
           onLogout={onLogout}
           onChangePassword={() => {

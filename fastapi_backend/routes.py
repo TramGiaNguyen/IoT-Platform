@@ -1827,60 +1827,82 @@ def regenerate_device_key(
 
 
 @router.post("/devices/{device_id}/detect-keys")
-def detect_device_keys(
+async def detect_device_keys(
     device_id: str,
     listen_seconds: int = 10,
     current_user: str = Depends(get_current_user)
 ):
     """
-    Lắng nghe Kafka trong N giây để detect data keys từ messages thực tế.
-    Tự động thêm vào bảng khoa_du_lieu nếu phát hiện keys mới.
+    Detect data keys tu message thiet bi gui len.
 
-    Trước đây tạo KafkaConsumer mới cho mỗi request và listen `listen_seconds`.
-    Giờ đọc từ cache shared (đã được background consumer populate), phản hồi
-    tức thì, không leak Kafka connection.
+    Thiet ke: handler async, subscribe Redis pub/sub channel
+    `device-data:{device_id}` trong `listen_seconds` giay, gom event moi
+    dong thoi ket hop voi cache shared (deque). Neu subscribe khong kha
+    dung (Redis down) -> fallback doc tu deque nhu phien ban cu.
+
+    Tra ve danh sach keys moi duoc them vao `khoa_du_lieu`.
     """
-    from kafka_discovery import get_recent_device_events
+    import time as _time
+    import logging
+    logger = logging.getLogger("detect-keys")
+    from kafka_discovery import get_recent_device_events, subscribe_device_events
+
+    start_ts = _time.time()
 
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # Kiểm tra thiết bị tồn tại
+        # Kiem tra thiet bi ton tai
         cursor.execute("SELECT id FROM thiet_bi WHERE ma_thiet_bi = %s AND is_active = 1", (device_id,))
         device = cursor.fetchone()
         if not device:
-            raise HTTPException(status_code=404, detail="Thiết bị không tồn tại")
+            raise HTTPException(status_code=404, detail="Thiet bi khong ton tai")
 
         thiet_bi_id = device["id"]
 
-        # Lấy existing keys
+        # Lay existing keys
         cursor.execute("SELECT khoa FROM khoa_du_lieu WHERE thiet_bi_id = %s", (thiet_bi_id,))
         existing_keys = {row["khoa"] for row in cursor.fetchall()}
 
-        # Lấy events từ cache shared (không tạo Kafka connection)
-        # Lấy tối đa max(50, listen_seconds) event gần nhất
+        # Lấy events từ cache shared (lịch sử) để có data ngay khi request bắt đầu.
+        # Lấy tối đa max(50, listen_seconds * 5) event gần nhất.
         limit = max(50, listen_seconds * 5)
         cached_events = get_recent_device_events(device_id, limit=limit)
+
+        # Subscribe Redis pub/sub trong listen_seconds giây de gom event moi.
+        # Subscribe TRƯỚC khi xử lý history để tránh miss event phát ngay khi user bấm nút.
+        try:
+            combined_events = await subscribe_device_events(
+                device_id=device_id,
+                listen_seconds=listen_seconds,
+                extra_history=cached_events,
+            )
+        except Exception as sub_err:
+            # fallback neu coroutine that bai
+            logger.warning(f"[detect-keys] subscribe fallback: {sub_err}")
+            combined_events = cached_events
 
         detected_keys = {}
         sample_data = {}
         message_count = 0
 
-        for data in cached_events:
+        for data in combined_events:
+            if not isinstance(data, dict):
+                continue
             message_count += 1
-            # Extract keys from payload
             for key, value in data.items():
-                if key not in ["device_id", "timestamp", "type", "topic"]:
-                    if key not in detected_keys:
-                        detected_keys[key] = {
-                            "sample_value": value,
-                            "python_type": type(value).__name__,
-                            "don_vi": guess_unit(key, value),
-                            "count": 0
-                        }
-                    detected_keys[key]["count"] += 1
-                    sample_data[key] = value
+                if key in ["device_id", "timestamp", "type", "topic"]:
+                    continue
+                if key not in detected_keys:
+                    detected_keys[key] = {
+                        "sample_value": value,
+                        "python_type": type(value).__name__,
+                        "don_vi": guess_unit(key, value),
+                        "count": 0
+                    }
+                detected_keys[key]["count"] += 1
+                sample_data[key] = value
 
         # Add new keys to database
         new_keys_added = []
@@ -1903,20 +1925,31 @@ def detect_device_keys(
 
         conn.commit()
 
+        elapsed = _time.time() - start_ts
+        logger.info(
+            f"[detect-keys] device={device_id} listened={listen_seconds}s "
+            f"actual_elapsed={elapsed:.2f}s events={message_count} "
+            f"new_keys={len(new_keys_added)} existing={len(existing_keys)}"
+        )
+
         return {
-            "message": f"Đã lấy {message_count} message(s) từ Kafka cache và phát hiện {len(detected_keys)} keys",
+            "message": f"Da lang nghe {listen_seconds}s va phat hien {len(detected_keys)} keys",
             "device_id": device_id,
             "message_count": message_count,
             "detected_keys": list(detected_keys.keys()),
             "new_keys_added": new_keys_added,
             "existing_keys": list(existing_keys),
-            "sample_data": sample_data
+            "sample_data": sample_data,
+            "listened_seconds": listen_seconds,
+            "actual_elapsed": round(elapsed, 2),
         }
     except HTTPException:
         raise
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Lỗi detect keys: {str(e)}")
+        elapsed = _time.time() - start_ts
+        logger.error(f"[detect-keys] error after {elapsed:.2f}s: {e}")
+        raise HTTPException(status_code=500, detail=f"Loi detect keys: {str(e)}")
     finally:
         cursor.close()
         conn.close()
@@ -9350,6 +9383,7 @@ def list_alerts(
             f"""
             SELECT cb.id, cb.device_id, cb.rule_id, cb.loai, cb.tin_nhan, cb.muc_do,
                    cb.trang_thai, cb.thoi_gian_tao, cb.thoi_gian_giai_quyet, cb.data_context,
+                   cb.nguon,
                    tb.ten_thiet_bi, tb.phong_id, tb.nhom_id,
                    p.ten_phong,
                    n.ten_nhom,

@@ -7,6 +7,7 @@ const AppHeader = ({
   onSearchChange,
   onSearchSubmit,
   wsConnected = false,
+  onForceReconnect,
   userInfo,
   onLogout,
   onChangePassword,
@@ -59,11 +60,25 @@ const AppHeader = ({
       <div className="app-header-right">
         <div
           className={`header-realtime-badge ${wsConnected ? 'connected' : 'disconnected'}`}
-          title={wsConnected ? 'Realtime connected' : 'Realtime disconnected'}
+          title={wsConnected ? 'Realtime connected' : 'Realtime disconnected - click to reconnect'}
+          onClick={() => { if (!wsConnected) onForceReconnect?.(); }}
+          style={{ cursor: wsConnected ? 'default' : 'pointer' }}
         >
           <span className={`header-realtime-dot ${wsConnected ? 'on' : 'off'}`} />
-          <span className="header-realtime-label">Realtime</span>
+          <span className="header-realtime-label">{wsConnected ? 'Realtime' : 'WS: mất kết nối'}</span>
         </div>
+        {!wsConnected && (
+          <button
+            className="header-icon-btn"
+            onClick={() => onForceReconnect?.()}
+            title="Reconnect ngay (khi realtime qua LAN bị chậm)"
+            aria-label="Reconnect realtime"
+            style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,0.4)' }}
+          >
+            <span className="material-symbols-outlined">sync</span>
+            <span style={{ marginLeft: 4, fontSize: 12 }}>Reconnect</span>
+          </button>
+        )}
         <div ref={notifRef} style={{ position: 'relative' }}>
           <button
             className="header-icon-btn"

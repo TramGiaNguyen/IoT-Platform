@@ -426,11 +426,15 @@ export const deleteDeviceKey = (deviceId, keyId, token) =>
     headers: { Authorization: `Bearer ${token}` },
   });
 
-export const detectDeviceKeys = (deviceId, token) =>
-  axios.post(`${API_BASE}/devices/${deviceId}/detect-keys`, {}, {
-    headers: { Authorization: `Bearer ${token}` },
-    timeout: 20000,
-  });
+export const detectDeviceKeys = (deviceId, token, listenSeconds = 10) =>
+  axios.post(
+    `${API_BASE}/devices/${deviceId}/detect-keys?listen_seconds=${listenSeconds}`,
+    {},
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: (listenSeconds + 5) * 1000,
+    }
+  );
 
 export const fetchRoomDeviceData = (roomId, token) =>
   axios.get(`${API_BASE}/rooms/${roomId}/data`, {
@@ -614,3 +618,85 @@ export const deleteStandaloneConfig = (deviceId, token) =>
   axios.delete(`${API_BASE}/devices/${deviceId}/standalone-config`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+
+// =========================================================
+// AI Analytics APIs
+// =========================================================
+export const fetchDeviceSchema = (deviceId, token) =>
+  axios.get(`${API_BASE}/api/ai/devices/${deviceId}/schema`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data).catch(() => null);
+
+export const fetchDeviceMetrics = (deviceId, token) =>
+  axios.get(`${API_BASE}/api/ai/devices/${deviceId}/metrics`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data).catch(() => []);
+
+export const fetchMetricProfile = (metricId, token) =>
+  axios.get(`${API_BASE}/api/ai/metrics/${metricId}/profile`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data).catch(() => null);
+
+export const fetchMetricAnomalies = (metricId, token, params = {}) =>
+  axios.get(`${API_BASE}/api/ai/metrics/${metricId}/anomalies`, {
+    headers: { Authorization: `Bearer ${token}` },
+    params,
+  }).then(res => res.data).catch(() => []);
+
+export const fetchDeviceAnomalies = (deviceId, token, params = {}) =>
+  axios.get(`${API_BASE}/api/ai/devices/${deviceId}/anomalies`, {
+    headers: { Authorization: `Bearer ${token}` },
+    params,
+  }).then(res => res.data).catch(() => []);
+
+export const fetchMetricForecast = (metricId, token, horizon = 60) =>
+  axios.get(`${API_BASE}/api/ai/metrics/${metricId}/forecast`, {
+    headers: { Authorization: `Bearer ${token}` },
+    params: { horizon },
+  }).then(res => res.data).catch(() => null);
+
+export const fetchMetricTrend = (metricId, token, window = 50) =>
+  axios.get(`${API_BASE}/api/ai/metrics/${metricId}/trend`, {
+    headers: { Authorization: `Bearer ${token}` },
+    params: { window },
+  }).then(res => res.data).catch(() => null);
+
+export const fetchThresholdSuggestions = (metricId, token) =>
+  axios.get(`${API_BASE}/api/ai/metrics/${metricId}/threshold-suggestions`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data).catch(() => null);
+
+export const applyThresholdSuggestion = (metricId, thresholdType, token) =>
+  axios.post(`${API_BASE}/api/ai/metrics/${metricId}/apply-threshold`, {}, {
+    headers: { Authorization: `Bearer ${token}` },
+    params: { threshold_type: thresholdType },
+  }).then(res => res.data).catch(() => ({ success: false }));
+
+export const fetchDeviceHealth = (deviceId, token) =>
+  axios.get(`${API_BASE}/api/ai/devices/${deviceId}/health`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data).catch(() => []);
+
+export const fetchDeviceProfileSummary = (deviceId, token) =>
+  axios.get(`${API_BASE}/api/ai/devices/${deviceId}/profile-summary`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data).catch(() => ({ metrics: [] }));
+
+export const analyzePayload = (deviceId, payload, token) =>
+  axios.post(`${API_BASE}/api/ai/analyze-payload`, { payload }, {
+    headers: { Authorization: `Bearer ${token}` },
+    params: { device_id: deviceId },
+  }).then(res => res.data).catch(() => null);
+
+/**
+ * Tổng hợp thông tin AI cho tất cả thiết bị (dùng cho trang danh sách AI Analytics).
+ * Trả về { devices: [...], total, online_count }.
+ * Mỗi device có: ma_thiet_bi, ten_thiet_bi, trang_thai, last_seen,
+ *   analyzed, metrics_count, status_overall, anomaly_count_24h,
+ *   anomaly_max_severity, alert_unresolved_count, alert_max_severity, max_severity.
+ */
+export const fetchAIDevicesSummary = (token, workspaceId = null) =>
+  axios.get(`${API_BASE}/api/ai/devices/summary`, {
+    headers: { Authorization: `Bearer ${token}` },
+    params: workspaceId ? { workspace_id: workspaceId } : {},
+  }).then(res => res.data).catch(() => ({ devices: [], total: 0, online_count: 0 }));

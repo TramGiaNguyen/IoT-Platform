@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { fetchDashboards, createDashboard, updateDashboard, deleteDashboard, fetchRooms, fetchClasses } from '../services';
 import DashboardBuilder from './DashboardBuilder/DashboardBuilder';
-import { useCrudVersion } from '../context/RealtimeProvider';
+import { useCrudVersion, useRealtimePolling } from '../context/RealtimeProvider';
 import '../styles/style.css';
 
 const CONTEXT_LABELS = {
@@ -65,14 +65,9 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange,
     loadDashboards();
   }, [loadDashboards]);
 
-  // Realtime: refetch khi dashboard hoặc widget CRUD event den
-  useEffect(() => {
-    if (dashboardsVersion > 0) loadDashboards();
-  }, [dashboardsVersion]);
-
-  useEffect(() => {
-    if (widgetsVersion > 0) loadDashboards();
-  }, [widgetsVersion]);
+  // Realtime: refetch khi dashboard hoặc widget CRUD event den, hoac WS disconnected polling 30s
+  useRealtimePolling(dashboardsVersion, loadDashboards, [loadDashboards]);
+  useRealtimePolling(widgetsVersion, loadDashboards, [loadDashboards]);
 
   useEffect(() => {
     loadRoomsAndClasses();

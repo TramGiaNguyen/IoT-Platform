@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { fetchUsers, createUser, updateUser, deleteUser, impersonateUser, bulkImportUsers } from '../services';
-import { useCrudVersion } from '../context/RealtimeProvider';
+import { useCrudVersion, useRealtimePolling } from '../context/RealtimeProvider';
 
 const PAGE_SIZE = 15;
 
@@ -16,6 +16,7 @@ export default function UserManagement({ token, onBack }) {
     const [bulkResult, setBulkResult] = useState(null);
     const [bulkError, setBulkError] = useState(null);
     const [bulkLoading, setBulkLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     // Pagination & filter state
     const [currentPage, setCurrentPage] = useState(1);
@@ -51,10 +52,9 @@ export default function UserManagement({ token, onBack }) {
         loadUsers(1);
     }, [loadUsers]);
 
-    // Realtime: refetch khi user CRUD event den
-    useEffect(() => {
-        if (usersVersion > 0) loadUsers(1);
-    }, [usersVersion]);
+    // Realtime: refetch khi user CRUD event den, hoac WS disconnected: polling 30s
+    const refetchFirstPage = useCallback(() => loadUsers(1), [loadUsers]);
+    useRealtimePolling(usersVersion, refetchFirstPage, [refetchFirstPage]);
 
     const resetForm = () => {
         setFormData({ ten: '', email: '', password: '', vai_tro: 'student' });
@@ -281,10 +281,38 @@ export default function UserManagement({ token, onBack }) {
                             </label>
                             <label>
                                 Mat khau {editUserId ? '(de trong neu khong doi)' : '*'}
-                                <input type="password" value={formData.password}
-                                    onChange={e => setFormData({ ...formData, password: e.target.value })}
-                                    placeholder={editUserId ? '••••••••' : 'Nhap mat khau'}
-                                    required={!editUserId} />
+                                <div style={{ position: 'relative' }}>
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        value={formData.password}
+                                        onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                        placeholder={editUserId ? '••••••••' : 'Nhap mat khau'}
+                                        required={!editUserId}
+                                        style={{ paddingRight: '40px', width: '100%' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(v => !v)}
+                                        style={{
+                                            position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                                            background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        }}
+                                        title={showPassword ? 'An mat khau' : 'Hien mat khau'}
+                                    >
+                                        {showPassword ? (
+                                            <svg width="18" height="18" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg">
+                                                <path fill="#64748b" d="M8 3.5C5.5 3.5 3.8 5.6 2.1 7.5c0.2 0.3.2 0.7 0 1L3 9.3c0.1.2.2.3.4.3.1 0 .2 0 .3-.1C5.8 8.1 6.9 7.5 8 7.5s2.2.6 4.3 1.9c.1.1.2.1.3.1.1 0 .3-.1.4-.3L13.9 8.5c.2-.3.2-.7 0-1C12.2 5.6 10.5 3.5 8 3.5zM5.5 5.7c0.4-.2.9-.2 1.3-.2s0.9 0 1.3.2C6.4 6.2 5.5 7.5 5.5 8.5c0 1-.9 2.3-1.6 3.1-.4.2-.9.2-1.3.2s-.9 0-1.3-.2C1.9 10.8 1 9.5 1 8.5S2.3 5.7 5.5 5.7zM8 9.5c1.1 0 2-.4 2-.4s-.9.4-2 .4-2-.4-2-.4.9.4 2 .4z"/>
+                                                <path fill="#64748b" d="M8 1.5C3.3 1.5 1 5.6 1 5.6s.8 2.5 4 3.6c0 0-.4-.6-.4-1.4 0-1.5 1.2-2.8 2.8-2.8s2.8 1.3 2.8 2.8c0 .8-.2 1.4-.4 1.4 3.2-1.1 4-3.6 4-3.6S12.7 1.5 8 1.5z"/>
+                                            </svg>
+                                        ) : (
+                                            <svg width="18" height="18" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg">
+                                                <path fill="#64748b" d="M8 3.5C5.5 3.5 3.8 5.6 2.1 7.5c0.2 0.3.2 0.7 0 1L3 9.3c0.1.2.2.3.4.3.1 0 .2 0 .3-.1C5.8 8.1 6.9 7.5 8 7.5s2.2.6 4.3 1.9c.1.1.2.1.3.1.1 0 .3-.1.4-.3L13.9 8.5c.2-.3.2-.7 0-1C12.2 5.6 10.5 3.5 8 3.5zM5.5 5.7c0.4-.2.9-.2 1.3-.2s0.9 0 1.3.2C6.4 6.2 5.5 7.5 5.5 8.5c0 1-.9 2.3-1.6 3.1-.4.2-.9.2-1.3.2s-.9 0-1.3-.2C1.9 10.8 1 9.5 1 8.5S2.3 5.7 5.5 5.7zM8 9.5c1.1 0 2-.4 2-.4s-.9.4-2 .4-2-.4-2-.4.9.4 2 .4z"/>
+                                                <path fill="#64748b" d="M8 1.5C3.3 1.5 1 5.6 1 5.6s.8 2.5 4 3.6c0 0-.4-.6-.4-1.4 0-1.5 1.2-2.8 2.8-2.8s2.8 1.3 2.8 2.8c0 .8-.2 1.4-.4 1.4 3.2-1.1 4-3.6 4-3.6S12.7 1.5 8 1.5zM3.5 5.7c0.5-.3 1.3-.3 1.3-.3s-0.5.9-.5 1.6c0 .7.2 1.1.2 1.1l-1.1.2c0 0-.3-.5-.3-1.2 0-.8.4-1.4.4-1.4z"/>
+                                            </svg>
+                                        )}
+                                    </button>
+                                </div>
                             </label>
                             <label>
                                 Vai tro

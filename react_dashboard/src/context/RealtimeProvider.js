@@ -13,7 +13,7 @@
 import React, {
   createContext, useContext, useEffect, useRef, useState, useCallback, useMemo,
 } from 'react';
-import { WS_URL } from '../config/api';
+import { WS_URL, getWsUrl } from '../config/api';
 
 const RealtimeContext = createContext(null);
 
@@ -35,6 +35,8 @@ export function RealtimeProvider({ children }) {
   const [latestByDevice, setLatestByDevice] = useState({});
   // crudVersion: { [entity]: number }
   const [crudVersion, setCrudVersion] = useState({});
+  // aiAnalyticsVersions: { [deviceId]: number } - bump khi co AI event
+  const [aiAnalyticsVersions, setAiAnalyticsVersions] = useState({});
 
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
@@ -54,6 +56,18 @@ export function RealtimeProvider({ children }) {
     if (ev.category === 'crud') {
       const entity = ev.entity || 'unknown';
       setCrudVersion((prev) => ({ ...prev, [entity]: (prev[entity] || 0) + 1 }));
+      return;
+    }
+
+    if (ev.category === 'ai_update') {
+      // AI analytics events: bump version for device
+      const deviceId = ev.device_id;
+      if (deviceId) {
+        setAiAnalyticsVersions((prev) => ({
+          ...prev,
+          [deviceId]: (prev[deviceId] || 0) + 1,
+        }));
+      }
       return;
     }
 
@@ -100,10 +114,15 @@ export function RealtimeProvider({ children }) {
     mountedRef.current = true;
 
     const connect = () => {
-      if (!mountedRef.current || connectingRef.current) return;
+      connectingRef.current = true;
+      if (!mountedRef.current || wsRef.current) {
+        connectingRef.current = false;
+        return;
+      }
       try {
-        connectingRef.current = true;
-        const ws = new WebSocket(WS_URL);
+        // Lay WS_URL moi (vi hostname co the thay doi khi user chuyen tu localhost -> LAN)
+        const wsUrl = typeof getWsUrl === 'function' ? getWsUrl() : WS_URL;
+        const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -115,7 +134,7 @@ export function RealtimeProvider({ children }) {
           connectingRef.current = false;
           setConnected(true);
           reconnectDelayRef.current = 1000;
-          console.debug('[Realtime] WS connected');
+          console.debug('[Realtime] WS connected to', wsUrl);
         };
 
         ws.onmessage = (e) => {
@@ -124,20 +143,23 @@ export function RealtimeProvider({ children }) {
             const msg = JSON.parse(e.data);
             handleEvent(msg);
           } catch (err) {
-            console.debug('[Realtime] Cannot parse message:', err);
+            console.warn('[Realtime] Cannot parse message:', err);
           }
         };
 
-        ws.onerror = () => {
+        ws.onerror = (err) => {
           connectingRef.current = false;
+          console.warn('[Realtime] WS error:', err && err.message ? err.message : 'unknown');
         };
 
-        ws.onclose = () => {
+        ws.onclose = (ev) => {
           connectingRef.current = false;
           if (!mountedRef.current) return;
           setConnected(false);
-          const delay = Math.min(reconnectDelayRef.current, 30000);
-          reconnectDelayRef.current = Math.min(delay * 2, 30000);
+          console.debug(`[Realtime] WS closed (code=${ev?.code}, reason=${ev?.reason || ''}). Reconnecting...`);
+          // Backoff max 5s (was 30s) de reconnect nhanh qua LAN khi mang chop chop
+          const delay = Math.min(reconnectDelayRef.current, 5000);
+          reconnectDelayRef.current = Math.min(Math.max(delay * 2, 1000), 5000);
           reconnectRef.current = setTimeout(connect, delay);
         };
       } catch (err) {
@@ -149,9 +171,33 @@ export function RealtimeProvider({ children }) {
 
     connect();
 
+    // Visibilitychange: khi tab chuyen tu hidden -> visible, neu WS dang closed
+    // thi reset delay va reconnect ngay (truong hop user chuyen tab qua lau)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const isClosed = !wsRef.current ||
+          (wsRef.current && wsRef.current.readyState !== WebSocket.OPEN);
+        if (isClosed && mountedRef.current) {
+          console.debug('[Realtime] Tab visible, forcing reconnect...');
+          reconnectDelayRef.current = 500;
+          if (reconnectRef.current) {
+            clearTimeout(reconnectRef.current);
+            reconnectRef.current = null;
+          }
+          if (wsRef.current) {
+            try { wsRef.current.close(); } catch (_) {}
+            wsRef.current = null;
+          }
+          connect();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       mountedRef.current = false;
       connectingRef.current = false;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       if (reconnectRef.current) {
         clearTimeout(reconnectRef.current);
         reconnectRef.current = null;
@@ -161,6 +207,59 @@ export function RealtimeProvider({ children }) {
         wsRef.current = null;
       }
     };
+  }, [handleEvent]);
+
+  // forceReconnect: user click nut reconnect -> dong WS + reconnect ngay
+  const forceReconnect = useCallback(() => {
+    console.debug('[Realtime] forceReconnect called by user');
+    reconnectDelayRef.current = 500;
+    if (reconnectRef.current) {
+      clearTimeout(reconnectRef.current);
+      reconnectRef.current = null;
+    }
+    if (wsRef.current) {
+      try { wsRef.current.close(); } catch (_) {}
+      wsRef.current = null;
+    }
+    // Trigger reconnect through the same closure: schedule via setTimeout 100ms
+    setTimeout(() => {
+      // Re-create connect (use same logic as useEffect)
+      const connect = () => {
+        connectingRef.current = true;
+        if (!mountedRef.current || wsRef.current) {
+          connectingRef.current = false;
+          return;
+        }
+        try {
+          const wsUrl = typeof getWsUrl === 'function' ? getWsUrl() : WS_URL;
+          const ws = new WebSocket(wsUrl);
+          wsRef.current = ws;
+          ws.onopen = () => {
+            connectingRef.current = false;
+            if (!mountedRef.current) { try { ws.close(); } catch (_) {} return; }
+            setConnected(true);
+            reconnectDelayRef.current = 1000;
+          };
+          ws.onmessage = (e) => {
+            if (!mountedRef.current) return;
+            try { handleEvent(JSON.parse(e.data)); } catch (err) {}
+          };
+          ws.onerror = () => { connectingRef.current = false; };
+          ws.onclose = () => {
+            connectingRef.current = false;
+            if (!mountedRef.current) return;
+            setConnected(false);
+            const delay = Math.min(reconnectDelayRef.current, 5000);
+            reconnectDelayRef.current = Math.min(Math.max(delay * 2, 1000), 5000);
+            reconnectRef.current = setTimeout(connect, delay);
+          };
+        } catch (err) {
+          connectingRef.current = false;
+          reconnectRef.current = setTimeout(connect, 3000);
+        }
+      };
+      connect();
+    }, 100);
   }, [handleEvent]);
 
   // Hook helpers
@@ -183,10 +282,12 @@ export function RealtimeProvider({ children }) {
       lastEventAt,
       latestByDevice,
       crudVersion,
+      aiAnalyticsVersions,
       getDeviceLatest,
       getLatestByKey,
+      forceReconnect,
     }),
-    [connected, lastEventAt, latestByDevice, crudVersion, getDeviceLatest, getLatestByKey],
+    [connected, lastEventAt, latestByDevice, crudVersion, aiAnalyticsVersions, getDeviceLatest, getLatestByKey, forceReconnect],
   );
 
   return (
@@ -208,4 +309,77 @@ export function useRealtime() {
 export function useCrudVersion(entity) {
   const { crudVersion } = useRealtime();
   return crudVersion[entity] || 0;
+}
+
+// Hook cho AI Analytics: tra ve AI data cho 1 device (update realtime khong can reload)
+export function useAIDeviceData(deviceId) {
+  const { aiAnalyticsVersions } = useRealtime();
+  const [data, setData] = useState({
+    hasAnomalyUpdate: false,
+    hasHealthUpdate: false,
+    hasProfileUpdate: false,
+    hasThresholdUpdate: false,
+    lastUpdate: null,
+  });
+
+  useEffect(() => {
+    if (aiAnalyticsVersions[deviceId]) {
+      setData(prev => ({
+        hasAnomalyUpdate: true,
+        hasHealthUpdate: true,
+        hasProfileUpdate: true,
+        hasThresholdUpdate: true,
+        lastUpdate: Date.now(),
+      }));
+      // Reset flags after a short delay to allow re-trigger
+      const timer = setTimeout(() => {
+        setData(prev => ({
+          ...prev,
+          hasAnomalyUpdate: false,
+          hasHealthUpdate: false,
+          hasProfileUpdate: false,
+          hasThresholdUpdate: false,
+        }));
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [aiAnalyticsVersions[deviceId], deviceId]);
+
+  return data;
+}
+
+// Hook cho AI Analytics: version counter (backward compat)
+export function useAIUpdate(deviceId) {
+  const { aiAnalyticsVersions } = useRealtime();
+  return aiAnalyticsVersions[deviceId] || 0;
+}
+
+/**
+ * Hook fallback polling khi WS disconnected.
+ * - Khi realtime connected: chi can subscribe version (realtime thay the polling)
+ * - Khi realtime disconnected: tu dong polling moi `intervalMs` de bu CRUD events
+ *
+ * Usage:
+ *   const roomsVersion = useCrudVersion('room');
+ *   useRealtimePolling(roomsVersion, loadRooms, [loadRooms]);
+ */
+export function useRealtimePolling(version, refetch, deps = [], intervalMs = 30000) {
+  const { connected } = useRealtime();
+  // Realtime trigger
+  useEffect(() => {
+    if (version > 0 && connected) {
+      refetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version, connected]);
+
+  // Polling fallback when disconnected
+  useEffect(() => {
+    if (connected) return undefined;
+    const id = setInterval(() => {
+      try { refetch(); } catch (e) { /* swallow */ }
+    }, intervalMs);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, intervalMs, ...deps]);
 }

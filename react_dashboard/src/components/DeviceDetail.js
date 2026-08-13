@@ -4,7 +4,8 @@ import axios from 'axios';
 import SmartClassroomDashboard from './SmartClassroomDashboard';
 import { API_BASE } from '../config/api';
 import { useGlobalCache } from '../context/GlobalCache';
-import { useRealtime } from '../context/RealtimeProvider';
+import { useRealtime, useCrudVersion } from '../context/RealtimeProvider';
+import { copyToClipboard } from '../utils/clipboard';
 import '../styles/DeviceDetail.css';
 
 const DEFAULT_EDGE_BODY_TEMPLATE = `{
@@ -20,7 +21,10 @@ const DeviceDetail = ({ deviceId, token, onBack, onOpenStandaloneBuilder }) => {
   useEffect(() => { tokenRef.current = token; }, [token]);
 
   const { cache } = useGlobalCache();
-  const { lastEventAt, getDeviceLatest, latestByDevice } = useRealtime();
+  const { lastEventAt, getDeviceLatest, latestByDevice, connected: realtimeConnected } = useRealtime();
+  // Subscribe CRUD events cho device: khi ai do CRUD thiet bi nay (update/delete/insert)
+  // thi reload dataKeys + config de UI dong bo.
+  const devicesVersion = useCrudVersion('device');
   const [device, setDevice] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [events, setEvents] = useState([]);
@@ -80,6 +84,33 @@ const DeviceDetail = ({ deviceId, token, onBack, onOpenStandaloneBuilder }) => {
   const [edgeUrlMsg, setEdgeUrlMsg] = useState(null);
   const [configDownloading, setConfigDownloading] = useState(false);
   const [sampleCopied, setSampleCopied] = useState(false);
+
+  // CRUD realtime: reload khi co event CRUD device (update/delete/insert)
+  useEffect(() => {
+    if (devicesVersion > 0) {
+      // Refetch dataKeys + controlLines + device config khi co thay doi
+      if (typeof loadDataKeys === 'function') loadDataKeys();
+      if (typeof loadControlLinesData === 'function') loadControlLinesData();
+      if (typeof fetchDeviceFullConfig === 'function') {
+        fetchDeviceFullConfig(deviceId, token).then(r => {
+          if (r && r.data) {
+            setDevice(prev => ({ ...(prev || {}), ...r.data }));
+          }
+        }).catch(() => {});
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [devicesVersion]);
+
+  // Polling fallback khi WS disconnected (30s)
+  useEffect(() => {
+    if (realtimeConnected) return;
+    const interval = setInterval(() => {
+      if (typeof loadDataKeys === 'function') loadDataKeys();
+    }, 30000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [realtimeConnected]);
 
   // --- Helpers ---
   const getStateValue = (d) => {
@@ -707,20 +738,13 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
     const code = buildSampleCode();
     if (!code) return;
     try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(code);
+      const ok = await copyToClipboard(code);
+      if (ok) {
+        setSampleCopied(true);
+        setTimeout(() => setSampleCopied(false), 2000);
       } else {
-        const ta = document.createElement('textarea');
-        ta.value = code;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
+        alert('Copy code mẫu thất bại. Vui lòng thử lại.');
       }
-      setSampleCopied(true);
-      setTimeout(() => setSampleCopied(false), 2000);
     } catch (err) {
       console.error('Copy failed', err);
       alert('Copy code mẫu thất bại. Vui lòng thử lại.');
@@ -791,22 +815,33 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
   };
 
   const handleDetectKeys = async () => {
-    if (!window.confirm('Hệ thống sẽ lắng nghe dữ liệu thiết bị gửi lên trong 10 giây để tự động phát hiện các field. Tiếp tục?')) return;
+    const listenSeconds = 10;
+    if (!window.confirm(`He thong se lang nghe du lieu thiet bi gui len trong ${listenSeconds} giay de tu dong phat hien cac field. Tiep tuc?`)) return;
     setDetecting(true);
-    setKeyMsg({ type: 'info', text: 'Đang lắng nghe dữ liệu thực tế (10 giây)...' });
+    setKeyMsg({ type: 'info', text: `Dang lang nghe du lieu thuc te (${listenSeconds} giay)...` });
+    // Progress UI gia lap (visual feedback) song song voi backend listen
+    const interval = setInterval(() => {
+      setKeyMsg((prev) => prev.text?.startsWith('Dang lang nghe')
+        ? { ...prev, text: `Dang lang nghe du lieu thuc te (${listenSeconds} giay)...` }
+        : prev);
+    }, 1000);
     try {
-      const res = await detectDeviceKeys(deviceId, token);
+      const res = await detectDeviceKeys(deviceId, token, listenSeconds);
       const newKeys = res.data.new_keys_added || [];
+      const listened = res.data.listened_seconds || listenSeconds;
+      const elapsed = res.data.actual_elapsed || null;
       setKeyMsg({
         type: 'success',
         text: newKeys.length > 0
-          ? `Phát hiện và thêm ${newKeys.length} field mới: ${newKeys.map(k => k.khoa).join(', ')}`
-          : `Không phát hiện field mới (${res.data.detected_keys?.length || 0} field đã tồn tại)`,
+          ? `Phat hien va them ${newKeys.length} field moi: ${newKeys.map(k => k.khoa).join(', ')} ` +
+            `(sau ${elapsed != null ? elapsed + 's' : listened + 's'})`
+          : `Khong phat hien field moi (${res.data.detected_keys?.length || 0} field da ton tai)`,
       });
       await loadDataKeys();
     } catch (err) {
-      setKeyMsg({ type: 'error', text: err.response?.data?.detail || 'Detect thất bại' });
+      setKeyMsg({ type: 'error', text: err.response?.data?.detail || 'Detect that bai' });
     } finally {
+      clearInterval(interval);
       setDetecting(false);
     }
   };

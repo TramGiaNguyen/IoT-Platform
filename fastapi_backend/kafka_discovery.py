@@ -27,6 +27,10 @@ KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 KAFKA_TOPIC = os.getenv("KAFKA_DISCOVERY_TOPIC", "iot-events")
 KAFKA_GROUP_ID = "fastapi-backend-discovery"
 
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+DEVICE_DATA_CHANNEL_PREFIX = "device-data:"
+
 # Cache kích thước tối đa (giữ các event gần nhất cho API)
 MAX_EVENTS = 500
 
@@ -192,3 +196,85 @@ def get_discovered_devices() -> List[dict]:
 def get_recent_device_events(device_id: str, limit: int = 50) -> List[dict]:
     """Lấy các event gần nhất của một device cụ thể (cho detect-keys)."""
     return get_recent_events(device_id=device_id, limit=limit)
+
+
+# ─── Async helper cho detect-keys (listen thực sự N giây) ──────────────────────
+
+async def subscribe_device_events(
+    device_id: str,
+    listen_seconds: int = 10,
+    extra_history: Optional[List[dict]] = None,
+) -> List[dict]:
+    """
+    Subscribe Redis pub/sub channel `device-data:{device_id}` trong `listen_seconds`
+    giây để gom event realtime từ kafka_event_consumer.
+
+    - Channel được publish bởi kafka_event_consumer/main.py mỗi khi có event
+      Kafka với device_id tương ứng.
+    - Nếu Redis pub/sub không khả dụng, trả về `extra_history` (cache deque) thay
+      thế để không break request.
+    - Subscribe TRƯỚC khi đọc history (race condition: message có thể tới lúc
+      handler đang setup).
+    """
+    import asyncio
+    import json
+    try:
+        import redis.asyncio as redis_async
+    except ImportError:
+        return list(extra_history or [])
+
+    channel = f"{DEVICE_DATA_CHANNEL_PREFIX}{device_id}"
+    events: List[dict] = []
+
+    # Neu client truyen san history (tu deque), gop vao luon
+    if extra_history:
+        events.extend(extra_history)
+
+    try:
+        r = redis_async.from_url(
+            f"redis://{REDIS_HOST}:{REDIS_PORT}",
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+        pubsub = r.pubsub()
+        await pubsub.subscribe(channel)
+        try:
+            # Listen trong listen_seconds, khong care timeout vi asyncio.wait_for
+            async def _listen():
+                async for raw in pubsub.listen():
+                    if raw is None:
+                        continue
+                    if raw.get("type") != "message":
+                        continue
+                    try:
+                        msg = json.loads(raw["data"])
+                        data = msg.get("data") if isinstance(msg, dict) else None
+                        # Chi lay events cua dung device_id
+                        if isinstance(data, dict) and data.get("device_id") == device_id:
+                            events.append(data)
+                    except Exception:
+                        continue
+
+            try:
+                await asyncio.wait_for(_listen(), timeout=listen_seconds)
+            except asyncio.TimeoutError:
+                # Het thoi gian listen, tra ve nhung gi da gom duoc
+                pass
+        finally:
+            try:
+                await pubsub.unsubscribe(channel)
+            except Exception:
+                pass
+            try:
+                await pubsub.close()
+            except Exception:
+                pass
+            try:
+                await r.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        # Redis/pub/sub khong kha dung -> fallback ve history
+        print(f"[KAFKA-DISCOVERY] subscribe_device_events fallback: {exc}")
+
+    return events
