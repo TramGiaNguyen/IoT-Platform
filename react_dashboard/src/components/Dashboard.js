@@ -95,6 +95,11 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
           : null;
       const res = await fetchDevicesLatestAll(token, workspaceIdToUse);
       const payload = res.data.devices || [];
+      if (payload.length === 0) {
+        console.debug('[Dashboard] loadLatestAll: 0 devices returned', {
+          workspaceIdToUse, userRole: userRole, workspaceContext, userId: userInfo?.id
+        });
+      }
       const mappedDevices = payload.map((d) => ({
         ma_thiet_bi: d.device_id, ten_thiet_bi: d.ten_thiet_bi,
         loai_thiet_bi: d.loai_thiet_bi, trang_thai: d.trang_thai,
@@ -120,7 +125,13 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
         return newDeviceData;
       });
     } catch (err) {
-      console.error('Error loading latest all:', err);
+      console.error('Error loading latest all:', {
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        workspaceIdToUse,
+        workspaceContext,
+      }, err);
     } finally {
       if (!silent) setLoading(false);
     }

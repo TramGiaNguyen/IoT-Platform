@@ -9,8 +9,10 @@ export async function copyToClipboard(text) {
 
   const stringValue = String(text);
 
-  // 1) Modern Clipboard API (HTTPS hoac localhost)
-  if (navigator.clipboard && window.isSecureContext) {
+  // 1) Modern Clipboard API (HTTPS or localhost)
+  // Use optional chaining to safely check writeText exists - some browsers
+  // expose navigator.clipboard but lack writeText in HTTP LAN context.
+  if (typeof navigator.clipboard?.writeText === 'function') {
     try {
       await navigator.clipboard.writeText(stringValue);
       return true;
