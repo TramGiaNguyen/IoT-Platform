@@ -32,14 +32,25 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   // wsConnected duoc cung cap boi useRealtime() (line 17) va sync len App qua onWsStatusChange effect.
 
   const getScopeFilteredDevices = useCallback((allDevices, scope, uid, isAdmin = false, isTeacher = false, teacherRooms = [], cacheWorkspaceContext = null) => {
+    // #region agent debug - log all devices before filter
+    console.log('[Dashboard DEBUG] getScopeFilteredDevices BEFORE filter', {
+      allDevicesCount: allDevices?.length,
+      scope,
+      uid,
+      isAdmin,
+      isTeacher,
+      devicesDetail: allDevices?.slice(0, 5).map(d => ({
+        id: d.ma_thiet_bi,
+        nguoi_so_huu: d.nguoi_so_huu_id,
+        nhom: d.nhom_id,
+        phong: d.phong_id
+      }))
+    });
+    // #endregion
+
     if (!allDevices?.length) return [];
     if (!scope) return [];
-    // If userInfo is not yet hydrated, we cannot safely apply the per-user
-    // scope filter. Returning allDevices here would briefly leak devices from
-    // another workspace on reload. Wait until uid is known.
     if (!uid) return [];
-    // Stale-cache guard: if the cache was populated for a different workspace
-    // than the one currently selected, ignore it until a fresh fetch resolves.
     if (cacheWorkspaceContext && cacheWorkspaceContext !== scope) return [];
     if (isAdmin) {
       // Admin có toàn quyền, không phân biệt workspace — thấy mọi thiết bị
@@ -54,18 +65,26 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       );
     }
     if (scope === 'ca_nhan') {
-      // ca_nhan = personal devices only. A device that belongs to a group
-      // (nhom_id set) is a group device regardless of who created it; it must
-      // never appear on the personal tab even if the current user is the
-      // creator.
       const isPersonalDevice = (d) =>
         d.nguoi_so_huu_id === uid && d.nhom_id == null;
-      return allDevices.filter(isPersonalDevice);
+      const result = allDevices.filter(isPersonalDevice);
+      console.log('[Dashboard DEBUG] scope=ca_nhan filter result', { 
+        uid, 
+        resultCount: result.length,
+        totalDevices: allDevices.length,
+        devicesWithNhom: allDevices.filter(d => d.nhom_id != null).length,
+        devicesWithOwner: allDevices.filter(d => d.nguoi_so_huu_id === uid).length
+      });
+      return result;
     }
     if (scope === 'nhom') {
-      return allDevices.filter(d => d.nhom_id != null);
+      const result = allDevices.filter(d => d.nhom_id != null);
+      console.log('[Dashboard DEBUG] scope=nhom filter result', { resultCount: result.length });
+      return result;
     }
-    return allDevices;
+    const result = allDevices;
+    console.log('[Dashboard DEBUG] default filter result', { resultCount: result.length });
+    return result;
   }, []);
 
   const scopedDevices = getScopeFilteredDevices(cache.devices, workspaceContext, userInfo?.id, isAdmin, isTeacher, teacherRooms, cache?.workspaceContext);
