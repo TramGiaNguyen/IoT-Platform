@@ -43,7 +43,9 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
         id: d.ma_thiet_bi,
         nguoi_so_huu: d.nguoi_so_huu_id,
         nhom: d.nhom_id,
-        phong: d.phong_id
+        phong: d.phong_id,
+        // Log ALL keys to find what changed
+        allKeys: Object.keys(d)
       }))
     });
     // #endregion
@@ -68,6 +70,10 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       const isPersonalDevice = (d) =>
         d.nguoi_so_huu_id === uid && d.nhom_id == null;
       const result = allDevices.filter(isPersonalDevice);
+      // Log FIRST device full data when result is 0 to see what changed
+      if (result.length === 0 && allDevices.length > 0) {
+        console.log('[Dashboard DEBUG] FIRST DEVICE DATA when filter returns 0:', JSON.stringify(allDevices[0]));
+      }
       console.log('[Dashboard DEBUG] scope=ca_nhan filter result', { 
         uid, 
         resultCount: result.length,
