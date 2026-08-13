@@ -5,6 +5,7 @@ from fastapi import FastAPI, WebSocket, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from routes import router
+from routes_ai_analytics import router as ai_analytics_router
 from websocket import websocket_endpoint, _redis_subscriber_loop
 
 @asynccontextmanager
@@ -119,6 +120,7 @@ else:
     )
 
 app.include_router(router)
+app.include_router(ai_analytics_router)
 
 # Mount Public API Sub-application
 from public_api import public_router

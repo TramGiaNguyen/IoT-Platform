@@ -129,3 +129,25 @@ def publish_control(device_id: str, action_name: str, payload: dict = None, acto
     if payload:
         event["payload"] = payload
     return publish_event(event)
+
+
+def publish_ai_event(event_type: str, device_id: str, data: dict = None) -> bool:
+    """
+    Helper cho AI analytics events (anomalies, thresholds, profiles).
+    Frontend AIAnalytics component subscribe de tu dong refresh.
+        {
+          "category": "ai_update",
+          "event_type": "anomaly"|"threshold"|"profile"|"health",
+          "device_id": "...",
+          "data": {...},
+          "ts": ...
+        }
+    """
+    event = {
+        "category": "ai_update",
+        "event_type": event_type,
+        "device_id": device_id,
+    }
+    if data:
+        event["data"] = data
+    return publish_event(event)
