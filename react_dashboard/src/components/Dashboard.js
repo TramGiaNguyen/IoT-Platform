@@ -70,8 +70,8 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
 
   const scopedDevices = getScopeFilteredDevices(cache.devices, workspaceContext, userInfo?.id, isAdmin, isTeacher, teacherRooms, cache?.workspaceContext);
   
-  // DEBUG: log scopedDevices computation
-  console.debug('[Dashboard DEBUG] scopedDevices computed', {
+  // #region agent debug log
+  console.log('[Dashboard DEBUG] scopedDevices computed', {
     cacheDevicesLen: cache?.devices?.length,
     workspaceContext,
     cacheWorkspaceContext: cache?.workspaceContext,
@@ -81,6 +81,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     scopedDevicesLen: scopedDevices.length,
     scopedDevicesSample: scopedDevices.slice(0, 3).map(d => ({id: d.ma_thiet_bi, nhom: d.nhom_id})),
   });
+  // #endregion
   
   const [showDeviceModal, setShowDeviceModal] = useState(false);
 
@@ -191,7 +192,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   }, [token, effectiveWorkspaceId]);
 
   useEffect(() => {
-    console.debug('[Dashboard DEBUG] useEffect fired', {
+    console.log('[Dashboard DEBUG] useEffect fired', {
       token: !!token,
       workspaceContext,
       cacheDevicesLen: cache?.devices?.length,
