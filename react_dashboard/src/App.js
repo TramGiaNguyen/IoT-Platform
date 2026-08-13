@@ -162,6 +162,10 @@ function App() {
   const [headerSearch, setHeaderSearch] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  // Password change modal from header
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [passwordChangeUserId, setPasswordChangeUserId] = useState(null);
+
   const isAdmin = userRole === 'admin';
 
   // Persist workspaceContext
@@ -559,6 +563,16 @@ function AppContentWithTracker({
   const { updateCache, refetch, clearCache } = useGlobalCache();
   // Realtime WS status (from RealtimeProvider)
   const { connected: realtimeConnected, forceReconnect: realtimeForceReconnect } = useRealtimeSync(setWsConnected);
+
+  // Listen for password change event from AppHeader
+  useEffect(() => {
+    const handler = (e) => {
+      setPasswordChangeUserId(e.detail?.userId || userInfo?.id);
+      setShowPasswordChange(true);
+    };
+    window.addEventListener('bdu-open-password-change', handler);
+    return () => window.removeEventListener('bdu-open-password-change', handler);
+  }, [userInfo]);
 
   // Chỉ student mới có 2 workspace (cá nhân / nhóm). Admin và teacher quản lý
   // toàn bộ trong phạm vi quyền hạn của họ, không phân biệt personal/group.
@@ -1034,13 +1048,24 @@ content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onO
           currentView={currentView}
         />
         {content}
+        {showPasswordChange && passwordChangeUserId && (
+          <PasswordChangeModal
+            userId={passwordChangeUserId}
+            token={token}
+            onSuccess={() => {
+              setShowPasswordChange(false);
+              alert('Doi mat khau thanh cong!');
+            }}
+            onSkip={() => setShowPasswordChange(false)}
+          />
+        )}
       </main>
       </div>
     </>
   );
 }
 
-function PasswordChangeModal({ userId, token, onSuccess, onSkip }) {
+function PasswordChangeModal({ userId, token, onSuccess, onSkip, required = false }) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPw, setShowNewPw] = useState(false);
@@ -1080,9 +1105,11 @@ function PasswordChangeModal({ userId, token, onSuccess, onSkip }) {
   return (
     <div className="password-change-overlay">
       <div className="password-change-modal">
-        <h2>Yêu cầu đổi mật khẩu</h2>
+        <h2>{required ? 'Yêu cầu đổi mật khẩu' : 'Đổi mật khẩu'}</h2>
         <p>
-          Đây là lần đầu bạn đăng nhập. Vui lòng đổi mật khẩu để tiếp tục sử dụng hệ thống.
+          {required
+            ? 'Đây là lần đầu bạn đăng nhập. Vui lòng đổi mật khẩu để tiếp tục sử dụng hệ thống.'
+            : 'Nhập mật khẩu mới cho tài khoản của bạn.'}
         </p>
         {error && <div className="password-change-error">{error}</div>}
         <form onSubmit={handleSubmit}>
@@ -1135,7 +1162,7 @@ function PasswordChangeModal({ userId, token, onSuccess, onSkip }) {
             <button type="submit" disabled={loading}>
               {loading ? 'Đang xử lý...' : 'Đổi mật khẩu'}
             </button>
-            <button type="button" onClick={onSkip}>Bỏ qua</button>
+            {!required && <button type="button" onClick={onSkip}>Bỏ qua</button>}
           </div>
         </form>
       </div>
