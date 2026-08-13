@@ -5039,7 +5039,7 @@ def get_devices_latest_all(
         query = f"""
             SELECT t.id, t.ma_thiet_bi, t.ten_thiet_bi, t.loai_thiet_bi,
                    t.trang_thai, t.last_seen, t.phong_id, t.nguoi_so_huu_id,
-                   t.nhom_id,
+                   t.nguoi_tao_id, t.nhom_id,
                    p.ten_phong, p.ma_phong
             FROM thiet_bi t
             LEFT JOIN phong p ON t.phong_id = p.id
@@ -5143,6 +5143,8 @@ def get_devices_latest_all(
                     "ten_phong": d.get("ten_phong"),
                     "ma_phong": d.get("ma_phong"),
                     "nhom_id": d.get("nhom_id"),
+                    "nguoi_so_huu_id": d.get("nguoi_so_huu_id"),
+                    "nguoi_tao_id": d.get("nguoi_tao_id"),
                     "data": data_by_device.get(d["id"], {}),
                 }
             )
