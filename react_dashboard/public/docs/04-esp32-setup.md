@@ -44,5 +44,3 @@ IPAddress espSubnet  (255, 255, 255, 0);
 IPAddress espDNS1    (192, 168, 1, 1);
 WiFi.config(espStaticIP, espGateway, espSubnet, espDNS1, espDNS1);
 ```
-
-Tiếp theo: [05. Nạp chương trình](./05-esp32-upload.md)

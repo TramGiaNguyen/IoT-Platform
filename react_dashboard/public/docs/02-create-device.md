@@ -38,5 +38,3 @@ Sau khi tạo thiết bị thành công, Platform hiển thị các thông tin q
 *Hình 5. Màn hình tạo thiết bị thành công và thông tin kết nối cần lưu lại.*
 
 > **Bảo mật Secret Key**: Secret Key đóng vai trò như mật khẩu của thiết bị. Không đưa Secret Key lên mã nguồn công khai, ảnh chụp màn hình công khai hoặc kho GitHub dùng chung.
-
-Tiếp theo: [03. Điều khiển & Chi tiết](./03-control-and-detail.md)

@@ -40,5 +40,3 @@ ESP32  --publish Topic Data-->  MQTT Broker  --xu ly du lieu-->  IoT Platform BD
 ```
 Nguoi dung bam dieu khien  --POST/GET command-->  IoT Platform BDU  --xu ly lenh-->  HTTP/Webhook LAN  --phan hoi trang thai-->  ESP32/Relay
 ```
-
-Tiếp theo: [08. Checklist bàn giao](./08-checklist.md)

@@ -17,5 +17,3 @@ Phần này hướng dẫn chuẩn bị thư viện và nạp chương trình ch
 ![Nạp chương trình cho ESP32](../docs/images/11-upload.png)
 
 *Hình 11. Kiểm tra và nạp chương trình cho ESP32 trong Arduino IDE.*
-
-Tiếp theo: [06. Kiểm thử vận hành](./06-testing.md)

@@ -33,5 +33,3 @@ Phần này hướng dẫn kiểm thử gửi dữ liệu và kiểm thử đi�
 5. Kiểm tra giá trị phản hồi hoặc log trên **Serial Monitor** để xác nhận lệnh đã được xử lý.
 
 > **Nguyên tắc kiểm thử**: Luôn kiểm thử từng phần — Wi-Fi trước, kết nối Platform tiếp theo, gửi dữ liệu sau cùng mới kiểm thử điều khiển. Cách này giúp khoanh vùng lỗi nhanh hơn.
-
-Tiếp theo: [07. Lỗi thường gặp & Phụ lục](./07-errors-and-appendix.md)

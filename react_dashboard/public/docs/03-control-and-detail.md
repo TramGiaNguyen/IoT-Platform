@@ -45,5 +45,3 @@ Trên Dashboard, bấm vào card thiết bị để mở trang chi tiết. Tại
 ![File cấu hình chi tiết](../docs/images/09-config-file.png)
 
 *Hình 9. File cấu hình chi tiết của thiết bị sau khi tải về.*
-
-Tiếp theo: [04. Cấu hình ESP32](./04-esp32-setup.md)

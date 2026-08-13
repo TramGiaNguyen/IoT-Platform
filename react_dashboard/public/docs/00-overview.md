@@ -54,5 +54,3 @@ Trước khi bắt đầu, hãy đảm bảo đã chuẩn bị đầy đủ:
 ```
 Chọn workspace   →   Tạo phòng   →   Tạo thiết bị   →   Lưu credentials   →   Cấu hình ESP32   →   Kiểm thử dữ liệu   →   Vận hành
 ```
-
-Tiếp theo: [01. Workspace & Phòng](./01-workspace-and-rooms.md)

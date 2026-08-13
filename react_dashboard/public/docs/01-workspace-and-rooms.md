@@ -26,5 +26,3 @@ Phần này hướng dẫn chọn đúng workspace và tạo phòng trên IoT Pl
 *Hình 2. Biểu mẫu tạo/cập nhật phòng.*
 
 > **Khuyến nghị đặt tên**: Tên phòng nên ngắn gọn, dễ nhận biết, ví dụ: `Nhóm 2`, `Phòng A101`, `Lab IoT`. Mã phòng nên thống nhất theo quy ước nội bộ, ví dụ: `N2`, `A101`, `LAB-IOT`.
-
-Tiếp theo: [02. Tạo thiết bị](./02-create-device.md)
