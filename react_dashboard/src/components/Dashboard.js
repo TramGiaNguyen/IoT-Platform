@@ -87,14 +87,28 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       : null;
 
   const loadLatestAll = useCallback(async (silent = false) => {
+    const workspaceIdToUse =
+      isStudent && workspaceContext === 'nhom' && userInfo?.primary_nhom_id
+        ? userInfo.primary_nhom_id
+        : null;
+    console.debug('[Dashboard DEBUG] loadLatestAll called', {
+      silent,
+      workspaceIdToUse,
+      workspaceContext,
+      isStudent,
+      userId: userInfo?.id,
+      primaryNhomId: userInfo?.primary_nhom_id,
+      timestamp: Date.now(),
+    });
     try {
       // Use effectiveWorkspaceId from closure - this is stable because it's computed from useState/props
-      const workspaceIdToUse =
-        isStudent && workspaceContext === 'nhom' && userInfo?.primary_nhom_id
-          ? userInfo.primary_nhom_id
-          : null;
       const res = await fetchDevicesLatestAll(token, workspaceIdToUse);
       const payload = res.data.devices || [];
+      console.debug('[Dashboard DEBUG] loadLatestAll API response', {
+        payloadLength: payload.length,
+        silent,
+        timestamp: Date.now(),
+      });
       if (payload.length === 0) {
         console.debug('[Dashboard] loadLatestAll: 0 devices returned', {
           workspaceIdToUse, userRole: userRole, workspaceContext, userId: userInfo?.id
@@ -112,6 +126,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
         ten_phong: d.ten_phong, ma_phong: d.ma_phong,
         nhom_id: d.nhom_id,
       }));
+      console.debug('[Dashboard DEBUG] Setting devices', { count: mappedDevices.length });
       devicesIdsRef.current = mappedDevices.map(d => String(d.ma_thiet_bi));
       setDevices(mappedDevices);
       updateCache({ devices: mappedDevices });
@@ -149,7 +164,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [token, isStudent, workspaceContext, userInfo?.primary_nhom_id, updateCache]);
+  }, [token, isStudent, workspaceContext, userInfo?.primary_nhom_id, userInfo?.id, updateCache]);
 
   const [roomsCount, setRoomsCount] = useState(0);
 
@@ -163,10 +178,21 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   }, [token, effectiveWorkspaceId]);
 
   useEffect(() => {
+    console.debug('[Dashboard DEBUG] useEffect fired', {
+      token: !!token,
+      workspaceContext,
+      cacheDevicesLen: cache?.devices?.length,
+      cacheMatchesWorkspace,
+      userId: userInfo?.id,
+      userPrimaryNhomId: userInfo?.primary_nhom_id,
+      timestamp: Date.now(),
+    });
     if (!token) {
+      console.debug('[Dashboard DEBUG] No token, clearing devices');
       setDevices([]); setDeviceData({}); setLoading(false); return;
     }
     if (cache.devices && cache.devices.length > 0 && cacheMatchesWorkspace) {
+      console.debug('[Dashboard DEBUG] Using cached devices, triggering silent refresh');
       const mappedDevices = cache.devices.map((d) => ({
         ma_thiet_bi: d.ma_thiet_bi || d.device_id,
         ten_thiet_bi: d.ten_thiet_bi || d.ten_thiet_bi,
@@ -187,6 +213,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       loadLatestAll(true);
       return;
     }
+    console.debug('[Dashboard DEBUG] No cache match, calling loadLatestAll(false) - cacheDevices:', cache?.devices?.length, 'cacheMatchesWorkspace:', cacheMatchesWorkspace);
     loadLatestAll(false);
   }, [token, workspaceContext, userInfo?.primary_nhom_id, userInfo?.id, cacheMatchesWorkspace]);
 
