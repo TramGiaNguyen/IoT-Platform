@@ -69,6 +69,19 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   }, []);
 
   const scopedDevices = getScopeFilteredDevices(cache.devices, workspaceContext, userInfo?.id, isAdmin, isTeacher, teacherRooms, cache?.workspaceContext);
+  
+  // DEBUG: log scopedDevices computation
+  console.debug('[Dashboard DEBUG] scopedDevices computed', {
+    cacheDevicesLen: cache?.devices?.length,
+    workspaceContext,
+    cacheWorkspaceContext: cache?.workspaceContext,
+    cacheMatchesWorkspace,
+    userId: userInfo?.id,
+    isStudent,
+    scopedDevicesLen: scopedDevices.length,
+    scopedDevicesSample: scopedDevices.slice(0, 3).map(d => ({id: d.ma_thiet_bi, nhom: d.nhom_id})),
+  });
+  
   const [showDeviceModal, setShowDeviceModal] = useState(false);
 
   const [hourlyStats, setHourlyStats] = useState([]);
