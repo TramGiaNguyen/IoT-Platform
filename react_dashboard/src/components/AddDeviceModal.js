@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { API_BASE } from '../config/api';
+import { copyToClipboard } from '../utils/clipboard';
 import '../styles/Dashboard.css';
 
 const Icon = ({ name, className = '' }) => (
@@ -271,7 +272,7 @@ export default function AddDeviceModal({ onClose, token, onDeviceAdded, workspac
                     <h4><Icon name="info" className="bdu-result-icon" /> Thông tin thiết bị</h4>
                     <div className="bdu-result-item"><span className="bdu-result-label">Device ID:</span>
                       <code className="bdu-result-value">{provisionResult.credentials?.device_id}</code>
-                      <button className="bdu-copy-btn" onClick={() => navigator.clipboard.writeText(provisionResult.credentials?.device_id)}>
+                      <button className="bdu-copy-btn" onClick={() => copyToClipboard(provisionResult.credentials?.device_id)}>
                         <Icon name="content_copy" />
                       </button>
                     </div>
@@ -282,14 +283,14 @@ export default function AddDeviceModal({ onClose, token, onDeviceAdded, workspac
                     <h4><Icon name="key" className="bdu-result-icon bdu-icon-amber" /> Credentials (Lưu lại!)</h4>
                     <div className="bdu-result-item"><span className="bdu-result-label">Secret Key:</span>
                       <code className="bdu-result-value bdu-secret">{provisionResult.credentials?.secret_key}</code>
-                      <button className="bdu-copy-btn" onClick={() => navigator.clipboard.writeText(provisionResult.credentials?.secret_key)}>
+                      <button className="bdu-copy-btn" onClick={() => copyToClipboard(provisionResult.credentials?.secret_key)}>
                         <Icon name="content_copy" />
                       </button>
                     </div>
                     {provisionResult.credentials?.http_api_key && (
                       <div className="bdu-result-item"><span className="bdu-result-label">HTTP API Key:</span>
                         <code className="bdu-result-value bdu-secret">{provisionResult.credentials?.http_api_key}</code>
-                        <button className="bdu-copy-btn" onClick={() => navigator.clipboard.writeText(provisionResult.credentials?.http_api_key)}>
+                        <button className="bdu-copy-btn" onClick={() => copyToClipboard(provisionResult.credentials?.http_api_key)}>
                           <Icon name="content_copy" />
                         </button>
                       </div>
@@ -302,7 +303,7 @@ export default function AddDeviceModal({ onClose, token, onDeviceAdded, workspac
                       <div className="bdu-result-item"><span className="bdu-result-label">Broker:</span><code className="bdu-result-value">{provisionResult.mqtt_config.broker}:{provisionResult.mqtt_config.port}</code></div>
                       <div className="bdu-result-item"><span className="bdu-result-label">Topic Data:</span>
                         <code className="bdu-result-value">{provisionResult.mqtt_config.topic_data}</code>
-                        <button className="bdu-copy-btn" onClick={() => navigator.clipboard.writeText(provisionResult.mqtt_config.topic_data)}>
+                        <button className="bdu-copy-btn" onClick={() => copyToClipboard(provisionResult.mqtt_config.topic_data)}>
                           <Icon name="content_copy" />
                         </button>
                       </div>

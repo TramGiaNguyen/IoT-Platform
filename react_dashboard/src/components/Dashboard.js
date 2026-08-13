@@ -99,6 +99,11 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
         console.debug('[Dashboard] loadLatestAll: 0 devices returned', {
           workspaceIdToUse, userRole: userRole, workspaceContext, userId: userInfo?.id
         });
+        // Guard: silent refresh returning 0 devices should not overwrite existing cached data
+        if (silent) {
+          console.debug('[Dashboard] Silent refresh: preserving existing devices, not clearing');
+          return;
+        }
       }
       const mappedDevices = payload.map((d) => ({
         ma_thiet_bi: d.device_id, ten_thiet_bi: d.ten_thiet_bi,
@@ -125,13 +130,22 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
         return newDeviceData;
       });
     } catch (err) {
-      console.error('Error loading latest all:', {
-        status: err.response?.status,
-        statusText: err.response?.statusText,
-        data: err.response?.data,
-        workspaceIdToUse,
-        workspaceContext,
-      }, err);
+      if (silent) {
+        console.warn('[Dashboard] Silent refresh failed, keeping existing devices:', {
+          status: err.response?.status,
+          statusText: err.response?.statusText,
+          workspaceIdToUse,
+          workspaceContext,
+        });
+      } else {
+        console.error('Error loading latest all:', {
+          status: err.response?.status,
+          statusText: err.response?.statusText,
+          data: err.response?.data,
+          workspaceIdToUse,
+          workspaceContext,
+        }, err);
+      }
     } finally {
       if (!silent) setLoading(false);
     }
@@ -174,7 +188,7 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       return;
     }
     loadLatestAll(false);
-  }, [token, workspaceContext, userInfo?.primary_nhom_id, cacheMatchesWorkspace]);
+  }, [token, workspaceContext, userInfo?.primary_nhom_id, userInfo?.id, cacheMatchesWorkspace]);
 
   const loadStats = async () => {
     try {

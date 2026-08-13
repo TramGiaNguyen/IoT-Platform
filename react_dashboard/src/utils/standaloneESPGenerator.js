@@ -708,6 +708,7 @@ function generateRoutes(controls) {
 
     if (ctrl.type === 'joystick_full') {
       const orientation = ctrl.orientation || 'both';
+      const deadzone = ctrl.deadzone ?? 10;
       const channels = _getChannelsForCtrl(ctrl);
       const vpChannelX = ctrl._vpChannelX ?? channels.x;
       const vpChannelY = ctrl._vpChannelY ?? channels.y;
@@ -729,6 +730,8 @@ function generateRoutes(controls) {
       if (orientation === 'both' || orientation === 'vertical') {
         routes += `  if (server.hasArg("y") && server.arg("y").length() > 0) {\n`;
         routes += `    ${yVar} = server.arg("y").toInt();\n`;
+        routes += `    // Apply deadzone to reduce jitter\n`;
+        routes += `    if (abs(${yVar}) < ${deadzone}) ${yVar} = 0;\n`;
         routes += `    ${yVar} = constrain(${yVar}, ${min}, ${max});\n`;
         routes += `    ledcWrite(${vpChannelY}, ${yVar});\n`;
         routes += `    Serial.printf("${label} Y: %d\\n", ${yVar});\n`;
@@ -740,7 +743,7 @@ function generateRoutes(controls) {
     }
 
     if (ctrl.type === 'joystick_x') {
-      const deadzone = ctrl.deadzone ?? 5;
+      const deadzone = ctrl.deadzone ?? 10;
       const sensitivity = ctrl.sensitivity ?? 1.0;
       const gpioArray = ctrl.gpio?.length > 0 ? ctrl.gpio : DEFAULT_GPIO.joystick_x;
       const pinX = gpioArray[0];
@@ -768,7 +771,7 @@ function generateRoutes(controls) {
     }
 
     if (ctrl.type === 'joystick_y') {
-      const deadzone = ctrl.deadzone ?? 5;
+      const deadzone = ctrl.deadzone ?? 10;
       const sensitivity = ctrl.sensitivity ?? 1.0;
       const channels = _getChannelsForCtrl(ctrl);
 

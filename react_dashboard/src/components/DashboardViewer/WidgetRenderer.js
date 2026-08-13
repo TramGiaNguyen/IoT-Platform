@@ -3,6 +3,7 @@ import { ResponsiveContainer, LineChart, AreaChart, BarChart, PieChart, Pie, Cel
 import { fetchWidgetData, controlRelay } from '../../services';
 import { API_BASE } from '../../config/api';
 import { useRealtime } from '../../context/RealtimeProvider';
+import { getCameraStream } from '../../utils/media';
 import '../../styles/dashboard-builder.css';
 
 // ── Hook helper: subscribe realtime data tu RealtimeProvider ──────────────
@@ -825,6 +826,10 @@ export default function WidgetRenderer({ widget, token, dashboardId, isPreview }
       // === Blynk-style Map Widget ===
       case 'map_widget':
         return <div style={style} className="db-widget-wrap"><MapWidget widget={widget} token={token} dashboardId={dashboardId} /></div>;
+
+      // === AI Analytics Widgets ===
+      case 'anomaly_summary':
+        return <div style={style} className="db-widget-wrap"><AnomalySummaryWidget widget={widget} token={token} dashboardId={dashboardId} /></div>;
 
       default:
         return <div style={style} className="db-widget-wrap">Unknown widget type: {widget.widget_type}</div>;
@@ -1826,9 +1831,9 @@ export function VideoStreamWidget({ widget, token, dashboardId }) {
     const startStreaming = async () => {
       console.log('[Webcam] Starting stream, clientDeviceId:', clientDeviceId, 'streamId:', clientStreamId);
       try {
-        // Request camera access
+        // Request camera access (requires secure context: HTTPS or localhost)
         console.log('[Webcam] Requesting camera access...');
-        const stream = await navigator.mediaDevices.getUserMedia({
+        const stream = await getCameraStream({
           video: {
             deviceId: clientDeviceId ? { exact: clientDeviceId } : undefined,
             width: { ideal: 640 },
@@ -1905,6 +1910,8 @@ export function VideoStreamWidget({ widget, token, dashboardId }) {
           errorMsg = 'Không tìm thấy camera. Vui lòng kết nối camera.';
         } else if (err.name === 'NotReadableError') {
           errorMsg = 'Camera đang được sử dụng bởi ứng dụng khác.';
+        } else if (err.message?.includes('HTTPS') || err.message?.includes('secure context') || err.message?.includes('IP LAN')) {
+          errorMsg = 'Camera yêu cầu HTTPS hoặc localhost. Truy cập qua IP LAN sẽ bị browser chặn. Hãy dùng localhost hoặc cấu hình HTTPS.';
         } else if (err.message?.includes('register')) {
           errorMsg = 'Không thể kết nối server. Vui lòng kiểm tra kết nối.';
         }
@@ -2613,6 +2620,179 @@ export function SegmentedSwitchWidget({ widget, token, dashboardId }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ---- AnomalySummaryWidget ----
+// AI Analytics widget showing anomaly summary for a device
+export function AnomalySummaryWidget({ widget, token, dashboardId }) {
+  const [summary, setSummary] = useState({ critical: 0, high: 0, medium: 0, low: 0, issues: [] });
+  const [loading, setLoading] = useState(true);
+  const deviceId = widget.cau_hinh?.device_id;
+  const autoRefresh = widget.cau_hinh?.auto_refresh ?? true;
+  
+  const fetchHealth = useCallback(async () => {
+    if (!deviceId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/devices/${deviceId}/health`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const issues = await res.json();
+        const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+        issues.forEach(issue => {
+          if (counts[issue.severity] !== undefined) {
+            counts[issue.severity]++;
+          }
+        });
+        setSummary({ ...counts, issues: issues.slice(0, 5) });
+      }
+    } catch (err) {
+      console.error('AnomalySummaryWidget error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [deviceId, token]);
+  
+  useEffect(() => {
+    fetchHealth();
+    if (autoRefresh) {
+      const interval = setInterval(fetchHealth, 60000); // Refresh every minute
+      return () => clearInterval(interval);
+    }
+  }, [fetchHealth, autoRefresh]);
+  
+  const getSeverityColor = (severity) => {
+    switch (severity) {
+      case 'critical': return '#dc2626';
+      case 'high': return '#ea580c';
+      case 'medium': return '#ca8a04';
+      case 'low': return '#65a30d';
+      default: return '#6b7280';
+    }
+  };
+  
+  const totalAnomalies = summary.critical + summary.high + summary.medium + summary.low;
+  
+  return (
+    <div style={{ width: '100%', height: '100%', padding: '12px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <h4 style={{ color: 'var(--bdu-text)', margin: 0, fontSize: '14px' }}>
+          {widget.ten_widget || 'AI Sensor Health'}
+        </h4>
+        {loading && <span style={{ fontSize: '11px', color: 'var(--bdu-muted)' }}>Loading...</span>}
+      </div>
+      
+      {totalAnomalies > 0 ? (
+        <>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            {summary.critical > 0 && (
+              <div style={{ 
+                background: 'rgba(220, 38, 38, 0.15)', 
+                border: '1px solid #dc2626',
+                borderRadius: '6px',
+                padding: '8px 12px',
+                textAlign: 'center',
+                flex: 1
+              }}>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: '#dc2626' }}>{summary.critical}</div>
+                <div style={{ fontSize: '10px', color: '#fca5a5' }}>Critical</div>
+              </div>
+            )}
+            {summary.high > 0 && (
+              <div style={{ 
+                background: 'rgba(234, 88, 12, 0.15)', 
+                border: '1px solid #ea580c',
+                borderRadius: '6px',
+                padding: '8px 12px',
+                textAlign: 'center',
+                flex: 1
+              }}>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: '#ea580c' }}>{summary.high}</div>
+                <div style={{ fontSize: '10px', color: '#fdba74' }}>High</div>
+              </div>
+            )}
+            {summary.medium > 0 && (
+              <div style={{ 
+                background: 'rgba(202, 138, 4, 0.15)', 
+                border: '1px solid #ca8a04',
+                borderRadius: '6px',
+                padding: '8px 12px',
+                textAlign: 'center',
+                flex: 1
+              }}>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: '#ca8a04' }}>{summary.medium}</div>
+                <div style={{ fontSize: '10px', color: '#fde047' }}>Medium</div>
+              </div>
+            )}
+            {summary.low > 0 && (
+              <div style={{ 
+                background: 'rgba(101, 163, 13, 0.15)', 
+                border: '1px solid #65a30d',
+                borderRadius: '6px',
+                padding: '8px 12px',
+                textAlign: 'center',
+                flex: 1
+              }}>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: '#65a30d' }}>{summary.low}</div>
+                <div style={{ fontSize: '10px', color: '#a3e635' }}>Low</div>
+              </div>
+            )}
+          </div>
+          
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {summary.issues.map((issue, idx) => (
+              <div key={idx} style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px',
+                padding: '6px 0',
+                borderBottom: '1px solid var(--bdu-card-border)'
+              }}>
+                <span style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: getSeverityColor(issue.severity)
+                }} />
+                <span style={{ fontSize: '11px', color: 'var(--bdu-text)', flex: 1 }}>
+                  {issue.message}
+                </span>
+              </div>
+            ))}
+          </div>
+          
+          <button
+            onClick={() => window.location.hash = '#/ai-analytics'}
+            style={{
+              marginTop: '8px',
+              padding: '6px 12px',
+              background: 'var(--bdu-cyan)',
+              border: 'none',
+              borderRadius: '6px',
+              color: '#0b1224',
+              fontSize: '11px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            Xem chi tiết AI Analytics
+          </button>
+        </>
+      ) : (
+        <div style={{ 
+          flex: 1, 
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          color: 'var(--bdu-muted)'
+        }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '32px', color: '#16a34a' }}>verified</span>
+          <span style={{ fontSize: '12px', marginTop: '4px' }}>Tất cả cảm biến hoạt động tốt</span>
+        </div>
+      )}
     </div>
   );
 }

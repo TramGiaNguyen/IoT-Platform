@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchDevices, fetchDeviceDataKeys, fetchControlLines } from '../../services';
+import { getCameraStream, listCameras } from '../../utils/media';
 import '../../styles/dashboard-builder.css';
 
 export default function WidgetEditor({ widget, devices, token, onSave, onCancel }) {
@@ -17,6 +18,7 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
   const [controlLines, setControlLines] = useState([]);
   const [webcamList, setWebcamList] = useState([]);
   const [loadingWebcams, setLoadingWebcams] = useState(false);
+  const [webcamError, setWebcamError] = useState('');
 
   useEffect(() => {
     if (widget) {
@@ -85,21 +87,23 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
       if (widget?.widget_type !== 'video_stream' || formData.source_type !== 'webcam') return;
 
       setLoadingWebcams(true);
+      setWebcamError('');
       try {
-        // Request permission first
-        await navigator.mediaDevices.getUserMedia({ video: true });
+        // Request permission first (requires secure context: HTTPS or localhost)
+        const stream = await getCameraStream({ video: true });
+        // Stop the test stream immediately - we only needed the permission
+        stream.getTracks().forEach(t => t.stop());
         // Then enumerate devices
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices
-          .filter(d => d.kind === 'videoinput')
-          .map(d => ({
-            id: d.deviceId,
-            label: d.label || `Camera ${d.deviceId.slice(0, 8)}`
-          }));
-        setWebcamList(videoDevices);
+        const videoDevices = await listCameras();
+        const mapped = videoDevices.map(d => ({
+          id: d.deviceId,
+          label: d.label || `Camera ${d.deviceId.slice(0, 8)}`
+        }));
+        setWebcamList(mapped);
       } catch (err) {
         console.error('Failed to enumerate devices:', err);
         setWebcamList([]);
+        setWebcamError(err.message || 'Khong the truy cap camera.');
       } finally {
         setLoadingWebcams(false);
       }
@@ -641,7 +645,7 @@ export default function WidgetEditor({ widget, devices, token, onSave, onCancel 
                     Không tìm thấy camera nào trên trình duyệt.
                   </p>
                   <p style={{ color: 'var(--bdu-muted)', fontSize: '11px', margin: '0' }}>
-                    Vui lòng cho phép truy cập camera trong trình duyệt.
+                    {webcamError || 'Vui lòng cho phép truy cập camera trong trình duyệt.'}
                   </p>
                 </div>
               )}
