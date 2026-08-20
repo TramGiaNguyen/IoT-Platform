@@ -5,27 +5,39 @@
 -- ============================================
 UPDATE device_components dc
 SET dc.hardware_model = 'DHT11'
-WHERE dc.hardware_model IS NULL
-  AND dc.component_type IN ('temperature', 'humidity')
-  AND (
-      SELECT COUNT(*) FROM device_components dc2
-      WHERE dc2.device_id = dc.device_id
-      AND dc2.component_type IN ('temperature', 'humidity')
-      AND dc2.id != dc.id
-  ) > 0;
+WHERE dc.id IN (
+    SELECT id FROM (
+        SELECT dc3.id
+        FROM device_components dc3
+        WHERE dc3.hardware_model IS NULL
+          AND dc3.component_type IN ('temperature', 'humidity')
+          AND (
+              SELECT COUNT(*) FROM device_components dc4
+              WHERE dc4.device_id = dc3.device_id
+              AND dc4.component_type IN ('temperature', 'humidity')
+              AND dc4.id != dc3.id
+          ) > 0
+    ) AS t1
+);
 
 -- ============================================
 -- 2. Single temperature sensor → DS18B20
 -- ============================================
 UPDATE device_components dc
 SET dc.hardware_model = 'DS18B20'
-WHERE dc.hardware_model IS NULL
-  AND dc.component_type = 'temperature'
-  AND (
-      SELECT COUNT(*) FROM device_components dc2
-      WHERE dc2.device_id = dc.device_id
-      AND dc2.component_type = 'humidity'
-  ) = 0;
+WHERE dc.id IN (
+    SELECT id FROM (
+        SELECT dc3.id
+        FROM device_components dc3
+        WHERE dc3.hardware_model IS NULL
+          AND dc3.component_type = 'temperature'
+          AND (
+              SELECT COUNT(*) FROM device_components dc4
+              WHERE dc4.device_id = dc3.device_id
+              AND dc4.component_type = 'humidity'
+          ) = 0
+    ) AS t2
+);
 
 -- ============================================
 -- 3. Soil moisture → Capacitive_Soil
@@ -48,13 +60,19 @@ WHERE hardware_model IS NULL
 -- ============================================
 UPDATE device_components dc
 SET dc.hardware_model = 'BMP280'
-WHERE dc.hardware_model IS NULL
-  AND dc.component_type = 'pressure'
-  AND (
-      SELECT COUNT(*) FROM device_components dc2
-      WHERE dc2.device_id = dc.device_id
-      AND dc2.component_type IN ('temperature', 'humidity')
-  ) = 0;
+WHERE dc.id IN (
+    SELECT id FROM (
+        SELECT dc3.id
+        FROM device_components dc3
+        WHERE dc3.hardware_model IS NULL
+          AND dc3.component_type = 'pressure'
+          AND (
+              SELECT COUNT(*) FROM device_components dc4
+              WHERE dc4.device_id = dc3.device_id
+              AND dc4.component_type IN ('temperature', 'humidity')
+          ) = 0
+    ) AS t3
+);
 
 -- ============================================
 -- 6. Motion sensors → PIR
