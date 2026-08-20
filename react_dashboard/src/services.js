@@ -677,6 +677,14 @@ export const fetchDeviceHealth = (deviceId, token) =>
     headers: { Authorization: `Bearer ${token}` },
   }).then(res => res.data).catch(() => []);
 
+export const fetchComponentWidgetSummary = (deviceId, token) =>
+  axios.get(`${API_BASE}/api/ai/components/${deviceId}/widget-summary`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data).catch(err => {
+    console.error('fetchComponentWidgetSummary error:', err);
+    return { status: 'unknown', component_count: 0, issues_count: 0, top_components: [] };
+  });
+
 export const fetchDeviceProfileSummary = (deviceId, token) =>
   axios.get(`${API_BASE}/api/ai/devices/${deviceId}/profile-summary`, {
     headers: { Authorization: `Bearer ${token}` },

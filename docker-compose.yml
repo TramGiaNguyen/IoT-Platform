@@ -22,7 +22,7 @@ services:
     volumes:
       - mqtt-data:/mosquitto/data
     healthcheck:
-      test: ["CMD-SHELL", "timeout 5 sh -c '</dev/tcp/localhost/1883' || exit 1"]
+      test: ["CMD-SHELL", "nc -z localhost 1883 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,6 +44,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     depends_on:
       zookeeper:
         condition: service_healthy

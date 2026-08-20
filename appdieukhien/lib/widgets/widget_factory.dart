@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import '../models/widget_config.dart';
 import '../services/esp_client.dart';
+import '../utils/control_algorithms.dart';
 
 /// Callback khi widget thay đổi giá trị/trạng thái.
 typedef WidgetCommandCallback = Future<bool> Function(
@@ -736,6 +737,39 @@ class _JoystickFullWidget extends StatefulWidget {
 
 class _JoystickFullWidgetState extends State<_JoystickFullWidget> {
   Offset _knobPos = Offset.zero;
+  DateTime? _lastSend;
+
+  // ========== CONTROL PIPELINE ==========
+  // Servo pipeline cho X axis (lai)
+  late final ServoControlPipeline _servoPipeline;
+  // Motor pipeline cho Y axis (toc do)
+  late final MotorControlPipeline _motorPipeline;
+
+  _JoystickFullWidgetState() {
+    // Servo pipeline: Deadband -> EMA -> Steering Rate Limiter -> PID
+    _servoPipeline = ServoControlPipeline(
+      deadbandThreshold: 5,
+      emaAlpha: 0.2,
+      steeringRateLimit: 30,  // Toc do quay toi da 30 do/giay
+      kp: 2.0,
+      ki: 0.1,
+      kd: 0.5,
+    );
+
+    // Motor pipeline: Deadband -> EMA -> Acceleration Limiter
+    _motorPipeline = MotorControlPipeline(
+      deadbandThreshold: 5,
+      emaAlpha: 0.3,
+      accelLimitUp: 15,      // Tang cham de muon me
+      accelLimitDown: 20,    // Giam nhanh hon mot xi
+      useSCurve: false,     // Co the bat S-Curve neu can
+    );
+  }
+
+  void _resetPipelines() {
+    _servoPipeline.reset();
+    _motorPipeline.reset();
+  }
 
   void _update(Offset localPos, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
@@ -747,15 +781,39 @@ class _JoystickFullWidgetState extends State<_JoystickFullWidget> {
     setState(() => _knobPos = clamped);
 
     if (widget.send != null) {
-      // Map sang range min..max
+      // Throttle: chi gui 1 lenh moi 100ms
+      final now = DateTime.now();
+      if (_lastSend != null && now.difference(_lastSend!).inMilliseconds < 100) {
+        return;
+      }
+      _lastSend = now;
+
+      // Tinh gia tri raw (0-255)
       final xRatio = ((clamped.dx + maxR) / (2 * maxR)).clamp(0.0, 1.0);
       final yRatio = ((clamped.dy + maxR) / (2 * maxR)).clamp(0.0, 1.0);
-      final xVal = widget.config.min.toDouble() +
+      final xRaw = widget.config.min.toDouble() +
           xRatio * (widget.config.max.toDouble() - widget.config.min.toDouble());
-      final yVal = widget.config.min.toDouble() +
+      final yRaw = widget.config.min.toDouble() +
           yRatio * (widget.config.max.toDouble() - widget.config.min.toDouble());
-      // Gửi 2 lệnh: X rồi Y. ESP endpoint thường là 1 endpoint /joystick_full/<id>
-      widget.send!(widget.config, {'x': xVal.toInt(), 'y': yVal.toInt()});
+      
+      // ========== CONTROL PIPELINE ==========
+      // Chuyen doi sang -100..100
+      final joystickX = ((xRaw / 255) * 200 - 100); // -100 to 100
+      final joystickY = ((yRaw / 255) * 200 - 100); // -100 to 100
+
+      // X-axis: Servo Pipeline (lai)
+      // Deadband -> EMA -> Steering Rate Limiter -> PID
+      final xServo = _servoPipeline.process(joystickX);
+
+      // Y-axis: Motor Pipeline (toc do)
+      // Deadband -> EMA -> Acceleration Limiter
+      final yMotor = _motorPipeline.process(joystickY);
+
+      // Map outputs sang 0-255
+      final xOutput = (xServo / 180 * 255).clamp(0.0, 255.0);
+      final yOutput = yMotor.clamp(0.0, 255.0);
+
+      widget.send!(widget.config, {'x': xOutput.round(), 'y': yOutput.round()});
     }
   }
 
@@ -768,6 +826,7 @@ class _JoystickFullWidgetState extends State<_JoystickFullWidget> {
           onPanUpdate: (d) => _update(d.localPosition, size),
           onPanEnd: (_) {
             setState(() => _knobPos = Offset.zero);
+            _resetPipelines();
             if (widget.send != null) {
               final mid = ((widget.config.min.toDouble() + widget.config.max.toDouble()) / 2).toInt();
               widget.send!(widget.config, {'x': mid, 'y': mid});
@@ -847,19 +906,56 @@ class _JoystickWidget1D extends StatefulWidget {
 
 class _JoystickWidget1DState extends State<_JoystickWidget1D> {
   double _pos = 0;
+  DateTime? _lastSend;
+  
+  // Control algorithms
+  late final EMA _ema;
+  late final Deadband _deadband;
+  late final RateLimiter _rateLimiter;
+
+  _JoystickWidget1DState() {
+    _ema = EMA(alpha: 0.3);
+    _deadband = Deadband(threshold: 5);
+    _rateLimiter = RateLimiter(maxChangePerSecond: 150);
+  }
+
+  void _resetPipelines() {
+    _ema.reset();
+    _rateLimiter.reset();
+  }
 
   void _update(Offset localPos, Size size) {
     final isX = widget.axis is AxisX;
+    final trackLen = isX ? size.width - 16 : size.height - 16;
     final delta = isX ? localPos.dx - size.width / 2 : localPos.dy - size.height / 2;
-    final maxR = (isX ? size.width : size.height) / 2 - 8;
+    final maxR = trackLen / 2 - 12;
     final clamped = delta.clamp(-maxR, maxR);
     setState(() => _pos = clamped);
 
     if (widget.send != null) {
+      // Throttle: chi gui 1 lenh moi 100ms
+      final now = DateTime.now();
+      if (_lastSend != null && now.difference(_lastSend!).inMilliseconds < 100) {
+        return;
+      }
+      _lastSend = now;
+
+      // Tinh gia tri raw (0-255)
       final range = widget.config.max.toDouble() - widget.config.min.toDouble();
       final ratio = ((clamped + maxR) / (2 * maxR)).clamp(0.0, 1.0);
-      final val = widget.config.min.toDouble() + ratio * range;
-      widget.send!(widget.config, {'value': val.toInt()});
+      final raw = widget.config.min.toDouble() + ratio * range;
+      
+      // ========== CONTROL PIPELINE ==========
+      // 1. EMA - Lam muot gia tri
+      final smoothed = _ema.update(raw);
+      
+      // 2. Deadband - Loai bo nhieu nho (quanh 128 = center)
+      final debounced = _deadband.apply(smoothed - 128) + 128;
+      
+      // 3. Rate Limiter - Gioi han toc do thay doi
+      final limited = _rateLimiter.update(debounced);
+      
+      widget.send!(widget.config, {'value': limited.round()});
     }
   }
 
@@ -873,6 +969,7 @@ class _JoystickWidget1DState extends State<_JoystickWidget1D> {
           onPanUpdate: (d) => _update(d.localPosition, size),
           onPanEnd: (_) {
             setState(() => _pos = 0);
+            _resetPipelines();
             if (widget.send != null) {
               final mid = ((widget.config.min.toDouble() + widget.config.max.toDouble()) / 2).toInt();
               widget.send!(widget.config, {'value': mid});
@@ -888,8 +985,8 @@ class _JoystickWidget1DState extends State<_JoystickWidget1D> {
               alignment: Alignment.center,
               children: [
                 Container(
-                  width: isX ? 50 : 6,
-                  height: isX ? 6 : 50,
+                  width: isX ? size.width - 16 : 6,
+                  height: isX ? 6 : size.height - 16,
                   decoration: BoxDecoration(
                     color: Colors.cyanAccent.withOpacity(0.4),
                     shape: BoxShape.rectangle,
@@ -899,7 +996,7 @@ class _JoystickWidget1DState extends State<_JoystickWidget1D> {
                 Transform.translate(
                   offset: isX ? Offset(_pos, 0) : Offset(0, _pos),
                   child: Container(
-                    width: 24,
+                    width: isX ? 24 : 24,
                     height: 24,
                     decoration: BoxDecoration(
                       color: Colors.cyanAccent,

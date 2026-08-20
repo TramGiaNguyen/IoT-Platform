@@ -1410,3 +1410,304 @@ async def get_device_summary(
     finally:
         cursor.close()
         conn.close()
+
+
+@router.get("/components/{device_id}/widget-summary")
+async def get_component_widget_summary(
+    device_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Get compact summary for widget display.
+    Returns: overall_health_score, component_count, issues_count, status, top_components
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Get all components for this device
+        cursor.execute("""
+            SELECT
+                component_id,
+                component_type,
+                field_name,
+                hardware_model,
+                health_score,
+                health_status,
+                last_seen
+            FROM device_components
+            WHERE device_id = %s
+            ORDER BY CASE WHEN health_score IS NULL THEN 1 ELSE 0 END, health_score ASC
+            LIMIT 10
+        """, (device_id,))
+        components = cursor.fetchall()
+
+        if not components:
+            return {
+                "device_id": device_id,
+                "status": "unknown",
+                "overall_health_score": None,
+                "component_count": 0,
+                "issues_count": 0,
+                "top_components": [],
+                "message": "No components detected yet"
+            }
+
+        # Calculate overall health
+        valid_scores = [c['health_score'] for c in components if c['health_score'] is not None]
+        overall_score = sum(valid_scores) / len(valid_scores) if valid_scores else None
+
+        # Count issues
+        issues_count = sum(
+            1 for c in components
+            if c['health_status'] in ('critical', 'warning', 'degraded') or
+               (c['health_score'] is not None and c['health_score'] < 0.7)
+        )
+
+        # Determine status
+        if overall_score is None:
+            status = "unknown"
+        elif overall_score >= 0.8:
+            status = "healthy"
+        elif overall_score >= 0.5:
+            status = "warning"
+        else:
+            status = "critical"
+
+        # Get top components (most important)
+        top_components = []
+        for c in components[:5]:
+            top_components.append({
+                "component_type": c['component_type'],
+                "field_name": c['field_name'],
+                "health_score": c['health_score'],
+                "health_status": c['health_status'],
+                "last_seen": c['last_seen'].isoformat() if c['last_seen'] else None
+            })
+
+        # Get recent critical issues
+        cursor.execute("""
+            SELECT event_type, severity, details, created_at
+            FROM component_events
+            WHERE device_id = %s
+              AND severity IN ('critical', 'warning')
+              AND created_at > NOW() - INTERVAL 24 HOUR
+            ORDER BY created_at DESC
+            LIMIT 3
+        """, (device_id,))
+        recent_events = cursor.fetchall()
+
+        return {
+            "device_id": device_id,
+            "status": status,
+            "overall_health_score": round(overall_score, 3) if overall_score else None,
+            "component_count": len(components),
+            "issues_count": issues_count,
+            "top_components": top_components,
+            "recent_alerts": [
+                {
+                    "event_type": e['event_type'],
+                    "severity": e['severity'],
+                    "created_at": e['created_at'].isoformat() if e['created_at'] else None
+                }
+                for e in recent_events
+            ]
+        }
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/components/{device_id}/hardware-profile")
+async def get_hardware_profile(
+    device_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Get complete hardware profile for a device.
+    Returns all detected components, inferred device type, and hardware models.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT
+                id,
+                component_id as component_id_name,
+                component_type,
+                field_name,
+                hardware_model,
+                connection_type,
+                detection_confidence,
+                device_type,
+                device_type_confidence,
+                health_status,
+                health_score,
+                metadata,
+                first_seen,
+                last_seen
+            FROM device_components
+            WHERE device_id = %s
+            ORDER BY detection_confidence DESC
+        """, (device_id,))
+        rows = cursor.fetchall()
+
+        if not rows:
+            return {
+                "device_id": device_id,
+                "found": False,
+                "message": "No hardware components detected yet"
+            }
+
+        # Determine overall device type from components
+        device_type = None
+        max_confidence = 0
+        for row in rows:
+            if row['device_type'] and row['device_type_confidence'] > max_confidence:
+                device_type = row['device_type']
+                max_confidence = row['device_type_confidence']
+
+        # Get most common hardware model
+        hardware_models = [r['hardware_model'] for r in rows if r['hardware_model']]
+        hardware_model = max(set(hardware_models), key=hardware_models.count) if hardware_models else None
+
+        components = []
+        for row in rows:
+            metadata = row.get('metadata')
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except:
+                    metadata = None
+
+            components.append({
+                "component_id": row['component_id_name'],
+                "component_type": row['component_type'],
+                "field_name": row['field_name'],
+                "hardware_model": row['hardware_model'],
+                "connection_type": row['connection_type'],
+                "detection_confidence": row['detection_confidence'],
+                "device_type": row['device_type'],
+                "device_type_confidence": row['device_type_confidence'],
+                "health_status": row['health_status'],
+                "health_score": row['health_score'],
+                "metadata": metadata,
+                "first_seen": row['first_seen'].isoformat() if row['first_seen'] else None,
+                "last_seen": row['last_seen'].isoformat() if row['last_seen'] else None
+            })
+
+        return {
+            "device_id": device_id,
+            "found": True,
+            "device_type": device_type,
+            "device_type_confidence": max_confidence,
+            "hardware_model": hardware_model,
+            "components": components,
+            "component_count": len(components)
+        }
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/components/{device_id}/{component_id}/health")
+async def get_component_health(
+    device_id: str,
+    component_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Get health status for a specific component.
+    Returns health score, issues, and recent events.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Get component details
+        cursor.execute("""
+            SELECT
+                id,
+                component_id as component_id_name,
+                component_type,
+                field_name,
+                hardware_model,
+                health_status,
+                health_score,
+                health_history,
+                metadata,
+                last_seen
+            FROM device_components
+            WHERE device_id = %s
+              AND (component_id = %s OR id = %s)
+            LIMIT 1
+        """, (device_id, component_id, component_id))
+        component = cursor.fetchone()
+
+        if not component:
+            raise HTTPException(status_code=404, detail="Component not found")
+
+        # Parse health history
+        health_history = component.get('health_history')
+        if isinstance(health_history, str):
+            try:
+                health_history = json.loads(health_history)
+            except:
+                health_history = []
+
+        # Get recent events for this component
+        cursor.execute("""
+            SELECT id, event_type, severity, details, timestamp
+            FROM component_events
+            WHERE device_id = %s
+              AND (component_id = %s OR component_id LIKE %s)
+            ORDER BY timestamp DESC
+            LIMIT 10
+        """, (device_id, component_id, f"{component_id}%"))
+        events = cursor.fetchall()
+
+        # Build issues list
+        issues = []
+        if component['health_status'] in ('degraded', 'failed'):
+            issues.append({
+                "type": "health_degraded",
+                "severity": "warning" if component['health_status'] == 'degraded' else "critical",
+                "description": f"Component health is {component['health_status']}",
+                "message": f"Component '{component['component_type']}' is in {component['health_status']} state"
+            })
+
+        if component['health_score'] is not None and component['health_score'] < 0.5:
+            issues.append({
+                "type": "low_health_score",
+                "severity": "critical",
+                "description": f"Health score below threshold: {component['health_score']:.2f}",
+                "message": f"Health score is critically low"
+            })
+
+        # Determine overall score
+        overall_score = component['health_score'] if component['health_score'] is not None else 0.5
+
+        return {
+            "device_id": device_id,
+            "component_id": component['component_id_name'],
+            "component_type": component['component_type'],
+            "field_name": component['field_name'],
+            "hardware_model": component['hardware_model'],
+            "health_status": component['health_status'],
+            "health_score": overall_score,
+            "overall_score": overall_score,
+            "issues": issues,
+            "events": [
+                {
+                    "id": e['id'],
+                    "event_type": e['event_type'],
+                    "severity": e['severity'],
+                    "timestamp": e['timestamp'].isoformat() if e['timestamp'] else None
+                }
+                for e in events
+            ]
+        }
+
+    finally:
+        cursor.close()
+        conn.close()

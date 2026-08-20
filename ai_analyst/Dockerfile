@@ -21,8 +21,11 @@ RUN python3.10 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python packages
-# PyTorch first (custom index URL for CUDA 12.4 wheels, --trusted-host to skip hash issues)
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu124 --trusted-host download.pytorch.org torch==2.4.0 torchvision==0.19.0
+# Install nvidia-cudnn-cu12 first (compatible version that exists)
+RUN pip3 install nvidia-cudnn-cu12==9.1.1.17
+
+# Install PyTorch with CUDA 12.4 support, no deps resolution
+RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu124 --no-deps
 RUN pip install --no-cache-dir \
     fastapi==0.115.0 \
     uvicorn[standard]==0.30.0 \

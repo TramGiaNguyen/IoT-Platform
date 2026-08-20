@@ -155,12 +155,21 @@ _ai_lock = _threading.Lock()
 
 # Lazy-load normalizer (avail after services/ copy)
 _normalizer = None
+_hardware_detector = None
+
 def _get_normalizer():
     global _normalizer
     if _normalizer is None:
         from services.ai_analytics.metric_normalizer import MetricNormalizer
         _normalizer = MetricNormalizer()
     return _normalizer
+
+def _get_hardware_detector():
+    global _hardware_detector
+    if _hardware_detector is None:
+        from services.ai_analytics.hardware_detector import HardwareDetector
+        _hardware_detector = HardwareDetector()
+    return _hardware_detector
 
 
 def _is_ai_debounced(r, device_id: str) -> bool:
@@ -173,6 +182,115 @@ def _set_ai_debounce(r, device_id: str) -> None:
     """Mark this device as recently analyzed (TTL seconds)."""
     key = f"{AI_SCHEMA_LOCK_PREFIX}{device_id}"
     r.set(key, "1", ex=AI_SCHEMA_DEBOUNCE_TTL)
+
+
+def _upsert_hardware_components(device_id: str, payload: dict, profile) -> None:
+    """
+    Upsert detected hardware components into device_components table.
+    Runs after normalization to detect hardware from payload.
+    """
+    if not device_id or not profile:
+        return
+
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**MYSQL_CONFIG)
+        cursor = conn.cursor(dictionary=True)
+
+        existing_components = {}
+        cursor.execute("""
+            SELECT id, component_id, component_type, field_name
+            FROM device_components
+            WHERE device_id = %s
+        """, (device_id,))
+        for row in cursor.fetchall():
+            existing_components[row['field_name']] = row
+
+        import json as _json
+        for component in profile.components:
+            field_name = component.field_name
+
+            # Check if component already exists
+            if field_name in existing_components:
+                # Update existing component
+                existing = existing_components[field_name]
+                cursor.execute("""
+                    UPDATE device_components
+                    SET hardware_model = %s,
+                        connection_type = %s,
+                        detection_confidence = %s,
+                        device_type = %s,
+                        device_type_confidence = %s,
+                        metadata = %s,
+                        last_seen = NOW()
+                    WHERE id = %s
+                """, (
+                    component.hardware_model,
+                    component.connection_type,
+                    component.detection_confidence,
+                    profile.device_type,
+                    profile.device_type_confidence,
+                    _json.dumps(component.metadata) if component.metadata else None,
+                    existing['id']
+                ))
+            else:
+                # Insert new component
+                cursor.execute("""
+                    INSERT INTO device_components
+                    (device_id, component_id, component_type, field_name,
+                     hardware_model, connection_type, detection_confidence,
+                     device_type, device_type_confidence, metadata,
+                     health_status, health_score)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'unknown', 1.0)
+                    ON DUPLICATE KEY UPDATE
+                        hardware_model = VALUES(hardware_model),
+                        connection_type = VALUES(connection_type),
+                        detection_confidence = VALUES(detection_confidence),
+                        device_type = VALUES(device_type),
+                        device_type_confidence = VALUES(device_type_confidence),
+                        metadata = VALUES(metadata),
+                        last_seen = NOW()
+                """, (
+                    device_id,
+                    component.component_id,
+                    component.component_type,
+                    field_name,
+                    component.hardware_model,
+                    component.connection_type,
+                    component.detection_confidence,
+                    profile.device_type,
+                    profile.device_type_confidence,
+                    _json.dumps(component.metadata) if component.metadata else None,
+                ))
+
+                # Log component detection event
+                cursor.execute("""
+                    INSERT INTO component_events
+                    (device_id, component_id, event_type, severity, details)
+                    VALUES (%s, %s, 'detected', 'info', %s)
+                """, (
+                    device_id,
+                    component.component_id,
+                    _json.dumps({
+                        'component_type': component.component_type,
+                        'hardware_model': component.hardware_model,
+                        'confidence': component.detection_confidence
+                    })
+                ))
+
+        conn.commit()
+        print(f"[HARDWARE-DETECTOR] Updated {len(profile.components)} components for {device_id}")
+
+    except Exception as e:
+        print(f"[HARDWARE-DETECTOR] Component upsert error for {device_id}: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 def _upsert_ai_analytics(device_id: str, result) -> None:
@@ -254,6 +372,58 @@ def _upsert_ai_analytics(device_id: str, result) -> None:
             ))
         conn.commit()
 
+        # ---- Schema Drift Detection ----
+        # Compare current schema_hash with previous version
+        try:
+            cursor.execute("""
+                SELECT schema_hash, fields, schema_version
+                FROM device_payload_schemas
+                WHERE device_id = %s
+                ORDER BY schema_version DESC
+                LIMIT 2
+            """, (device_id,))
+            schemas = cursor.fetchall()
+
+            if len(schemas) >= 2:
+                current_hash = result.schema_hash or ""
+                previous_hash = schemas[0]['schema_hash'] if schemas[0] else None
+                previous_fields = schemas[0]['fields'] if schemas[0] else "[]"
+                prev_version = schemas[0]['schema_version'] if schemas[0] else 0
+
+                if previous_hash and current_hash != previous_hash:
+                    # Schema changed! Compute field diff
+                    import json as _json
+                    current_fields = fields_json
+                    prev_fields_list = _json.loads(previous_fields)
+                    curr_fields_list = _json.loads(current_fields)
+
+                    prev_field_names = {f['path'] for f in prev_fields_list}
+                    curr_field_names = {f['path'] for f in curr_fields_list}
+
+                    fields_removed = list(prev_field_names - curr_field_names)
+                    fields_added = list(curr_field_names - prev_field_names)
+
+                    # Log schema drift
+                    cursor.execute("""
+                        INSERT INTO schema_drift_log
+                            (device_id, old_schema_hash, new_schema_hash,
+                             old_version, new_version, fields_removed, fields_added, drift_confidence)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        device_id,
+                        previous_hash,
+                        current_hash,
+                        prev_version,
+                        result.schema_version or 1,
+                        _json.dumps(fields_removed),
+                        _json.dumps(fields_added),
+                        0.95,
+                    ))
+                    print(f"[AI-ANALYTICS] Schema drift detected for {device_id}: "
+                          f"+{len(fields_added)} -{len(fields_removed)} fields")
+        except Exception as drift_err:
+            print(f"[AI-ANALYTICS] Schema drift detection error for {device_id}: {drift_err}")
+
         # ---- Mark device as analyzed (first time only) ----
         cursor.execute("""
             UPDATE thiet_bi
@@ -274,10 +444,125 @@ def _upsert_ai_analytics(device_id: str, result) -> None:
             conn.close()
 
 
+def _generate_hardware_alerts(device_id: str) -> None:
+    """
+    Generate AI alerts for hardware component issues.
+    Checks for: flatline sensors, missing components, health degradation.
+    """
+    import json as _json
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(**MYSQL_CONFIG)
+        cursor = conn.cursor(dictionary=True)
+
+        # Check for components with health issues
+        cursor.execute("""
+            SELECT id, component_id, component_type, health_score,
+                   last_health_check, metadata
+            FROM device_components
+            WHERE device_id = %s
+              AND (health_score IS NOT NULL AND health_score < 0.7)
+              AND (
+                  last_health_check IS NULL
+                  OR last_health_check < NOW() - INTERVAL 5 MINUTE
+              )
+        """, (device_id,))
+        low_health_components = cursor.fetchall()
+
+        for comp in low_health_components:
+            # Check if similar alert was created recently (debounce 1 hour)
+            cursor.execute("""
+                SELECT id FROM ai_alerts
+                WHERE device_id = %s
+                  AND alert_type = 'hardware_health'
+                  AND message LIKE %s
+                  AND created_at > NOW() - INTERVAL 1 HOUR
+                LIMIT 1
+            """, (device_id, f"%{comp['component_type']}%"))
+            existing = cursor.fetchone()
+
+            if not existing:
+                # Determine severity based on health score
+                severity = 'medium'
+                if comp['health_score'] < 0.3:
+                    severity = 'critical'
+                elif comp['health_score'] < 0.5:
+                    severity = 'high'
+
+                metadata = _json.loads(comp['metadata']) if comp['metadata'] else {}
+                issue_type = metadata.get('last_issue', 'health_degraded')
+
+                cursor.execute("""
+                    INSERT INTO ai_alerts
+                    (metric_id, anomaly_id, alert_type, message, severity,
+                     threshold_value, actual_value, device_id)
+                    VALUES (0, NULL, 'hardware_health', %s, %s, %s, %s, %s)
+                """, (
+                    f"Component '{comp['component_type']}' health degraded: {issue_type}",
+                    severity,
+                    0.7,
+                    comp['health_score'],
+                    device_id,
+                ))
+
+        conn.commit()
+
+        # Check for flatline sensors (values haven't changed in 24h)
+        cursor.execute("""
+            SELECT dc.id, dc.component_id, dc.component_type, dc.field_name
+            FROM device_components dc
+            WHERE dc.device_id = %s
+              AND dc.last_seen < NOW() - INTERVAL 1 HOUR
+              AND dc.component_type IN ('temperature', 'humidity', 'pressure',
+                                        'soil_moisture', 'light', 'gas', 'pm25')
+        """, (device_id,))
+        stale_components = cursor.fetchall()
+
+        for comp in stale_components:
+            cursor.execute("""
+                SELECT id FROM ai_alerts
+                WHERE device_id = %s
+                  AND alert_type = 'sensor_flatline'
+                  AND message LIKE %s
+                  AND created_at > NOW() - INTERVAL 6 HOUR
+                LIMIT 1
+            """, (device_id, f"%{comp['component_id']}%"))
+            existing = cursor.fetchone()
+
+            if not existing:
+                cursor.execute("""
+                    INSERT INTO ai_alerts
+                    (metric_id, anomaly_id, alert_type, message, severity,
+                     threshold_value, actual_value, device_id)
+                    VALUES (0, NULL, 'sensor_flatline',
+                            %s, 'warning', %s, %s, %s)
+                """, (
+                    f"Sensor '{comp['component_type']}' ({comp['field_name']}) appears flatline - no data for 1h+",
+                    0.0,
+                    0.0,
+                    device_id,
+                ))
+                conn.commit()
+
+        print(f"[AI-ALERTS] Generated alerts for {device_id}: "
+              f"{len(low_health_components)} health, {len(stale_components)} flatline")
+
+    except Exception as e:
+        print(f"[AI-ALERTS] Error generating alerts for {device_id}: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 def _process_ai_event(event: dict, r) -> None:
     """
     Entry point called from consume_loop.
-    Debounce + normalize + upsert.
+    Debounce + normalize + upsert + hardware detection.
     """
     device_id = str(event.get("device_id") or "")
     if not device_id:
@@ -303,6 +588,27 @@ def _process_ai_event(event: dict, r) -> None:
             _upsert_ai_analytics(device_id, result)
             print(f"[AI-ANALYTICS] Analyzed {device_id}: {len(result.metrics)} metrics, "
                   f"hash={result.schema_hash[:16]}...")
+
+            # Hardware detection from payload
+            try:
+                detector = _get_hardware_detector()
+                # Extract data fields from event (exclude metadata)
+                data_payload = {k: v for k, v in event.items()
+                               if k not in ('device_id', 'timestamp', 'time', '_id')
+                               and not k.startswith('_')}
+                if data_payload:
+                    profile = detector.detect_from_payload(device_id, data_payload)
+                    if profile.components:
+                        _upsert_hardware_components(device_id, event, profile)
+            except Exception as hw_err:
+                print(f"[HARDWARE-DETECTOR] Detection error for {device_id}: {hw_err}")
+
+            # ---- Generate AI Alerts for hardware issues ----
+            try:
+                _generate_hardware_alerts(device_id)
+            except Exception as alert_err:
+                print(f"[AI-ALERTS] Alert generation error for {device_id}: {alert_err}")
+
     except Exception as e:
         print(f"[AI-ANALYTICS] Normalize error for {device_id}: {e}")
 
@@ -317,8 +623,16 @@ def consume_loop() -> None:
         "auto.offset.reset": "latest",
         "enable.auto.commit": True,
     })
-    consumer.subscribe([KAFKA_TOPIC])
-    print(f"[KAFKA-CONSUMER] Subscribed to {KAFKA_TOPIC} (group={KAFKA_GROUP_ID})")
+
+    # Retry subscribe cho den khi topic san sang
+    for attempt in range(30):
+        try:
+            consumer.subscribe([KAFKA_TOPIC])
+            print(f"[KAFKA-CONSUMER] Subscribed to {KAFKA_TOPIC} (group={KAFKA_GROUP_ID})")
+            break
+        except KafkaException as e:
+            print(f"[KAFKA-CONSUMER] Subscribe failed (attempt {attempt+1}/30): {e}")
+            time.sleep(2)
 
     global _last_flush_ts
     try:
@@ -333,7 +647,9 @@ def consume_loop() -> None:
             if err is not None:
                 if err.code() == KafkaError._PARTITION_EOF:
                     continue
-                raise KafkaException(err)
+                # Log va tiep tuc thay vhi raise exception
+                print(f"[KAFKA-CONSUMER] Poll error: {err}")
+                continue
             value = msg.value()
             if not value:
                 continue

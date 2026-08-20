@@ -1224,12 +1224,16 @@ def get_teacher_student_devices(current_user: str = Depends(get_current_user)):
 @router.get("/devices/discover")
 def discover_devices(current_user: str = Depends(get_current_user)):
     """
-    Lấy danh sách thiết bị đã phát hiện từ cache Kafka shared.
+    Lay danh sach thiet bi da phat hien tu Redis (shared source of truth).
 
-    Trước đây endpoint này tự tạo KafkaConsumer mới trong mỗi request,
-    scan trong 10s. Giờ đọc trực tiếp từ cache được populate bởi background
-    consumer trong kafka_discovery module — phản hồi tức thì, không leak
-    Kafka connection.
+    Truoc day endpoint nay doc tu `_device_info` in-memory cua process hien tai
+    (populate boi background Kafka thread trong `kafka_discovery`). Tuy nhien
+    FastAPI chay 4 workers, moi worker co memory space rieng -> request route
+    sang worker khac se tra ve rong.
+
+    Fix: doc truc tiep tu Redis list `ws:latest_events` (populate boi
+    `kafka_event_consumer`, dung cho moi worker). Day cung la pattern da duoc
+    dung thanh cong o endpoint `/ai/components/{device_id}/scan` (routes.py).
 
     Response format:
     {
@@ -1245,9 +1249,11 @@ def discover_devices(current_user: str = Depends(get_current_user)):
         "count": 1
     }
     """
-    from kafka_discovery import get_discovered_devices
+    import json as _json_mod
+    import os
+    import redis as _redis_mod
 
-    # Lấy danh sách device_id đã đăng ký để lọc ra thiết bị mới
+    # Lay danh sach device_id da dang ky de loc ra thiet bi moi
     conn = get_mysql()
     cursor = conn.cursor()
     try:
@@ -1257,17 +1263,70 @@ def discover_devices(current_user: str = Depends(get_current_user)):
         cursor.close()
         conn.close()
 
-    # Lấy tất cả thiết bị đã phát hiện từ cache shared (instant, không tạo Kafka connection)
-    all_discovered = get_discovered_devices()
-    result = [d for d in all_discovered if d["device_id"] not in registered_devices]
+    # Doc tu Redis list (shared, populate boi kafka_event_consumer)
+    _r = _redis_mod.Redis(
+        host=os.getenv("REDIS_HOST", "redis"),
+        port=int(os.getenv("REDIS_PORT", 6379)),
+        decode_responses=True,
+    )
+    events_raw = _r.lrange("ws:latest_events", 0, 99)
 
-    # Phase 3: KHÔNG filter theo role ở đây — đây là endpoint discovery (liệt kê
-    # các thiết bị CHƯA được register). Mục đích: cho phép SV/Teacher/Admin thấy
-    # các thiết bị mới phát hiện để quyết định đăng ký. Permission check thật sự
-    # sẽ được áp dụng ở POST /devices/register (xem Bước 3 Phase 3 — nếu SV đăng
-    # ký vào phòng nhóm, owner sẽ được set = GV lớp; nếu vào phòng cá nhân,
-    # owner = chủ phòng). Response chỉ trả về metadata (device_id, detected_fields,
-    # sample_data, suggested_type, message_count) — không có thông tin nhạy cảm.
+    # Gom theo device_id, suy ra fields/sample/count nhu _track_event
+    _device_info_map = {}
+    skip_fields = {"device_id", "timestamp", "type", "_id"}
+    for raw in events_raw:
+        try:
+            ev = _json_mod.loads(raw)
+        except Exception:
+            continue
+        dev_id = ev.get("device_id")
+        if not dev_id:
+            continue
+        info = _device_info_map.setdefault(dev_id, {"fields": set(), "sample": {}, "count": 0})
+        info["count"] += 1
+        for k, v in ev.items():
+            if k in skip_fields or v is None:
+                continue
+            info["fields"].add(k)
+            info["sample"][k] = v
+
+    def _guess_device_type(fields):
+        fields_lower = {f.lower() for f in fields}
+        if "temperature" in fields_lower or "humidity" in fields_lower:
+            return "sensor"
+        if "state" in fields_lower and "setpoint" in fields_lower:
+            return "air_conditioner"
+        if "state" in fields_lower and "brightness" in fields_lower:
+            return "light"
+        if "power" in fields_lower or "voltage" in fields_lower or "current" in fields_lower:
+            return "power_meter"
+        if "motion" in fields_lower or "occupancy" in fields_lower:
+            return "motion_sensor"
+        if "door" in fields_lower or "open" in fields_lower:
+            return "door_sensor"
+        return "unknown"
+
+    result = []
+    for dev_id, info in _device_info_map.items():
+        result.append({
+            "device_id": dev_id,
+            "detected_fields": sorted(list(info["fields"])),
+            "sample_data": info["sample"],
+            "suggested_type": _guess_device_type(info["fields"]),
+            "message_count": info["count"],
+        })
+    result.sort(key=lambda x: x["message_count"], reverse=True)
+
+    # Filter nhu cu: chi tra ve thiet bi chua dang ky
+    result = [d for d in result if d["device_id"] not in registered_devices]
+
+    # Phase 3: KHONG filter theo role o day — day la endpoint discovery (liet ke
+    # cac thiet bi CHUA duoc register). Muc dich: cho phep SV/Teacher/Admin thay
+    # cac thiet bi moi phat hien de quyet dinh dang ky. Permission check that su
+    # se duoc ap dung o POST /devices/register (xem Buoc 3 Phase 3 — neu SV dang
+    # ky vao phong nhom, owner se duoc set = GV lop; neu vao phong ca nhan,
+    # owner = chu phong). Response chi tra ve metadata (device_id, detected_fields,
+    # sample_data, suggested_type, message_count) — khong co thong tin nhay cam.
     return {
         "discovered_devices": result,
         "count": len(result),
@@ -9862,3 +9921,663 @@ async def client_stream_view(stream_id: str):
         generate(),
         media_type='multipart/x-mixed-replace; boundary=frame'
     )
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# AI Component Detection API
+# ════════════════════════════════════════════════════════════════════════════════
+
+from services.ai_analytics.component_health import ComponentHealthAnalyzer, HealthReport
+
+
+class ComponentResponse(BaseModel):
+    """Response model for component info."""
+    component_id: str
+    component_type: str
+    field_name: str
+    hardware_model: Optional[str] = None
+    connection_type: Optional[str] = None
+    detection_confidence: float
+    device_type: Optional[str] = None
+    device_type_confidence: float
+    health_status: str
+    health_score: float
+    metadata: Optional[dict] = None
+
+
+class ComponentHealthResponse(BaseModel):
+    """Response model for component health."""
+    component_id: int
+    device_id: str
+    component_type: str
+    health_score: float
+    health_status: str
+    issues: List[dict]
+    findings: dict
+    analyzed_at: str
+
+
+class HardwareProfileResponse(BaseModel):
+    """Response model for hardware profile."""
+    device_id: str
+    device_type: Optional[str]
+    device_type_confidence: float
+    hardware_model: Optional[str]
+    components: List[ComponentResponse]
+    payload_schema: List[str]
+
+
+@router.get("/ai/components/{device_id}")
+def get_device_components(
+    device_id: str,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Get all detected components for a device.
+    Returns list of components with their type, hardware model, and health status.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT 
+                dc.id as component_id,
+                dc.component_id as component_id_name,
+                dc.component_type,
+                dc.field_name,
+                dc.hardware_model,
+                dc.connection_type,
+                dc.detection_confidence,
+                dc.device_type,
+                dc.device_type_confidence,
+                dc.health_status,
+                dc.health_score,
+                dc.metadata,
+                dc.last_seen
+            FROM device_components dc
+            WHERE dc.device_id = %s
+            ORDER BY dc.component_type
+        """, (device_id,))
+        
+        components = []
+        for row in cursor.fetchall():
+            metadata = row.get('metadata')
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except:
+                    metadata = None
+            
+            components.append({
+                "component_id": row['component_id_name'],
+                "component_type": row['component_type'],
+                "field_name": row['field_name'],
+                "hardware_model": row['hardware_model'],
+                "connection_type": row['connection_type'],
+                "detection_confidence": row['detection_confidence'],
+                "device_type": row['device_type'],
+                "device_type_confidence": row['device_type_confidence'],
+                "health_status": row['health_status'],
+                "health_score": row['health_score'],
+                "metadata": metadata,
+                "last_seen": row['last_seen'].isoformat() if row['last_seen'] else None
+            })
+        
+        return {"device_id": device_id, "components": components, "count": len(components)}
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/ai/components/{device_id}/hardware-profile")
+def get_hardware_profile(
+    device_id: str,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Get complete hardware profile for a device.
+    Includes all detected components and inferred device type.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT 
+                dc.*,
+                (SELECT COUNT(*) FROM device_components WHERE device_id = %s) as component_count
+            FROM device_components dc
+            WHERE dc.device_id = %s
+            ORDER BY dc.detection_confidence DESC
+        """, (device_id, device_id))
+        
+        rows = cursor.fetchall()
+        import sys
+        print(f"[DEBUG-HW-STDERR] device_id={device_id}, rows_count={len(rows)}", file=sys.stderr)
+        sys.stderr.flush()
+        if not rows:
+            return {"device_id": device_id, "found": False, "message": "No hardware profile found"}
+        
+        # DEBUG: Log hardware_model values
+        import logging
+        logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
+        logger = logging.getLogger("uvicorn")
+        logger.warning(f"[DEBUG-HW] device_id={device_id}, rows_count={len(rows)}")
+        for r in rows:
+            logger.warning(f"[DEBUG-HW] component={r['component_id']}, hw_model={r['hardware_model']}, field={r['field_name']}")
+        
+        components = []
+        device_type = None
+        device_type_confidence = 0
+        hardware_model = None
+        
+        for row in rows:
+            if not device_type or row['device_type_confidence'] > device_type_confidence:
+                device_type = row['device_type']
+                device_type_confidence = row['device_type_confidence']
+            
+            if not hardware_model and row['hardware_model']:
+                hardware_model = row['hardware_model']
+            
+            metadata = row.get('metadata')
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except:
+                    metadata = None
+            
+            components.append({
+                "component_id": row['component_id'],
+                "component_type": row['component_type'],
+                "field_name": row['field_name'],
+                "hardware_model": row['hardware_model'],
+                "display_name": row['hardware_model'] or row['field_name'] or row['component_type'],
+                "connection_type": row['connection_type'],
+                "detection_confidence": row['detection_confidence'],
+                "health_status": row['health_status'],
+                "health_score": row['health_score'],
+                "metadata": metadata
+            })
+        
+        primary_hardware = hardware_model or (rows[0]['field_name'] if rows else None)
+        
+        return {
+            "device_id": device_id,
+            "found": True,
+            "device_type": device_type,
+            "device_type_confidence": device_type_confidence,
+            "hardware_model": hardware_model,
+            "primary_hardware": primary_hardware,
+            "component_count": len(components),
+            "components": components
+        }
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/ai/components/{device_id}/{component_id}/health")
+def get_component_health(
+    device_id: str,
+    component_id: str,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Get detailed health analysis for a specific component.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT * FROM device_components 
+            WHERE device_id = %s AND component_id = %s
+        """, (device_id, component_id))
+        
+        component = cursor.fetchone()
+        if not component:
+            raise HTTPException(status_code=404, detail="Component not found")
+        
+        cursor.execute("""
+            SELECT * FROM component_health_analysis 
+            WHERE component_id = %s
+            ORDER BY created_at DESC
+            LIMIT 50
+        """, (component['id'],))
+        
+        analyses = []
+        for row in cursor.fetchall():
+            findings = row.get('findings')
+            if isinstance(findings, str):
+                try:
+                    findings = json.loads(findings)
+                except:
+                    findings = None
+            
+            analyses.append({
+                "id": row['id'],
+                "analysis_type": row['analysis_type'],
+                "health_score": row['health_score'],
+                "findings": findings,
+                "is_resolved": row['is_resolved'],
+                "created_at": row['created_at'].isoformat() if row['created_at'] else None,
+                "resolved_at": row['resolved_at'].isoformat() if row['resolved_at'] else None
+            })
+        
+        cursor.execute("""
+            SELECT * FROM component_events 
+            WHERE device_id = %s AND component_id = %s
+            ORDER BY timestamp DESC
+            LIMIT 20
+        """, (device_id, component_id))
+        
+        events = []
+        for row in cursor.fetchall():
+            details = row.get('details')
+            if isinstance(details, str):
+                try:
+                    details = json.loads(details)
+                except:
+                    details = None
+            
+            events.append({
+                "id": row['id'],
+                "event_type": row['event_type'],
+                "severity": row['severity'],
+                "details": details,
+                "timestamp": row['timestamp'].isoformat() if row['timestamp'] else None
+            })
+        
+        metadata = component.get('metadata')
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except:
+                metadata = None
+        
+        health_history = component.get('health_history')
+        if isinstance(health_history, str):
+            try:
+                health_history = json.loads(health_history)
+            except:
+                health_history = []
+        
+        return {
+            "component": {
+                "id": component['id'],
+                "component_id": component['component_id'],
+                "component_type": component['component_type'],
+                "field_name": component['field_name'],
+                "hardware_model": component['hardware_model'],
+                "connection_type": component['connection_type'],
+                "health_status": component['health_status'],
+                "health_score": component['health_score'],
+                "health_history": health_history,
+                "metadata": metadata,
+                "first_seen": component['first_seen'].isoformat() if component['first_seen'] else None,
+                "last_seen": component['last_seen'].isoformat() if component['last_seen'] else None
+            },
+            "health_analyses": analyses,
+            "recent_events": events
+        }
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/ai/components/{device_id}/scan")
+def trigger_hardware_scan(
+    device_id: str,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Trigger a hardware scan for a device.
+    Reads events from Redis cache and runs hardware detection.
+    """
+    import redis
+    
+    # Read from Redis cache (ws:latest_events)
+    redis_host = os.getenv("REDIS_HOST", "redis")
+    redis_port = int(os.getenv("REDIS_PORT", 6379))
+    r = redis.Redis(host=redis_host, port=redis_port, decode_responses=True)
+    
+    # Get recent events from Redis list
+    events_raw = r.lrange("ws:latest_events", 0, 99)
+    
+    # Filter events for this device
+    device_events = []
+    for raw in events_raw:
+        try:
+            import json
+            event = json.loads(raw)
+            if event.get("device_id") == device_id:
+                device_events.append(event)
+        except:
+            continue
+    
+    if not device_events:
+        raise HTTPException(status_code=404, detail="No events found for device. Make sure the device is sending data.")
+    
+    # Use most recent event for hardware detection
+    recent_event = device_events[0]
+    payload = {k: v for k, v in recent_event.items() 
+               if k not in ('device_id', 'timestamp', 'time')}
+    
+    # Run hardware detection
+    from services.ai_analytics.hardware_detector import HardwareDetector
+    detector = HardwareDetector()
+    profile = detector.detect_from_payload(device_id, payload)
+    
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        cursor.execute("""
+            SELECT * FROM device_components WHERE device_id = %s
+        """, (device_id,))
+        existing = {row['field_name']: row for row in cursor.fetchall()}
+        
+        return {
+            "device_id": device_id,
+            "scanned": True,
+            "events_analyzed": len(device_events),
+            "existing_components": len(existing),
+            "detected_profile": {
+                "device_type": profile.device_type,
+                "hardware_model": profile.hardware_model,
+                "components": [
+                    {
+                        "component_type": c.component_type,
+                        "field_name": c.field_name,
+                        "confidence": c.detection_confidence
+                    }
+                    for c in profile.components
+                ]
+            },
+            "message": f"Hardware scan completed. Detected {len(profile.components)} components."
+        }
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/ai/components/{device_id}/events")
+def get_component_events(
+    device_id: str,
+    event_type: Optional[str] = None,
+    severity: Optional[str] = None,
+    limit: int = 50,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Get component events for a device.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+            SELECT ce.*, dc.component_type, dc.field_name
+            FROM component_events ce
+            JOIN device_components dc ON dc.device_id = ce.device_id 
+                AND dc.component_id = ce.component_id
+            WHERE ce.device_id = %s
+        """
+        params = [device_id]
+        
+        if event_type:
+            query += " AND ce.event_type = %s"
+            params.append(event_type)
+        
+        if severity:
+            query += " AND ce.severity = %s"
+            params.append(severity)
+        
+        query += " ORDER BY ce.timestamp DESC LIMIT %s"
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        
+        events = []
+        for row in cursor.fetchall():
+            details = row.get('details')
+            if isinstance(details, str):
+                try:
+                    details = json.loads(details)
+                except:
+                    details = None
+            
+            events.append({
+                "id": row['id'],
+                "component_id": row['component_id'],
+                "component_type": row['component_type'],
+                "event_type": row['event_type'],
+                "severity": row['severity'],
+                "details": details,
+                "timestamp": row['timestamp'].isoformat() if row['timestamp'] else None
+            })
+        
+        return {"device_id": device_id, "events": events, "count": len(events)}
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/ai/components/{device_id}/analyze")
+def run_component_health_analysis(
+    device_id: str,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Trigger health analysis for all components of a device.
+    """
+    analyzer = ComponentHealthAnalyzer()
+    
+    try:
+        reports = analyzer.analyze_device(device_id)
+        
+        results = []
+        for component_id, report in reports.items():
+            results.append({
+                "component_id": component_id,
+                "component_type": report.component_type,
+                "health_score": report.health_score,
+                "health_status": report.health_status,
+                "issues_count": len(report.issues),
+                "issues": [{
+                    "type": i.issue_type,
+                    "severity": i.severity,
+                    "title": i.title
+                } for i in report.issues]
+            })
+        
+        return {
+            "device_id": device_id,
+            "analyzed": True,
+            "components_analyzed": len(reports),
+            "results": results
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.get("/ai/hardware-suggestions")
+def get_hardware_suggestions(
+    device_type: Optional[str] = None,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Get hardware model suggestions based on device type.
+    """
+    suggestions = {
+        "weather_station": {
+            "description": "Environmental monitoring station",
+            "recommended_sensors": [
+                {"type": "temperature", "model": "BME280", "accuracy": "±1°C", "range": "-40 to 85°C"},
+                {"type": "humidity", "model": "BME280", "accuracy": "±3%RH", "range": "0-100%"},
+                {"type": "pressure", "model": "BME280", "accuracy": "±1hPa", "range": "300-1100hPa"},
+                {"type": "light", "model": "BH1750", "accuracy": "±5lux", "range": "0-65535 lux"}
+            ],
+            "typical_interfaces": ["I2C"],
+            "estimated_cost": "$15-30"
+        },
+        "air_quality": {
+            "description": "Indoor air quality monitor",
+            "recommended_sensors": [
+                {"type": "pm25", "model": "PMS5003", "accuracy": "±10%", "range": "0-500µg/m³"},
+                {"type": "co2", "model": "SCD40", "accuracy": "±40ppm", "range": "400-2000ppm"},
+                {"type": "temperature", "model": "SCD40", "accuracy": "±0.8°C", "range": "-10 to 50°C"},
+                {"type": "humidity", "model": "SCD40", "accuracy": "±1.5%RH", "range": "0-100%"}
+            ],
+            "typical_interfaces": ["UART/I2C"],
+            "estimated_cost": "$25-50"
+        },
+        "soil_monitor": {
+            "description": "Agricultural/plant soil monitoring",
+            "recommended_sensors": [
+                {"type": "soil_moisture", "model": "Capacitive v1.2", "accuracy": "±2%", "range": "0-100%"},
+                {"type": "temperature", "model": "DS18B20", "accuracy": "±0.5°C", "range": "-55 to 125°C"},
+                {"type": "ph", "model": "pH probe + ADS1115", "accuracy": "±0.1", "range": "0-14pH"},
+                {"type": "light", "model": "BH1750", "accuracy": "±5lux", "range": "0-65535 lux"}
+            ],
+            "typical_interfaces": ["OneWire/Analog/I2C"],
+            "estimated_cost": "$10-25"
+        },
+        "smart_meter": {
+            "description": "Energy/power monitoring",
+            "recommended_sensors": [
+                {"type": "voltage", "model": "AC voltage sensor", "accuracy": "±1V", "range": "0-250V"},
+                {"type": "current", "model": "CT clamp SCT-013", "accuracy": "±1%", "range": "0-100A"},
+                {"type": "power", "model": "Calculated", "accuracy": "±2%", "range": "0-25000W"},
+                {"type": "energy", "model": "Accumulated", "accuracy": "±0.5%", "range": "0-99999kWh"}
+            ],
+            "typical_interfaces": ["Analog/GPIO"],
+            "estimated_cost": "$20-40"
+        },
+        "water_quality": {
+            "description": "Water tank/monitoring",
+            "recommended_sensors": [
+                {"type": "water_level", "model": "HC-SR04", "accuracy": "±3mm", "range": "2-400cm"},
+                {"type": "temperature", "model": "DS18B20", "accuracy": "±0.5°C", "range": "-55 to 125°C"},
+                {"type": "ph", "model": "pH probe + BNC", "accuracy": "±0.1", "range": "0-14pH"},
+                {"type": "flow_rate", "model": "YF-S201", "accuracy": "±5%", "range": "1-30L/min"}
+            ],
+            "typical_interfaces": ["GPIO/I2C"],
+            "estimated_cost": "$15-35"
+        }
+    }
+    
+    if device_type and device_type in suggestions:
+        return {"device_type": device_type, **suggestions[device_type]}
+    
+    return {"suggestions": suggestions, "count": len(suggestions)}
+
+
+@router.get("/ai/components/{device_id}/widget-summary")
+def get_component_widget_summary(
+    device_id: str,
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Get compact summary for widget display.
+    Returns: overall_health_score, component_count, issues_count, status, top_components
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Get all components for this device
+        cursor.execute("""
+            SELECT
+                component_id,
+                component_type,
+                field_name,
+                hardware_model,
+                health_score,
+                health_status,
+                last_seen
+            FROM device_components
+            WHERE device_id = %s
+            ORDER BY CASE WHEN health_score IS NULL THEN 1 ELSE 0 END, health_score ASC
+            LIMIT 10
+        """, (device_id,))
+        components = cursor.fetchall()
+
+        if not components:
+            return {
+                "device_id": device_id,
+                "status": "unknown",
+                "overall_health_score": None,
+                "component_count": 0,
+                "issues_count": 0,
+                "top_components": [],
+                "message": "No components detected yet"
+            }
+
+        # Calculate overall health
+        valid_scores = [c['health_score'] for c in components if c['health_score'] is not None]
+        overall_score = sum(valid_scores) / len(valid_scores) if valid_scores else None
+
+        # Count issues
+        issues_count = sum(
+            1 for c in components
+            if c['health_status'] in ('critical', 'warning', 'degraded') or
+               (c['health_score'] is not None and c['health_score'] < 0.7)
+        )
+
+        # Determine status
+        if overall_score is None:
+            status = "unknown"
+        elif overall_score >= 0.8:
+            status = "healthy"
+        elif overall_score >= 0.5:
+            status = "warning"
+        else:
+            status = "critical"
+
+        # Get top components (most important)
+        top_components = []
+        for c in components[:5]:
+            top_components.append({
+                "component_type": c['component_type'],
+                "field_name": c['field_name'],
+                "health_score": c['health_score'],
+                "health_status": c['health_status'],
+                "last_seen": c['last_seen'].isoformat() if c['last_seen'] else None
+            })
+
+        # Get recent critical issues
+        cursor.execute("""
+            SELECT event_type, severity, details, created_at
+            FROM component_events
+            WHERE device_id = %s
+              AND severity IN ('critical', 'warning')
+              AND created_at > NOW() - INTERVAL 24 HOUR
+            ORDER BY created_at DESC
+            LIMIT 3
+        """, (device_id,))
+        recent_events = cursor.fetchall()
+
+        return {
+            "device_id": device_id,
+            "status": status,
+            "overall_health_score": round(overall_score, 3) if overall_score else None,
+            "component_count": len(components),
+            "issues_count": issues_count,
+            "top_components": top_components,
+            "recent_alerts": [
+                {
+                    "event_type": e['event_type'],
+                    "severity": e['severity'],
+                    "created_at": e['created_at'].isoformat() if e['created_at'] else None
+                }
+                for e in recent_events
+            ]
+        }
+
+    finally:
+        cursor.close()
+        conn.close()

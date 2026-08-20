@@ -83,6 +83,7 @@ def _track_event(event: dict) -> None:
 
 def _consume_loop() -> None:
     """Vòng lặp consume Kafka chạy nền – không bao giờ return."""
+    print("[KAFKA-DISCOVERY] Starting consume loop...", flush=True)
     backoff_seconds = 5
     consumer_conf = {
         "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
@@ -110,9 +111,14 @@ def _consume_loop() -> None:
                     continue
                 try:
                     event = json.loads(value.decode("utf-8"))
+                    _track_event(event)
+                    # Periodic status log (every 100 messages)
+                    with _lock:
+                        count = sum(info["count"] for info in _device_info.values())
+                    if count % 100 == 0 and count > 0:
+                        print(f"[KAFKA-DISCOVERY] Processed {count} events, {_len()} devices", flush=True)
                 except Exception:
                     continue
-                _track_event(event)
         except Exception as exc:
             print(f"[KAFKA-DISCOVERY] Error: {exc}. Retrying in {backoff_seconds}s...")
         finally:

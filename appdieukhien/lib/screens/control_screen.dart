@@ -38,10 +38,32 @@ class _ControlScreenState extends State<ControlScreen> {
   LayoutOverrideService? _layoutService;
   LayoutOverride? _savedOverride;
 
+  void _applyOrientationFromConfig() {
+    final cfg = context.read<ConfigProvider>().config;
+    if (cfg == null) return;
+
+    final isLandscape = cfg.orientation == 'landscape';
+    // Force the screen to the configured orientation
+    SystemChrome.setPreferredOrientations([
+      isLandscape
+          ? DeviceOrientation.landscapeLeft
+          : DeviceOrientation.portraitUp,
+    ]);
+  }
+
   @override
   void initState() {
     super.initState();
     _loadSavedOverrides();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Apply orientation after first frame so config is guaranteed to be available
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _applyOrientationFromConfig();
+    });
   }
 
   Future<void> _loadSavedOverrides() async {
@@ -169,6 +191,17 @@ class _ControlScreenState extends State<ControlScreen> {
   }
 
   @override
+  void dispose() {
+    // Restore all allowed orientations when leaving screen
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cfg = context.watch<ConfigProvider>().config;
     final activeBaseUrl = context.watch<ConfigProvider>().activeBaseUrl;
@@ -180,8 +213,9 @@ class _ControlScreenState extends State<ControlScreen> {
     }
 
     final isLandscape = cfg.orientation == 'landscape';
-    final canvasWidth = cfg.customWidth.toDouble();
-    final canvasHeight = cfg.customHeight.toDouble();
+    // Swap dimensions so the canvas "thinks" it's portrait but in landscape space
+    final canvasWidth  = isLandscape ? cfg.customHeight.toDouble() : cfg.customWidth.toDouble();
+    final canvasHeight = isLandscape ? cfg.customWidth.toDouble()  : cfg.customHeight.toDouble();
 
     // Calculate grid dimensions (in cells)
     final gridWidth = (canvasWidth / _defaultCellSize).ceil();
@@ -236,11 +270,11 @@ class _ControlScreenState extends State<ControlScreen> {
             IconButton(
               tooltip: 'Xoay man hinh',
               onPressed: () {
-                SystemChrome.setPreferredOrientations([
-                  isLandscape
-                      ? DeviceOrientation.portraitUp
-                      : DeviceOrientation.landscapeLeft,
-                ]);
+                // Toggle between configured orientation and its opposite
+                final targetOrientation = isLandscape
+                    ? DeviceOrientation.portraitUp
+                    : (DeviceOrientation.landscapeLeft);
+                SystemChrome.setPreferredOrientations([targetOrientation]);
               },
               icon: Icon(isLandscape ? Icons.stay_current_portrait : Icons.stay_current_landscape),
             ),
@@ -251,80 +285,89 @@ class _ControlScreenState extends State<ControlScreen> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final scaleW = constraints.maxWidth / canvasWidth;
-            final scaleH = constraints.maxHeight / canvasHeight;
+            final maxW = constraints.maxWidth;
+            final maxH = constraints.maxHeight;
+            final scaleW = maxW / canvasWidth;
+            final scaleH = maxH / canvasHeight;
             final scale = math.min(scaleW, scaleH);
             final displayW = canvasWidth * scale;
             final displayH = canvasHeight * scale;
             final cellSize = _defaultCellSize * scale;
 
             return Center(
-              child: Container(
-                width: displayW,
-                height: displayH,
-                decoration: BoxDecoration(
-                  color: Color(0xFF06121f),
-                  border: Border.all(
-                    color: _isEditMode
-                        ? Colors.cyanAccent
-                        : Colors.cyanAccent.withOpacity(0.4),
-                    width: _isEditMode ? 2 : 1,
+              child: FittedBox(
+                fit: BoxFit.contain,
+                child: Container(
+                  width: canvasWidth * scale,
+                  height: canvasHeight * scale,
+                  decoration: BoxDecoration(
+                    color: Color(0xFF06121f),
+                    border: Border.all(
+                      color: _isEditMode
+                          ? Colors.cyanAccent
+                          : Colors.cyanAccent.withOpacity(0.4),
+                      width: _isEditMode ? 2 : 1,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: cfg.controls.map((w) {
-                    // Check for pending or saved override
-                    final override = _pendingOverrides[w.id];
-                    final layout = override ??
-                        (_savedOverride?.get(w.id) != null
-                            ? _savedOverride!.get(w.id)
-                            : null);
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: cfg.controls.map((w) {
+                      // Check for pending or saved override
+                      final override = _pendingOverrides[w.id];
+                      final layout = override ??
+                          (_savedOverride?.get(w.id) != null
+                              ? _savedOverride!.get(w.id)
+                              : null);
 
-                    final effectiveLayout = layout ??
-                        WidgetLayoutOverride(
-                          x: w.x,
-                          y: w.y,
-                          width: w.width,
-                          height: w.height,
+                      final effectiveLayout = layout ??
+                          WidgetLayoutOverride(
+                            x: w.x,
+                            y: w.y,
+                            width: w.width,
+                            height: w.height,
+                          );
+
+                      // For landscape, use widget's natural portrait layout scaled via FittedBox
+                      final rotatedX = effectiveLayout.x;
+                      final rotatedY = effectiveLayout.y;
+
+                      if (_isEditMode) {
+                        return WidgetWrapper(
+                          key: ValueKey('edit-${w.id}'),
+                          widgetId: w.id,
+                          child: WidgetFactory.build(
+                            config: w,
+                            cellSize: cellSize,
+                            activeBaseUrl: null,
+                            client: null,
+                          ),
+                          cellSize: cellSize,
+                          gridWidth: gridWidth,
+                          gridHeight: gridHeight,
+                          initialLayout: effectiveLayout,
+                          isEditMode: _isEditMode,
+                          onLayoutChanged: _onLayoutChanged,
                         );
+                      }
 
-                    if (_isEditMode) {
-                      return WidgetWrapper(
-                        key: ValueKey('edit-${w.id}'),
-                        widgetId: w.id,
-                        child: WidgetFactory.build(
-                          config: w,
-                          cellSize: cellSize,
-                          activeBaseUrl: null, // Disable ESP commands in edit mode
-                          client: null,
+                      return Positioned(
+                        key: ValueKey('normal-${w.id}'),
+                        left: rotatedX * cellSize,
+                        top: rotatedY * cellSize,
+                        child: SizedBox(
+                          width: effectiveLayout.width * cellSize,
+                          height: effectiveLayout.height * cellSize,
+                          child: WidgetFactory.build(
+                            config: w,
+                            cellSize: cellSize,
+                            activeBaseUrl: activeBaseUrl,
+                            client: activeBaseUrl != null ? _espClient : null,
+                          ),
                         ),
-                        cellSize: cellSize,
-                        gridWidth: gridWidth,
-                        gridHeight: gridHeight,
-                        initialLayout: effectiveLayout,
-                        isEditMode: _isEditMode,
-                        onLayoutChanged: _onLayoutChanged,
                       );
-                    }
-
-                    return Positioned(
-                      key: ValueKey('normal-${w.id}'),
-                      left: effectiveLayout.x * cellSize,
-                      top: effectiveLayout.y * cellSize,
-                      child: SizedBox(
-                        width: effectiveLayout.width * cellSize,
-                        height: effectiveLayout.height * cellSize,
-                        child: WidgetFactory.build(
-                          config: w,
-                          cellSize: cellSize,
-                          activeBaseUrl: activeBaseUrl,
-                          client: activeBaseUrl != null ? _espClient : null,
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                    }).toList(),
+                  ),
                 ),
               ),
             );
