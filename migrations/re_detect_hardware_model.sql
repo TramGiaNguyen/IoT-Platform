@@ -116,7 +116,7 @@ WHERE hardware_model IS NOT NULL
 INSERT INTO component_events (device_id, component_id, event_type, severity, details)
 SELECT 
     dc.device_id,
-    dc.component_id,
+    dc.id,
     'detected',
     'info',
     JSON_OBJECT('hardware_model', dc.hardware_model, 'reason', 'inference_migration')
