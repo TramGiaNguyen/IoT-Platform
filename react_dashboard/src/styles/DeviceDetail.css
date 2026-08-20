@@ -1645,3 +1645,364 @@
 }
 
 /* Inline JSX style variables — covered by --iot-* override above */
+
+/* =========================================================
+   AI Analytics Health Tab Styles
+   ========================================================= */
+
+.health-tab {
+  padding: 16px 0;
+}
+
+.health-tab h3 {
+  color: var(--iot-primary);
+  margin-bottom: 16px;
+  font-size: 18px;
+}
+
+.health-tab h4 {
+  color: var(--iot-on-surface);
+  margin: 20px 0 12px;
+  font-size: 15px;
+}
+
+.loading-spinner {
+  padding: 40px;
+  text-align: center;
+  color: var(--iot-secondary);
+}
+
+.error-banner {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  padding: 16px;
+  color: var(--iot-danger);
+}
+
+.error-banner .error-detail {
+  font-size: 12px;
+  margin-top: 8px;
+  opacity: 0.7;
+}
+
+/* AI Profile Card */
+.ai-profile-card {
+  background: var(--iot-overlay);
+  border: 1px solid var(--iot-high);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.ai-profile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.ai-profile-header h4 {
+  margin: 0;
+  color: var(--iot-on-surface);
+}
+
+.ai-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(0, 229, 255, 0.15);
+  color: var(--iot-primary);
+}
+
+.ai-badge.unknown {
+  background: rgba(201, 198, 215, 0.15);
+  color: var(--iot-secondary);
+}
+
+.ai-profile-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.ai-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-stat .stat-label {
+  font-size: 12px;
+  color: var(--iot-secondary);
+}
+
+.ai-stat .stat-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--iot-on-surface);
+}
+
+/* Components List */
+.components-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.component-card {
+  background: var(--iot-panel);
+  border: 1px solid var(--iot-high);
+  border-radius: 10px;
+  padding: 12px;
+  transition: border-color 0.2s;
+}
+
+.component-card:hover {
+  border-color: var(--iot-primary);
+}
+
+.component-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.component-type {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--iot-on-surface);
+  text-transform: capitalize;
+}
+
+.confidence-badge {
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.confidence-badge.high {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--iot-success);
+}
+
+.confidence-badge.medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--iot-warn);
+}
+
+.confidence-badge.low {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--iot-danger);
+}
+
+.sensor-type-badge {
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  text-transform: capitalize;
+}
+
+.component-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.detail-label {
+  color: var(--iot-secondary);
+}
+
+.detail-value {
+  color: var(--iot-on-surface);
+  font-family: var(--font-mono);
+}
+
+.no-components {
+  color: var(--iot-secondary);
+  text-align: center;
+  padding: 24px;
+}
+
+/* Health Section */
+.ai-health-section {
+  margin-top: 24px;
+  background: var(--iot-overlay);
+  border: 1px solid var(--iot-high);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.ai-health-section h4 {
+  margin-top: 0;
+  color: var(--iot-on-surface);
+}
+
+.health-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.health-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  background: var(--iot-panel);
+  border-radius: 10px;
+}
+
+.score-label {
+  font-size: 12px;
+  color: var(--iot-secondary);
+  margin-bottom: 8px;
+}
+
+.score-value {
+  font-size: 32px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.score-value.good {
+  color: var(--iot-success);
+}
+
+.score-value.warning {
+  color: var(--iot-warn);
+}
+
+.score-value.critical {
+  color: var(--iot-danger);
+}
+
+.health-issues h5 {
+  font-size: 13px;
+  color: var(--iot-secondary);
+  margin-bottom: 8px;
+}
+
+.health-issues ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issue-item {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.issue-item.warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 3px solid var(--iot-warn);
+}
+
+.issue-item.critical {
+  background: rgba(239, 68, 68, 0.1);
+  border-left: 3px solid var(--iot-danger);
+}
+
+.issue-item.info {
+  background: rgba(0, 229, 255, 0.1);
+  border-left: 3px solid var(--iot-primary);
+}
+
+.issue-type {
+  font-weight: 600;
+  color: var(--iot-on-surface);
+}
+
+.issue-desc {
+  color: var(--iot-secondary);
+}
+
+/* Action Buttons */
+.ai-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+}
+
+.btn-secondary {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--iot-high);
+  background: var(--iot-overlay);
+  color: var(--iot-on-surface);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  border-color: var(--iot-primary);
+  color: var(--iot-primary);
+}
+
+/* Hardware Fields Grid */
+.hardware-fields {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--iot-high);
+}
+
+.hardware-fields h5 {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  color: var(--iot-secondary);
+  font-weight: 500;
+}
+
+.fields-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.field-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--iot-panel);
+  border: 1px solid var(--iot-high);
+  border-radius: 8px;
+  transition: border-color 0.2s;
+}
+
+.field-item:hover {
+  border-color: var(--iot-primary);
+}
+
+.field-item .field-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--iot-on-surface);
+}
+
+.field-item .field-type {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: rgba(0, 229, 255, 0.1);
+  color: var(--iot-primary);
+  border-radius: 4px;
+}
