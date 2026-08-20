@@ -1,5 +1,4 @@
 -- Re-detect hardware_model for components with NULL hardware_model
--- Based on component_type and field_name patterns
 
 -- ============================================
 -- 1. Temperature + Humidity → DHT family
@@ -8,12 +7,12 @@ UPDATE device_components dc
 SET dc.hardware_model = 'DHT11'
 WHERE dc.hardware_model IS NULL
   AND dc.component_type IN ('temperature', 'humidity')
-  AND EXISTS (
-      SELECT 1 FROM device_components dc2
+  AND (
+      SELECT COUNT(*) FROM device_components dc2
       WHERE dc2.device_id = dc.device_id
       AND dc2.component_type IN ('temperature', 'humidity')
       AND dc2.id != dc.id
-  );
+  ) > 0;
 
 -- ============================================
 -- 2. Single temperature sensor → DS18B20
@@ -22,11 +21,11 @@ UPDATE device_components dc
 SET dc.hardware_model = 'DS18B20'
 WHERE dc.hardware_model IS NULL
   AND dc.component_type = 'temperature'
-  AND NOT EXISTS (
-      SELECT 1 FROM device_components dc2
+  AND (
+      SELECT COUNT(*) FROM device_components dc2
       WHERE dc2.device_id = dc.device_id
       AND dc2.component_type = 'humidity'
-  );
+  ) = 0;
 
 -- ============================================
 -- 3. Soil moisture → Capacitive_Soil
@@ -51,11 +50,11 @@ UPDATE device_components dc
 SET dc.hardware_model = 'BMP280'
 WHERE dc.hardware_model IS NULL
   AND dc.component_type = 'pressure'
-  AND NOT EXISTS (
-      SELECT 1 FROM device_components dc2
+  AND (
+      SELECT COUNT(*) FROM device_components dc2
       WHERE dc2.device_id = dc.device_id
       AND dc2.component_type IN ('temperature', 'humidity')
-  );
+  ) = 0;
 
 -- ============================================
 -- 6. Motion sensors → PIR
