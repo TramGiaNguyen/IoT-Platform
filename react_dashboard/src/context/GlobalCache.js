@@ -135,14 +135,8 @@ export function GlobalCacheProvider({ children, token }) {
     if (!token || initializing.current) return;
     if (!isCacheFresh || !initialized.current) {
       const fromStorage = loadFromStorage(token);
-      console.debug('[DEBUG-B4BD18] GlobalCache initialize: fromStorage', {
-        hasData: !!fromStorage,
-        'fromStorage.devices length': fromStorage?.devices?.length,
-        isCacheFresh,
-        initialized: initialized.current,
-      });
+      console.debug('[GlobalCache] Initializing from localStorage cache');
       if (fromStorage && !initialized.current) {
-        console.log('[DBG-ca9780] GlobalCache.initialize fromStorage', { devicesLen: fromStorage.devices?.length, devicesSample: fromStorage.devices?.slice(0,2).map(d=>({id:d.ma_thiet_bi||d.device_id,nhom:d.nhom_id,owner:d.nguoi_so_huu_id})), storedContext: fromStorage.workspaceContext });
         setCache(fromStorage);
         setCacheTimestamp(Date.now());
         fetchFreshData();
@@ -164,12 +158,6 @@ export function GlobalCacheProvider({ children, token }) {
   const updateCache = useCallback((patch) => {
     setCache(prev => {
       const next = { ...prev, ...patch };
-      console.debug('[DEBUG-B4BD18] updateCache: patching cache', {
-        patchKeys: Object.keys(patch),
-        'patch.devices length': patch.devices?.length,
-        'patch.devices[0]': patch.devices?.[0],
-        'next.devices length': next.devices?.length,
-      });
       saveToStorage(token, next);
       return next;
     });

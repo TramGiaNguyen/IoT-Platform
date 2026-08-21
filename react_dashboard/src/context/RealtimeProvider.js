@@ -86,9 +86,14 @@ export function RealtimeProvider({ children }) {
         for (const [k, v] of Object.entries(ev.data)) {
           if (v === null || v === undefined) continue;
           if (typeof v === 'object' && 'value' in v) {
-            next[k] = { value: v.value, ts: v.ts || v.timestamp || ev.timestamp || Date.now() };
+            // Normalize to Unix seconds: if > 1e12 it's ms, divide by 1000
+            const rawTs = v.ts || v.timestamp || ev.timestamp || Date.now();
+            const ts = rawTs > 1e12 ? Math.floor(rawTs / 1000) : rawTs;
+            next[k] = { value: v.value, ts };
           } else {
-            next[k] = { value: v, ts: ev.timestamp || Date.now() };
+            const rawTs = ev.timestamp || Date.now();
+            const ts = rawTs > 1e12 ? Math.floor(rawTs / 1000) : rawTs;
+            next[k] = { value: v, ts };
           }
         }
       }
@@ -98,13 +103,18 @@ export function RealtimeProvider({ children }) {
         'device_id', 'timestamp', 'ts', 'category', 'entity', 'action',
         'id', 'actor_id', 'payload', 'type', 'data',
       ]);
+      const processedKeys = [];
       for (const [k, v] of Object.entries(ev)) {
         if (skip.has(k)) continue;
         if (v === null || v === undefined) continue;
         if (typeof v === 'object') continue;
-        next[k] = { value: v, ts: ev.timestamp || Date.now() };
+        const rawTs = ev.timestamp || Date.now();
+        const ts = rawTs > 1e12 ? Math.floor(rawTs / 1000) : rawTs;
+        // Strip $ prefix so field names like $humidity match event keys like humidity
+        const storageKey = k.replace(/^\$/, '');
+        next[storageKey] = { value: v, ts };
+        processedKeys.push(storageKey);
       }
-
       return { ...prev, [deviceId]: next };
     });
   }, []);
@@ -141,6 +151,9 @@ export function RealtimeProvider({ children }) {
           if (!mountedRef.current) return;
           try {
             const msg = JSON.parse(e.data);
+            // #region agent debug
+            fetch('http://127.0.0.1:7721/ingest/65710bb3-39d6-4a6e-af4f-54599ce6de3b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5618e8'},body:JSON.stringify({sessionId:'5618e8',location:'RealtimeProvider.js:ws.onmessage',message:'WS message received',data:{deviceId:msg.device_id,msgKeys:Object.keys(msg)},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
             handleEvent(msg);
           } catch (err) {
             console.warn('[Realtime] Cannot parse message:', err);
@@ -148,12 +161,17 @@ export function RealtimeProvider({ children }) {
         };
 
         ws.onerror = (err) => {
+          // Only log errors when component is still mounted
+          if (mountedRef.current) {
+            console.warn('[Realtime] WS error:', err && err.message ? err.message : 'unknown');
+          }
           connectingRef.current = false;
-          console.warn('[Realtime] WS error:', err && err.message ? err.message : 'unknown');
         };
 
         ws.onclose = (ev) => {
           connectingRef.current = false;
+          // Clear wsRef BEFORE unmount check so reconnect doesn't see stale ws
+          wsRef.current = null;
           if (!mountedRef.current) return;
           setConnected(false);
           console.debug(`[Realtime] WS closed (code=${ev?.code}, reason=${ev?.reason || ''}). Reconnecting...`);
@@ -164,7 +182,9 @@ export function RealtimeProvider({ children }) {
         };
       } catch (err) {
         connectingRef.current = false;
-        console.error('[Realtime] WS connect error:', err);
+        if (mountedRef.current) {
+          console.error('[Realtime] WS connect error:', err);
+        }
         reconnectRef.current = setTimeout(connect, 3000);
       }
     };
@@ -244,9 +264,13 @@ export function RealtimeProvider({ children }) {
             if (!mountedRef.current) return;
             try { handleEvent(JSON.parse(e.data)); } catch (err) {}
           };
-          ws.onerror = () => { connectingRef.current = false; };
+          ws.onerror = () => {
+            // Only log when mounted
+            connectingRef.current = false;
+          };
           ws.onclose = () => {
             connectingRef.current = false;
+            wsRef.current = null;
             if (!mountedRef.current) return;
             setConnected(false);
             const delay = Math.min(reconnectDelayRef.current, 5000);

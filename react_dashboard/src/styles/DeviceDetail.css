@@ -1076,6 +1076,58 @@
   white-space: nowrap;
 }
 
+.time-cell {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--iot-outline);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.value-unit {
+  font-size: 11px;
+  color: var(--iot-outline);
+  margin-left: 2px;
+}
+
+.unit-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  border-radius: 8px;
+  margin-top: 12px;
+  cursor: help;
+}
+
+.unit-preview-symbol {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--iot-primary);
+  min-width: 50px;
+  text-align: center;
+}
+
+.unit-preview-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.unit-preview-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--iot-text);
+}
+
+.unit-preview-desc {
+  font-size: 11px;
+  color: var(--iot-outline);
+}
+
 /* ---- Modal ---- */
 .modal-backdrop {
   position: fixed;
@@ -2005,4 +2057,321 @@
   background: rgba(0, 229, 255, 0.1);
   color: var(--iot-primary);
   border-radius: 4px;
+}
+
+/* =========================================================
+   Component Health Panel Styles
+   ========================================================= */
+
+/* Component Manager Header */
+.component-manager {
+  padding: 16px;
+}
+
+.component-manager-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.component-manager-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--iot-on-surface);
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.header-actions .btn-secondary.active {
+  background: rgba(0, 229, 255, 0.15);
+  border-color: var(--iot-primary);
+  color: var(--iot-primary);
+}
+
+/* Health Score Badge */
+.health-score-badge {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  min-width: 40px;
+  text-align: center;
+}
+
+.health-dot.unknown {
+  background: #94a3b8;
+}
+
+/* Component Card with Health */
+.component-card.with-health {
+  border-color: var(--iot-primary);
+}
+
+/* Health Panel */
+.health-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--iot-high);
+}
+
+/* Health Bar */
+.health-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.health-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--iot-high);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.health-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.health-bar-label {
+  font-size: 11px;
+  color: var(--iot-secondary);
+  min-width: 60px;
+}
+
+/* Health Metrics */
+.health-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.health-metric {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.health-metric .metric-label {
+  color: var(--iot-secondary);
+}
+
+.health-metric .metric-value {
+  color: var(--iot-on-surface);
+  font-family: var(--font-mono);
+}
+
+/* Health Badges */
+.health-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.health-badge {
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.health-badge.alert {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+
+.health-badge.issue {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.health-badge.anomaly {
+  background: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
+}
+
+.health-badge.trend {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.health-badge.trend.increasing {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.health-badge.trend.decreasing {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+/* Mini Trend Chart */
+.mini-trend {
+  margin-top: 8px;
+}
+
+.mini-trend-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mini-trend-empty {
+  color: var(--iot-secondary);
+  font-size: 11px;
+  text-align: center;
+  padding: 8px;
+}
+
+.mini-trend-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--iot-secondary);
+  font-family: var(--font-mono);
+}
+
+.trend-svg {
+  display: block;
+  background: var(--iot-panel);
+  border-radius: 4px;
+}
+
+/* Components Grid */
+.components-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.components-grid .component-card {
+  background: var(--iot-panel);
+  border: 1px solid var(--iot-high);
+  border-radius: 10px;
+  padding: 12px;
+  transition: border-color 0.2s;
+}
+
+.components-grid .component-card:hover {
+  border-color: var(--iot-primary);
+}
+
+/* Component Header */
+.components-grid .component-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.components-grid .component-icon {
+  font-size: 18px;
+}
+
+.components-grid .component-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--iot-on-surface);
+}
+
+/* Component Body */
+.component-body {
+  font-size: 12px;
+}
+
+.component-info {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.info-label {
+  color: var(--iot-secondary);
+}
+
+.info-value {
+  color: var(--iot-on-surface);
+  font-family: var(--font-mono);
+}
+
+/* Component Fields */
+.component-fields {
+  margin-top: 8px;
+}
+
+.fields-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.field-tag {
+  padding: 2px 6px;
+  background: rgba(0, 229, 255, 0.1);
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--iot-primary);
+}
+
+/* Component Actions */
+.component-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--iot-high);
+}
+
+.btn-ghost {
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid var(--iot-high);
+  border-radius: 6px;
+  color: var(--iot-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.btn-ghost:hover {
+  border-color: var(--iot-primary);
+  color: var(--iot-primary);
+}
+
+.btn-ghost.compact {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.btn-danger-ghost {
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid var(--iot-danger);
+  border-radius: 6px;
+  color: var(--iot-danger);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.btn-danger-ghost:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.btn-danger-ghost.compact {
+  padding: 4px 8px;
+  font-size: 11px;
 }

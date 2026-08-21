@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchDeviceKeys, createDeviceKey, updateDeviceKey, deleteDeviceKey, detectDeviceKeys, fetchControlLines, saveControlLines, controlRelay, updateEdgeControlUrl, fetchDeviceFullConfig, fetchStandaloneConfig, saveStandaloneConfig, updateStandaloneConfig, fetchComponentWidgetSummary } from '../services';
 import axios from 'axios';
 import SmartClassroomDashboard from './SmartClassroomDashboard';
+import ComponentManager from './ComponentManager';
 import { API_BASE } from '../config/api';
 import { useGlobalCache } from '../context/GlobalCache';
 import { useRealtime, useCrudVersion } from '../context/RealtimeProvider';
@@ -1040,7 +1041,7 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
         setStandaloneConfig(res.data);
       }
     } catch (err) {
-      console.log('No standalone config found for this device');
+      console.debug('No standalone config found for this device');
     } finally {
       setStandaloneLoading(false);
     }
@@ -1686,129 +1687,11 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
 
         {/* Tab: Suc khoe */}
         {activeTab === 'health' && (
-          <div className="health-tab">
-            <h3>Phân tích linh kiện</h3>
-            {aiLoading ? (
-              <div className="loading-spinner">Đang tải dữ liệu AI...</div>
-            ) : aiError ? (
-              <div className="error-banner">
-                <p>Chưa có dữ liệu AI Analytics cho thiết bị này.</p>
-                <p className="error-detail">{aiError}</p>
-              </div>
-            ) : (
-              <>
-                {/* Hardware Profile Summary */}
-                {aiProfile && (
-                  <div className="ai-profile-card">
-                    <div className="ai-profile-header">
-                      <h4>Thông tin thiết bị</h4>
-                      <span className={`ai-badge ${aiProfile.device_type || 'unknown'}`}>
-                        {aiProfile.device_type || 'Chưa xác định'}
-                      </span>
-                    </div>
-                    <div className="ai-profile-stats">
-                      <div className="ai-stat">
-                        <span className="stat-label">Loại thiết bị:</span>
-                        <span className="stat-value">{aiProfile.device_type || 'N/A'}</span>
-                      </div>
-                      <div className="ai-stat">
-                        <span className="stat-label">Độ tin cậy:</span>
-                        <span className="stat-value">{Math.round((aiProfile.device_type_confidence || 0) * 100)}%</span>
-                      </div>
-                      <div className="ai-stat">
-                        <span className="stat-label">Model:</span>
-                        <span className="stat-value">{aiProfile.hardware_model || 'N/A'}</span>
-                      </div>
-                    </div>
-                    {aiComponents.length > 0 && (
-                      <div className="hardware-fields">
-                        <h5>Các trường dữ liệu:</h5>
-                        <div className="fields-grid">
-                          {aiComponents.map((comp, idx) => (
-                            <div key={idx} className="field-item">
-                              <span className="field-name">{comp.field_name}</span>
-                              <span className="field-type">{comp.component_type}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Component List - Only show if different hardware models */}
-                {aiComponents.length > 0 && aiComponents[0].hardware_model && (() => {
-                  const models = [...new Set(aiComponents.map(c => c.hardware_model))];
-                  return models.length > 1;
-                })() && (
-                  <>
-                    <h4>Các linh kiện khác nhau ({aiComponents.length})</h4>
-                    <div className="components-list">
-                      {aiComponents.map((comp, idx) => (
-                        <div key={idx} className="component-card">
-                          <div className="component-header">
-                            <span className="component-type">{comp.field_name}</span>
-                            <span className={`confidence-badge ${comp.detection_confidence > 0.7 ? 'high' : comp.detection_confidence > 0.4 ? 'medium' : 'low'}`}>
-                              {Math.round(comp.detection_confidence * 100)}%
-                            </span>
-                            {comp.component_type && (
-                              <span className="sensor-type-badge">{comp.component_type}</span>
-                            )}
-                          </div>
-                          <div className="component-details">
-                            <div className="detail-row">
-                              <span className="detail-label">Model:</span>
-                              <span className="detail-value">{comp.hardware_model}</span>
-                            </div>
-                            {comp.connection_type && (
-                              <div className="detail-row">
-                                <span className="detail-label">Kết nối:</span>
-                                <span className="detail-value">{comp.connection_type}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {/* Health Analysis */}
-                {aiHealth && (
-                  <div className="ai-health-section">
-                    <h4>Phân tích sức khỏe</h4>
-                    <div className="health-summary">
-                      <div className="health-score">
-                        <span className="score-label">Điểm sức khỏe</span>
-                        <span className={`score-value ${aiHealth.overall_score >= 0.7 ? 'good' : aiHealth.overall_score >= 0.4 ? 'warning' : 'critical'}`}>
-                          {Math.round((aiHealth.overall_score || 0) * 100)}%
-                        </span>
-                      </div>
-                      {aiHealth.issues && aiHealth.issues.length > 0 && (
-                        <div className="health-issues">
-                          <h5>Vấn đề phát hiện:</h5>
-                          <ul>
-                            {aiHealth.issues.map((issue, idx) => (
-                              <li key={idx} className={`issue-item ${issue.severity || 'warning'}`}>
-                                <span className="issue-type">{issue.type || 'Unknown'}:</span>
-                                <span className="issue-desc">{issue.description || issue.message}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                <div className="ai-actions">
-                  <button className="btn-secondary" onClick={() => loadAIComponents()}>
-                    🔄 Làm mới
-                  </button>
-                </div>
-              </>
-            )}
+          <div className="health-tab" style={{ gridColumn: 'span 12' }}>
+            <ComponentManager
+              deviceId={deviceId}
+              token={token}
+            />
           </div>
         )}
 

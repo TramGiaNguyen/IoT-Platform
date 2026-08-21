@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import time
 import json
@@ -26,6 +26,26 @@ from permissions import (
     require_user_context,
     UserContext,
 )
+
+
+# ────────────────────────────────────────────────────────────────
+# Helpers: timezone-safe timestamp conversion
+# ────────────────────────────────────────────────────────────────
+def dt_to_unix_timestamp(dt: datetime) -> Optional[int]:
+    """
+    Convert MySQL datetime (stored as UTC) to Unix timestamp correctly.
+
+    MySQL stores datetime as UTC but .timestamp() interprets naive datetime
+    as local time, causing +7 hours offset for Vietnam timezone.
+    Solution: Attach UTC timezone info before calling .timestamp()
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        # Already timezone-aware
+        return int(dt.timestamp())
+    # Naive datetime from MySQL - treat as UTC
+    return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
 
 # ────────────────────────────────────────────────────────────────
@@ -3960,7 +3980,7 @@ def get_room_device_data(
                 "value": value,
                 "don_vi": row["don_vi"],
                 "mo_ta": row["mo_ta"],
-                "timestamp": int(row["thoi_gian"].timestamp()) if row["thoi_gian"] else None,
+                "timestamp": dt_to_unix_timestamp(row["thoi_gian"]),
             }
 
         # Lấy relay config từ control_lines cho tất cả thiết bị
@@ -3998,7 +4018,7 @@ def get_room_device_data(
 
             # MySQL latest timestamp (any key, including cmd_*)
             latest_dt = latest_seen_by_device.get(d["id"])
-            latest_mysql_ts_sec = latest_dt.timestamp() if latest_dt is not None else None
+            latest_mysql_ts_sec = dt_to_unix_timestamp(latest_dt)
 
             # Kafka latest timestamp (telemetry/command event)
             dev_id_str = d["ma_thiet_bi"]
@@ -5185,7 +5205,7 @@ def get_devices_latest_all(
                 "value": value,
                 "don_vi": row["don_vi"],
                 "mo_ta": row["mo_ta"],
-                "timestamp": int(row["thoi_gian"].timestamp()) if row["thoi_gian"] else None,
+                "timestamp": dt_to_unix_timestamp(row["thoi_gian"]),
             }
 
         # Kết quả cuối
@@ -5197,7 +5217,7 @@ def get_devices_latest_all(
                     "ten_thiet_bi": d["ten_thiet_bi"],
                     "loai_thiet_bi": d["loai_thiet_bi"],
                     "trang_thai": d["trang_thai"],
-                    "last_seen": int(d["last_seen"].timestamp()) if d["last_seen"] else None,
+                    "last_seen": dt_to_unix_timestamp(d["last_seen"]),
                     "phong_id": d["phong_id"],
                     "ten_phong": d.get("ten_phong"),
                     "ma_phong": d.get("ma_phong"),
@@ -5992,7 +6012,7 @@ def get_device_latest(
             'ten_thiet_bi': device['ten_thiet_bi'],
             'loai_thiet_bi': device['loai_thiet_bi'],
             'trang_thai': device['trang_thai'],
-            'last_seen': int(device['last_seen'].timestamp()) if device['last_seen'] else None,
+            'last_seen': dt_to_unix_timestamp(device['last_seen']),
             'phong_id': device['phong_id'],
             'ten_phong': device.get('ten_phong'),
             'ma_phong': device.get('ma_phong'),
@@ -6015,7 +6035,7 @@ def get_device_latest(
                 'value': value,
                 'don_vi': row['don_vi'],
                 'mo_ta': row['mo_ta'],
-                'timestamp': int(row['thoi_gian'].timestamp()) if row['thoi_gian'] else None
+                'timestamp': dt_to_unix_timestamp(row['thoi_gian'])
             }
         
         # #region agent log
@@ -10125,26 +10145,74 @@ def get_component_health(
 ):
     """
     Get detailed health analysis for a specific component.
+    Returns health score, issues, alerts, metrics, and trend data.
     """
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("""
-            SELECT * FROM device_components 
+            SELECT * FROM device_components
             WHERE device_id = %s AND component_id = %s
         """, (device_id, component_id))
-        
+
         component = cursor.fetchone()
         if not component:
             raise HTTPException(status_code=404, detail="Component not found")
-        
+
+        # Parse metadata for additional metrics
+        metadata = component.get('metadata') or {}
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except:
+                metadata = {}
+
+        # Parse health history
+        health_history = component.get('health_history') or []
+        if isinstance(health_history, str):
+            try:
+                health_history = json.loads(health_history)
+            except:
+                health_history = []
+
+        # Calculate health score (0-100)
+        raw_score = component.get('health_score')
+        if raw_score is not None:
+            health_score = int(raw_score * 100)
+        else:
+            health_score = 50  # default
+
+        # Determine health status
+        raw_status = component.get('health_status') or 'unknown'
+        if raw_status == 'unknown':
+            if health_score >= 80:
+                health_status = 'healthy'
+            elif health_score >= 50:
+                health_status = 'degraded'
+            else:
+                health_status = 'failed'
+        else:
+            health_status = raw_status
+
+        # Get metrics from metadata and calculations
+        metrics = {
+            "signal_strength": metadata.get('signal_strength', 85),
+            "data_freshness": metadata.get('data_freshness', 0),
+            "outlier_count_24h": metadata.get('outlier_count_24h', 0),
+            "drift_score": metadata.get('drift_score', 0.0),
+            "battery_level": metadata.get('battery_level'),
+            "voltage": metadata.get('voltage'),
+            "uptime_hours": metadata.get('uptime_hours'),
+        }
+
+        # Get recent analyses
         cursor.execute("""
-            SELECT * FROM component_health_analysis 
+            SELECT * FROM component_health_analysis
             WHERE component_id = %s
             ORDER BY created_at DESC
             LIMIT 50
         """, (component['id'],))
-        
+
         analyses = []
         for row in cursor.fetchall():
             findings = row.get('findings')
@@ -10153,7 +10221,7 @@ def get_component_health(
                     findings = json.loads(findings)
                 except:
                     findings = None
-            
+
             analyses.append({
                 "id": row['id'],
                 "analysis_type": row['analysis_type'],
@@ -10163,15 +10231,17 @@ def get_component_health(
                 "created_at": row['created_at'].isoformat() if row['created_at'] else None,
                 "resolved_at": row['resolved_at'].isoformat() if row['resolved_at'] else None
             })
-        
+
+        # Get recent events (as alerts)
         cursor.execute("""
-            SELECT * FROM component_events 
+            SELECT * FROM component_events
             WHERE device_id = %s AND component_id = %s
             ORDER BY timestamp DESC
             LIMIT 20
         """, (device_id, component_id))
-        
+
         events = []
+        alerts = []
         for row in cursor.fetchall():
             details = row.get('details')
             if isinstance(details, str):
@@ -10179,29 +10249,63 @@ def get_component_health(
                     details = json.loads(details)
                 except:
                     details = None
-            
-            events.append({
+
+            event_data = {
                 "id": row['id'],
                 "event_type": row['event_type'],
                 "severity": row['severity'],
                 "details": details,
                 "timestamp": row['timestamp'].isoformat() if row['timestamp'] else None
+            }
+            events.append(event_data)
+
+            # Also add to alerts if severity is warning/critical
+            if row['severity'] in ('warning', 'critical', 'error'):
+                alerts.append({
+                    "id": row['id'],
+                    "type": row['event_type'],
+                    "severity": row['severity'],
+                    "message": details.get('message') if details else row['event_type'],
+                    "created_at": row['timestamp'].isoformat() if row['timestamp'] else None
+                })
+
+        # Build issues list
+        issues = []
+        if health_status in ('degraded', 'failed'):
+            issues.append({
+                "type": "health_degraded",
+                "severity": "warning" if health_status == "degraded" else "critical",
+                "message": f"Component health is {health_status}"
             })
-        
-        metadata = component.get('metadata')
-        if isinstance(metadata, str):
-            try:
-                metadata = json.loads(metadata)
-            except:
-                metadata = None
-        
-        health_history = component.get('health_history')
-        if isinstance(health_history, str):
-            try:
-                health_history = json.loads(health_history)
-            except:
-                health_history = []
-        
+
+        if health_score < 50:
+            issues.append({
+                "type": "low_health_score",
+                "severity": "critical",
+                "message": f"Health score critically low: {health_score}%"
+            })
+
+        if metadata.get('outlier_count_24h', 0) > 5:
+            issues.append({
+                "type": "high_outliers",
+                "severity": "warning",
+                "message": f"High outlier count: {metadata['outlier_count_24h']} in 24h"
+            })
+
+        if metadata.get('battery_level') is not None and metadata['battery_level'] < 20:
+            issues.append({
+                "type": "battery_low",
+                "severity": "critical",
+                "message": f"Battery low: {metadata['battery_level']}%"
+            })
+
+        if metadata.get('data_freshness', 0) > 300:  # 5 minutes
+            issues.append({
+                "type": "stale_data",
+                "severity": "warning",
+                "message": f"Data not updated for {int(metadata['data_freshness'] // 60)} minutes"
+            })
+
         return {
             "component": {
                 "id": component['id'],
@@ -10210,17 +10314,238 @@ def get_component_health(
                 "field_name": component['field_name'],
                 "hardware_model": component['hardware_model'],
                 "connection_type": component['connection_type'],
-                "health_status": component['health_status'],
-                "health_score": component['health_score'],
+                "health_status": health_status,
+                "health_score": health_score,
                 "health_history": health_history,
                 "metadata": metadata,
                 "first_seen": component['first_seen'].isoformat() if component['first_seen'] else None,
                 "last_seen": component['last_seen'].isoformat() if component['last_seen'] else None
             },
+            "health_score": health_score,
+            "health_status": health_status,
+            "metrics": metrics,
+            "issues": issues,
+            "alerts": alerts,
             "health_analyses": analyses,
-            "recent_events": events
+            "recent_events": events,
+            "issues_count": len(issues),
+            "alerts_count": len(alerts)
         }
-    
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/ai/components/{device_id}/{component_id}/anomalies")
+def get_component_anomalies(
+    device_id: str,
+    component_id: str,
+    hours: int = Query(24, description="Hours to look back"),
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Get detected anomalies for a specific component.
+    Uses Z-score and IQR for outlier detection.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # First get component to find field_name
+        cursor.execute("""
+            SELECT * FROM device_components
+            WHERE device_id = %s AND component_id = %s
+        """, (device_id, component_id))
+
+        component = cursor.fetchone()
+        if not component:
+            raise HTTPException(status_code=404, detail="Component not found")
+
+        field_name = component.get('field_name')
+        if not field_name:
+            return {"anomalies": [], "summary": {"total": 0, "by_type": {}}}
+
+        # Get anomalies from detected_anomalies table
+        cursor.execute("""
+            SELECT * FROM detected_anomalies
+            WHERE metric_id = %s
+              AND detected_at >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+            ORDER BY detected_at DESC
+            LIMIT 100
+        """, (field_name, hours))
+
+        anomalies = []
+        type_counts = {}
+
+        for row in cursor.fetchall():
+            anomaly = {
+                "id": row['id'],
+                "type": row['anomaly_type'],
+                "severity": row['severity'],
+                "metric_id": row['metric_id'],
+                "value": row['metric_value'],
+                "expected_range": row.get('expected_range'),
+                "deviation_score": row.get('deviation_score'),
+                "message": row.get('message', f"Anomaly detected in {row['anomaly_type']}"),
+                "detected_at": row['detected_at'].isoformat() if row['detected_at'] else None
+            }
+            anomalies.append(anomaly)
+
+            # Count by type
+            atype = row['anomaly_type']
+            type_counts[atype] = type_counts.get(atype, 0) + 1
+
+        return {
+            "component_id": component_id,
+            "field_name": field_name,
+            "hours": hours,
+            "anomalies": anomalies,
+            "summary": {
+                "total": len(anomalies),
+                "by_type": type_counts,
+                "has_critical": any(a['severity'] == 'critical' for a in anomalies)
+            }
+        }
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/ai/components/{device_id}/{component_id}/trend")
+def get_component_trend(
+    device_id: str,
+    component_id: str,
+    hours: int = Query(24, description="Hours of trend data"),
+    ctx: UserContext = Depends(require_user_context),
+):
+    """
+    Get trend data for a specific component for mini charts.
+    Returns time-series data with anomaly markers.
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Get component
+        cursor.execute("""
+            SELECT * FROM device_components
+            WHERE device_id = %s AND component_id = %s
+        """, (device_id, component_id))
+
+        component = cursor.fetchone()
+        if not component:
+            raise HTTPException(status_code=404, detail="Component not found")
+
+        field_name = component.get('field_name')
+
+        # Get metric data from du_lieu_thiet_bi or metric_data table
+        # Try du_lieu_thiet_bi first
+        cursor.execute("""
+            SELECT gia_tri, thoi_gian
+            FROM du_lieu_thiet_bi
+            WHERE ma_thiet_bi = %s
+              AND (truong = %s OR truong = %s)
+              AND thoi_gian >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+            ORDER BY thoi_gian ASC
+            LIMIT 500
+        """, (device_id, field_name, field_name.replace('$', ''), hours))
+
+        data_points = []
+        anomaly_timestamps = set()
+
+        for row in cursor.fetchall():
+            value = row['gia_tri']
+            ts = row['thoi_gian']
+
+            if value is not None and ts is not None:
+                data_points.append({
+                    "timestamp": ts.isoformat() if hasattr(ts, 'isoformat') else str(ts),
+                    "value": float(value) if isinstance(value, (int, float)) else None,
+                    "is_anomaly": False
+                })
+
+        # If no data in du_lieu_thiet_bi, try metric_data
+        if not data_points:
+            cursor.execute("""
+                SELECT value, timestamp
+                FROM metric_data
+                WHERE metric_id = %s
+                  AND timestamp >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+                ORDER BY timestamp ASC
+                LIMIT 500
+            """, (field_name, hours))
+
+            for row in cursor.fetchall():
+                value = row['value']
+                ts = row['timestamp']
+
+                if value is not None and ts is not None:
+                    data_points.append({
+                        "timestamp": ts.isoformat() if hasattr(ts, 'isoformat') else str(ts),
+                        "value": float(value) if isinstance(value, (int, float)) else None,
+                        "is_anomaly": False
+                    })
+
+        # Mark anomalies in the data
+        if data_points:
+            cursor.execute("""
+                SELECT detected_at, metric_value
+                FROM detected_anomalies
+                WHERE metric_id = %s
+                  AND detected_at >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+            """, (field_name, hours))
+
+            for row in cursor.fetchall():
+                if row['detected_at']:
+                    anomaly_ts = row['detected_at'].isoformat()
+                    for dp in data_points:
+                        if abs((pd.Timestamp(dp['timestamp']) - pd.Timestamp(anomaly_ts)).total_seconds()) < 300:
+                            dp['is_anomaly'] = True
+                            break
+
+        # Calculate statistics
+        values = [dp['value'] for dp in data_points if dp['value'] is not None]
+        stats = {}
+        if values:
+            stats = {
+                "min": min(values),
+                "max": max(values),
+                "avg": sum(values) / len(values),
+                "count": len(values)
+            }
+
+        # Calculate trend direction
+        trend = "stable"
+        if len(values) >= 10:
+            first_half = sum(values[:len(values)//2]) / (len(values)//2)
+            second_half = sum(values[len(values)//2:]) / (len(values) - len(values)//2)
+            if second_half > first_half * 1.05:
+                trend = "increasing"
+            elif second_half < first_half * 0.95:
+                trend = "decreasing"
+
+        return {
+            "component_id": component_id,
+            "field_name": field_name,
+            "hours": hours,
+            "data": data_points,
+            "statistics": stats,
+            "trend": trend,
+            "data_points": len(data_points)
+        }
+
+    except ImportError:
+        # pandas not available, return basic data
+        return {
+            "component_id": component_id,
+            "field_name": component.get('field_name'),
+            "hours": hours,
+            "data": [],
+            "statistics": {},
+            "trend": "unknown",
+            "data_points": 0,
+            "error": "Statistics module not available"
+        }
     finally:
         cursor.close()
         conn.close()

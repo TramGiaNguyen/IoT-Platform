@@ -708,3 +708,99 @@ export const fetchAIDevicesSummary = (token, workspaceId = null) =>
     headers: { Authorization: `Bearer ${token}` },
     params: workspaceId ? { workspace_id: workspaceId } : {},
   }).then(res => res.data).catch(() => ({ devices: [], total: 0, online_count: 0 }));
+
+// =========================================================
+// Device Components CRUD APIs
+// =========================================================
+
+/** Get all components for a device */
+export const fetchDeviceComponents = (deviceId, token) =>
+  axios.get(`${API_BASE}/api/ai/components/${deviceId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data).catch(err => {
+    console.error('fetchDeviceComponents error:', err);
+    return { device_id: deviceId, components: [], count: 0 };
+  });
+
+/** Create a new component */
+export const createDeviceComponent = (deviceId, data, token) =>
+  axios.post(`${API_BASE}/api/ai/components/${deviceId}`, data, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+/** Update a component */
+export const updateDeviceComponent = (deviceId, componentId, data, token) =>
+  axios.put(`${API_BASE}/api/ai/components/${deviceId}/${componentId}`, data, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+/** Delete a component */
+export const deleteDeviceComponent = (deviceId, componentId, token) =>
+  axios.delete(`${API_BASE}/api/ai/components/${deviceId}/${componentId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+/** Get all fields (data_keys) for a device */
+export const fetchDeviceAllFields = (deviceId, token) =>
+  axios.get(`${API_BASE}/api/ai/components/${deviceId}/all-fields`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data).catch(err => {
+    console.error('fetchDeviceAllFields error:', err);
+    return { device_id: deviceId, fields: [], count: 0 };
+  });
+
+/** Auto-detect components based on field names */
+export const autoDetectComponents = (deviceId, token) =>
+  axios.post(`${API_BASE}/api/ai/components/${deviceId}/auto-detect`, {}, {
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 30000,
+  });
+
+/** Update unit for a field */
+export const updateFieldUnit = (deviceId, fieldName, unit, token) =>
+  axios.put(`${API_BASE}/api/ai/components/${deviceId}/field-unit`, {
+    field_name: fieldName,
+    unit: unit
+  }, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+/** Delete a field */
+export const deleteField = (deviceId, fieldName, token) =>
+  axios.delete(`${API_BASE}/api/ai/components/${deviceId}/field/${fieldName}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+/** Assign fields to a component */
+export const assignFieldsToComponent = (deviceId, componentId, fieldNames, token) =>
+  axios.put(`${API_BASE}/api/ai/components/${deviceId}/${componentId}/assign-fields`, {
+    field_names: fieldNames,
+  }, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+/** Get component health */
+export const fetchComponentHealth = (deviceId, componentId, token) =>
+  axios.get(`${API_BASE}/api/ai/components/${deviceId}/${componentId}/health`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data).catch(() => null);
+
+/** Get component anomalies */
+export const fetchComponentAnomalies = (deviceId, componentId, token, hours = 24) =>
+  axios.get(`${API_BASE}/api/ai/components/${deviceId}/${componentId}/anomalies`, {
+    headers: { Authorization: `Bearer ${token}` },
+    params: { hours },
+  }).then(res => res.data).catch(() => ({ anomalies: [], summary: { total: 0 } }));
+
+/** Get component trend data for charts */
+export const fetchComponentTrend = (deviceId, componentId, token, hours = 24) =>
+  axios.get(`${API_BASE}/api/ai/components/${deviceId}/${componentId}/trend`, {
+    headers: { Authorization: `Bearer ${token}` },
+    params: { hours },
+  }).then(res => res.data).catch(() => ({ data: [], statistics: {} }));
+
+/** Get hardware profile (alias for existing endpoint) */
+export const fetchHardwareProfile = (deviceId, token) =>
+  axios.get(`${API_BASE}/api/ai/components/${deviceId}/hardware-profile`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.data).catch(() => null);

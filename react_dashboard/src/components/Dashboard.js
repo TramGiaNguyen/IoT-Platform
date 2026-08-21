@@ -32,82 +32,30 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   // wsConnected duoc cung cap boi useRealtime() (line 17) va sync len App qua onWsStatusChange effect.
 
   const getScopeFilteredDevices = useCallback((allDevices, scope, uid, isAdmin = false, isTeacher = false, teacherRooms = [], cacheWorkspaceContext = null) => {
-    // #region agent debug - log all devices before filter
-    console.log('[Dashboard DEBUG] getScopeFilteredDevices BEFORE filter', {
-      allDevicesCount: allDevices?.length,
-      scope,
-      uid,
-      isAdmin,
-      isTeacher,
-      devicesDetail: allDevices?.slice(0, 5).map(d => ({
-        id: d.ma_thiet_bi,
-        nguoi_so_huu: d.nguoi_so_huu_id,
-        nhom: d.nhom_id,
-        phong: d.phong_id,
-        // Log ALL keys to find what changed
-        allKeys: Object.keys(d)
-      }))
-    });
-    // #endregion
-
     if (!allDevices?.length) return [];
     if (!scope) return [];
     if (!uid) return [];
     if (cacheWorkspaceContext && cacheWorkspaceContext !== scope) return [];
     if (isAdmin) {
-      // Admin có toàn quyền, không phân biệt workspace — thấy mọi thiết bị
       return allDevices;
     }
     if (isTeacher) {
-      // Teacher quản lý lớp mình dạy, không phân biệt workspace — chỉ thấy
-      // devices ở các phòng thuộc lớp mình phụ trách (cá nhân lẫn nhóm)
       const teacherRoomSet = new Set(teacherRooms);
       return allDevices.filter(d =>
         teacherRoomSet.has(d.phong_id) || d.nguoi_so_huu_id === uid
       );
     }
     if (scope === 'ca_nhan') {
-      const isPersonalDevice = (d) =>
-        d.nguoi_so_huu_id === uid && d.nhom_id == null;
-      const result = allDevices.filter(isPersonalDevice);
-      // Log FIRST device full data when result is 0 to see what changed
-      if (result.length === 0 && allDevices.length > 0) {
-        console.log('[Dashboard DEBUG] FIRST DEVICE DATA when filter returns 0:', JSON.stringify(allDevices[0]));
-      }
-      console.log('[Dashboard DEBUG] scope=ca_nhan filter result', { 
-        uid, 
-        resultCount: result.length,
-        totalDevices: allDevices.length,
-        devicesWithNhom: allDevices.filter(d => d.nhom_id != null).length,
-        devicesWithOwner: allDevices.filter(d => d.nguoi_so_huu_id === uid).length
-      });
-      return result;
+      return allDevices.filter(d => d.nguoi_so_huu_id === uid && d.nhom_id == null);
     }
     if (scope === 'nhom') {
-      const result = allDevices.filter(d => d.nhom_id != null);
-      console.log('[Dashboard DEBUG] scope=nhom filter result', { resultCount: result.length });
-      return result;
+      return allDevices.filter(d => d.nhom_id != null);
     }
-    const result = allDevices;
-    console.log('[Dashboard DEBUG] default filter result', { resultCount: result.length });
-    return result;
+    return allDevices;
   }, []);
 
   const scopedDevices = getScopeFilteredDevices(cache.devices, workspaceContext, userInfo?.id, isAdmin, isTeacher, teacherRooms, cache?.workspaceContext);
-  
-  // #region agent debug log
-  console.log('[Dashboard DEBUG] scopedDevices computed', {
-    cacheDevicesLen: cache?.devices?.length,
-    workspaceContext,
-    cacheWorkspaceContext: cache?.workspaceContext,
-    cacheMatchesWorkspace,
-    userId: userInfo?.id,
-    isStudent,
-    scopedDevicesLen: scopedDevices.length,
-    scopedDevicesSample: scopedDevices.slice(0, 3).map(d => ({id: d.ma_thiet_bi, nhom: d.nhom_id})),
-  });
-  // #endregion
-  
+
   const [showDeviceModal, setShowDeviceModal] = useState(false);
 
   const [hourlyStats, setHourlyStats] = useState([]);
@@ -126,38 +74,15 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       : null;
 
   const loadLatestAll = useCallback(async (silent = false) => {
+    const isSilent = silent === true || silent === 'silent';
     const workspaceIdToUse =
       isStudent && workspaceContext === 'nhom' && userInfo?.primary_nhom_id
         ? userInfo.primary_nhom_id
         : null;
-    console.debug('[Dashboard DEBUG] loadLatestAll called', {
-      silent,
-      workspaceIdToUse,
-      workspaceContext,
-      isStudent,
-      userId: userInfo?.id,
-      primaryNhomId: userInfo?.primary_nhom_id,
-      timestamp: Date.now(),
-    });
     try {
-      // Use effectiveWorkspaceId from closure - this is stable because it's computed from useState/props
       const res = await fetchDevicesLatestAll(token, workspaceIdToUse);
       const payload = res.data.devices || [];
-      console.debug('[Dashboard DEBUG] loadLatestAll API response', {
-        payloadLength: payload.length,
-        silent,
-        timestamp: Date.now(),
-      });
-      if (payload.length === 0) {
-        console.debug('[Dashboard] loadLatestAll: 0 devices returned', {
-          workspaceIdToUse, userRole: userRole, workspaceContext, userId: userInfo?.id
-        });
-        // Guard: silent refresh returning 0 devices should not overwrite existing cached data
-        if (silent) {
-          console.debug('[Dashboard] Silent refresh: preserving existing devices, not clearing');
-          return;
-        }
-      }
+      if (payload.length === 0 && isSilent) return;
       const mappedDevices = payload.map((d) => ({
         ma_thiet_bi: d.device_id, ten_thiet_bi: d.ten_thiet_bi,
         loai_thiet_bi: d.loai_thiet_bi, trang_thai: d.trang_thai,
@@ -167,7 +92,6 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
         nguoi_so_huu_id: d.nguoi_so_huu_id,
         nguoi_tao_id: d.nguoi_tao_id,
       }));
-      console.debug('[Dashboard DEBUG] Setting devices', { count: mappedDevices.length });
       devicesIdsRef.current = mappedDevices.map(d => String(d.ma_thiet_bi));
       setDevices(mappedDevices);
       updateCache({ devices: mappedDevices });
@@ -186,24 +110,9 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
         return newDeviceData;
       });
     } catch (err) {
-      if (silent) {
-        console.warn('[Dashboard] Silent refresh failed, keeping existing devices:', {
-          status: err.response?.status,
-          statusText: err.response?.statusText,
-          workspaceIdToUse,
-          workspaceContext,
-        });
-      } else {
-        console.error('Error loading latest all:', {
-          status: err.response?.status,
-          statusText: err.response?.statusText,
-          data: err.response?.data,
-          workspaceIdToUse,
-          workspaceContext,
-        }, err);
-      }
+      if (!isSilent) console.error('Error loading latest all:', err);
     } finally {
-      if (!silent) setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, [token, isStudent, workspaceContext, userInfo?.primary_nhom_id, userInfo?.id, updateCache]);
 
@@ -219,21 +128,10 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   }, [token, effectiveWorkspaceId]);
 
   useEffect(() => {
-    console.log('[Dashboard DEBUG] useEffect fired', {
-      token: !!token,
-      workspaceContext,
-      cacheDevicesLen: cache?.devices?.length,
-      cacheMatchesWorkspace,
-      userId: userInfo?.id,
-      userPrimaryNhomId: userInfo?.primary_nhom_id,
-      timestamp: Date.now(),
-    });
     if (!token) {
-      console.debug('[Dashboard DEBUG] No token, clearing devices');
       setDevices([]); setDeviceData({}); setLoading(false); return;
     }
     if (cache.devices && cache.devices.length > 0 && cacheMatchesWorkspace) {
-      console.debug('[Dashboard DEBUG] Using cached devices, triggering silent refresh');
       const mappedDevices = cache.devices.map((d) => ({
         ma_thiet_bi: d.ma_thiet_bi || d.device_id,
         ten_thiet_bi: d.ten_thiet_bi || d.ten_thiet_bi,
@@ -254,7 +152,6 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       loadLatestAll(true);
       return;
     }
-    console.debug('[Dashboard DEBUG] No cache match, calling loadLatestAll(false) - cacheDevices:', cache?.devices?.length, 'cacheMatchesWorkspace:', cacheMatchesWorkspace);
     loadLatestAll(false);
   }, [token, workspaceContext, userInfo?.primary_nhom_id, userInfo?.id, cacheMatchesWorkspace]);
 
@@ -391,10 +288,12 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
   useEffect(() => {
     if (!token) return;
     loadStats();
-    loadLatestAll();
     loadRoomsCount();
+    // Force refresh when cache is stale (triggered by lastEventAt changes)
+    const forceRefresh = !cache?.devices?.length || !cacheMatchesWorkspace;
+    loadLatestAll(forceRefresh ? false : 'silent');
     const statsInterval = setInterval(loadStats, 60000);
-    const latestInterval = setInterval(() => loadLatestAll(true), 10000);
+    const latestInterval = setInterval(() => loadLatestAll('silent'), 10000);
     const roomsInterval = setInterval(loadRoomsCount, 60000);
     return () => {
       clearInterval(statsInterval);
@@ -402,6 +301,15 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
       clearInterval(roomsInterval);
     };
   }, [token, workspaceContext, userInfo?.primary_nhom_id]);
+
+  // Force refresh when cache becomes stale (TTL expired) or WS reconnects
+  useEffect(() => {
+    if (!token || !lastEventAt) return;
+    // Check if cache is stale - if so, do a hard refresh
+    if (!cache?.devices?.length) {
+      loadLatestAll(false);
+    }
+  }, [lastEventAt]);
 
   // Realtime: lang nghe tu RealtimeProvider (WS chung da mo o App).
   // Khi co sensor event cho 1 deviceId trong devicesIdsRef, cap nhat deviceData.
@@ -435,6 +343,42 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
     });
   }, [lastEventAt, getDeviceLatest]);
 
+  // Polling fallback: refresh deviceData every 5 seconds to ensure last_seen updates
+  useEffect(() => {
+    const id = setInterval(() => {
+      const allowedIds = devicesIdsRef.current;
+      if (!allowedIds || allowedIds.length === 0) return;
+
+      const getLatest = getDeviceLatest;
+      setDeviceData((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const devId of allowedIds) {
+          const latest = getLatest(devId);
+          if (!latest || Object.keys(latest).length === 0) continue;
+          const cur = next[devId] || { device_id: devId, data: {} };
+          const newData = { ...(cur.data || {}) };
+          let maxTs = 0;
+          for (const [k, v] of Object.entries(latest)) {
+            newData[k] = { ...(newData[k] || {}), value: v.value, timestamp: v.ts };
+            if (v.ts > maxTs) maxTs = v.ts;
+          }
+          const curLastSeen = cur.last_seen || 0;
+          const newLastSeen = maxTs > curLastSeen ? maxTs : curLastSeen;
+          if (newLastSeen !== curLastSeen) {
+            next[devId] = { ...cur, device_id: devId, data: newData, last_seen: newLastSeen };
+            changed = true;
+          } else if (Object.keys(newData).length !== Object.keys(cur.data || {}).length) {
+            next[devId] = { ...cur, device_id: devId, data: newData };
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 5000);
+    return () => clearInterval(id);
+  }, [getDeviceLatest]);
+
   // Forward WS status den AppHeader badge
   useEffect(() => {
     if (onWsStatusChange) onWsStatusChange(wsConnected);
@@ -442,8 +386,11 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
 
   const formatTime = (timestamp) => {
     if (!timestamp) return 'Chưa có dữ liệu';
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleString('vi-VN');
+    // Normalize to ms: if value looks like seconds (< 1e12), convert to ms
+    const ms = Number(timestamp) > 1e12 ? Number(timestamp) : Number(timestamp) * 1000;
+    const date = new Date(ms);
+    if (isNaN(date.getTime())) return 'Chưa có dữ liệu';
+    return date.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
   };
 
   const getStatus = (device) => {
@@ -846,7 +793,14 @@ const Dashboard = ({ token, devices: initialDevices = [], onOpenRules, onOpenRoo
                       <div className="bdu-card-footer">
                         <span className="bdu-last-seen">
                           <Icon name="schedule" className="bdu-footer-icon" />
-                          {data.last_seen ? `Cập nhật: ${formatTime(data.last_seen)}` : 'Chưa có dữ liệu'}
+                          {(() => {
+                            const latest = getDeviceLatest(device.ma_thiet_bi);
+                            if (latest && Object.keys(latest).length > 0) {
+                              const maxTs = Math.max(...Object.values(latest).map(v => v.ts || 0));
+                              return maxTs > 0 ? `Cập nhật: ${formatTime(maxTs)}` : 'Chưa có dữ liệu';
+                            }
+                            return data.last_seen ? `Cập nhật: ${formatTime(data.last_seen)}` : 'Chưa có dữ liệu';
+                          })()}
                         </span>
                       {device.phong_id && (
                           <span className="bdu-room-tag">

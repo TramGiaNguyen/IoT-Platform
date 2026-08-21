@@ -1711,3 +1711,696 @@ async def get_component_health(
     finally:
         cursor.close()
         conn.close()
+
+
+# Literal routes for component fields (MUST be before /{device_id}/{component_id})
+@router.get("/components/{device_id}/all-fields")
+async def get_all_device_fields(
+    device_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all fields (metrics) for a device."""
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT source_path as field_name, data_type, semantic_type, unit
+            FROM metrics
+            WHERE device_id = %s
+            ORDER BY source_path
+        """, (device_id,))
+        metrics = cursor.fetchall()
+        return {
+            "device_id": device_id,
+            "fields": metrics,
+            "count": len(metrics)
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.put("/components/{device_id}/field-unit")
+async def update_field_unit(
+    device_id: str,
+    request: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update unit for a field."""
+    field_name = request.get("field_name")
+    unit = request.get("unit", "")
+    
+    if not field_name:
+        raise HTTPException(status_code=400, detail="field_name is required")
+    
+    conn = get_mysql()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE metrics
+            SET unit = %s
+            WHERE device_id = %s AND source_path = %s
+        """, (unit, device_id, field_name))
+        
+        cursor.execute("""
+            UPDATE khoa_du_lieu k
+            JOIN thiet_bi t ON k.thiet_bi_id = t.id
+            SET k.don_vi = %s
+            WHERE t.ma_thiet_bi = %s AND k.khoa = %s
+        """, (unit, device_id, field_name))
+        
+        conn.commit()
+        return {"success": True, "field_name": field_name, "unit": unit}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.delete("/components/{device_id}/field/{field_name}")
+async def delete_field(
+    device_id: str,
+    field_name: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a field from metrics table."""
+    conn = get_mysql()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            DELETE FROM metrics
+            WHERE device_id = %s AND source_path = %s
+        """, (device_id, field_name))
+        conn.commit()
+        return {"success": True, "field_name": field_name}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/components/{device_id}/auto-detect")
+async def auto_detect_components(
+    device_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Auto-detect components based on field names."""
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT source_path as field_name, data_type, semantic_type
+            FROM metrics
+            WHERE device_id = %s
+            ORDER BY source_path
+        """, (device_id,))
+        data_keys = cursor.fetchall()
+        
+        if not data_keys:
+            raise HTTPException(status_code=404, detail="No fields found for this device. Please send data first.")
+        
+        cursor.execute("""
+            SELECT component_id, field_name FROM device_components
+            WHERE device_id = %s
+        """, (device_id,))
+        existing = {row['field_name']: row['component_id'] for row in cursor.fetchall()}
+        
+        type_groups = {}
+        unassigned = []
+        
+        for dk in data_keys:
+            field_name = dk['field_name']
+            if field_name in existing:
+                continue
+            
+            comp_type = infer_component_type(field_name)
+            if comp_type:
+                if comp_type not in type_groups:
+                    type_groups[comp_type] = []
+                type_groups[comp_type].append(field_name)
+            else:
+                unassigned.append(field_name)
+        
+        created = []
+        updated = []
+        
+        for comp_type, fields in type_groups.items():
+            if comp_type == 'temperature' and 'humidity' in type_groups:
+                continue
+            
+            if comp_type == 'humidity' and 'temperature' in type_groups:
+                temp_fields = type_groups.get('temperature', [])
+                all_fields = temp_fields + fields
+                hw_model = 'DHT11'
+                comp_id = f"dht_{device_id}"
+                metadata = {
+                    "temperature_fields": temp_fields,
+                    "humidity_fields": fields,
+                    "all_fields": all_fields
+                }
+                
+                cursor.execute("""
+                    SELECT id FROM device_components WHERE device_id = %s AND component_id = %s
+                """, (device_id, comp_id))
+                existing_dht = cursor.fetchone()
+                
+                if existing_dht:
+                    cursor.execute("""
+                        UPDATE device_components
+                        SET field_name = %s, hardware_model = %s, detection_confidence = 0.85,
+                            metadata = %s, last_seen = NOW()
+                        WHERE device_id = %s AND component_id = %s
+                    """, (','.join(all_fields), hw_model, json.dumps(metadata), device_id, comp_id))
+                    updated.append(comp_id)
+                else:
+                    cursor.execute("""
+                        INSERT INTO device_components
+                        (device_id, component_id, component_type, field_name, hardware_model,
+                         detection_confidence, metadata, first_seen, last_seen)
+                        VALUES (%s, %s, %s, %s, %s, 0.85, %s, NOW(), NOW())
+                    """, (device_id, comp_id, 'temperature_humidity', ','.join(all_fields),
+                          hw_model, json.dumps(metadata)))
+                    created.append(comp_id)
+                
+                conn.commit()
+                continue
+            
+            hw_model = infer_hardware_model([comp_type], fields) or 'Generic'
+            for fn in fields:
+                if fn in existing:
+                    continue
+                comp_id = f"{comp_type}_{device_id}_{fn[:10]}"
+                cursor.execute("""
+                    SELECT id FROM device_components WHERE device_id = %s AND component_id = %s
+                """, (device_id, comp_id))
+                if cursor.fetchone():
+                    continue
+                
+                cursor.execute("""
+                    INSERT INTO device_components
+                    (device_id, component_id, component_type, field_name, hardware_model,
+                     detection_confidence, first_seen, last_seen)
+                    VALUES (%s, %s, %s, %s, %s, 0.7, NOW(), NOW())
+                """, (device_id, comp_id, comp_type, fn, hw_model))
+                created.append(comp_id)
+            
+            conn.commit()
+        
+        if unassigned:
+            hw_model = 'Generic'
+            for fn in unassigned:
+                if fn in existing:
+                    continue
+                comp_id = f"unknown_{device_id}_{fn[:10]}"
+                cursor.execute("""
+                    SELECT id FROM device_components WHERE device_id = %s AND component_id = %s
+                """, (device_id, comp_id))
+                if cursor.fetchone():
+                    continue
+                
+                cursor.execute("""
+                    INSERT INTO device_components
+                    (device_id, component_id, component_type, field_name, hardware_model,
+                     detection_confidence, first_seen, last_seen)
+                    VALUES (%s, %s, 'unknown', %s, %s, 0.3, NOW(), NOW())
+                """, (device_id, comp_id, fn, hw_model))
+                created.append(comp_id)
+            
+            conn.commit()
+        
+        return {
+            "success": True,
+            "created": created,
+            "updated": updated,
+            "total_components": len(created) + len(updated)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================
+# Device Components CRUD Endpoints
+# ============================================
+
+class ComponentCreateRequest(BaseModel):
+    component_id: str
+    component_type: str
+    field_name: Optional[str] = None
+    hardware_model: Optional[str] = None
+    connection_type: Optional[str] = None
+    metadata: Optional[dict] = None
+
+
+class ComponentUpdateRequest(BaseModel):
+    component_type: Optional[str] = None
+    field_name: Optional[str] = None
+    hardware_model: Optional[str] = None
+    connection_type: Optional[str] = None
+    detection_confidence: Optional[float] = None
+    metadata: Optional[dict] = None
+
+
+class AssignFieldsRequest(BaseModel):
+    field_names: List[str]
+
+
+# Field name patterns for auto-detection
+FIELD_PATTERNS = {
+    'temperature': ['temp', 'nhiet_do', 'temperature', 'temperatura', 'temp_c'],
+    'humidity': ['humid', 'do_am', 'humidity', 'humedad', 'humi', 'rh'],
+    'soil_moisture': ['soil', 'do_am_dat', 'moisture', 'moist', 'earth'],
+    'light': ['light', 'anh_sang', 'lux', 'luminosity', 'illuminance', 'light_level'],
+    'pressure': ['pressure', 'ap_suat', 'barometer', 'atm'],
+    'co2': ['co2', 'carbon', 'co_2'],
+    'gas': ['gas', 'mq', 'smoke', 'khi'],
+    'motion': ['motion', 'pir', 'chuyen_dong', 'presence'],
+    'relay': ['relay', 'output', 'gpio'],
+}
+
+
+def infer_component_type(field_name: str) -> Optional[str]:
+    """Infer component_type from field_name."""
+    if not field_name:
+        return None
+    field_lower = field_name.lower()
+    for comp_type, patterns in FIELD_PATTERNS.items():
+        for pattern in patterns:
+            if pattern in field_lower:
+                return comp_type
+    return None
+
+
+def infer_hardware_model(component_types: List[str], field_names: List[str]) -> Optional[str]:
+    """Infer hardware_model from component_types combination."""
+    types_set = set(component_types)
+    
+    # DHT family: temperature + humidity together
+    if 'temperature' in types_set and 'humidity' in types_set:
+        return 'DHT11'
+    
+    # DS18B20: temperature only (OneWire)
+    if types_set == {'temperature'}:
+        return 'DS18B20'
+    
+    # Capacitive soil moisture
+    if 'soil_moisture' in types_set:
+        return 'Capacitive_Soil'
+    
+    # BH1750: light sensor
+    if 'light' in types_set:
+        return 'BH1750'
+    
+    # BMP280: pressure sensor
+    if 'pressure' in types_set and 'temperature' not in types_set:
+        return 'BMP280'
+    
+    # MH-Z19: CO2 sensor
+    if 'co2' in types_set:
+        return 'MH_Z19'
+    
+    # MQ series: gas sensors
+    for fn in field_names:
+        if 'mq' in fn.lower():
+            return 'MQ135'
+    
+    # PIR: motion only
+    if types_set == {'motion'}:
+        return 'PIR'
+    
+    # RELAY_MODULE: relay outputs
+    if 'relay' in types_set:
+        return 'RELAY_MODULE'
+    
+    return None
+
+
+# ============================================
+# Device Components CRUD Endpoints
+# ============================================
+
+# IMPORTANT: Literal routes must come BEFORE parameterized routes
+# to avoid {component_id} matching literal strings like "field-unit"
+
+# Literal routes for /components/{device_id}/something (must be before /{device_id})
+@router.get("/components/{device_id}/widget-summary")
+async def get_component_widget_summary(
+    device_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """
+    Get compact summary for widget display.
+    Returns: overall_health_score, component_count, issues_count, status, top_components
+    """
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Get all components for this device
+        cursor.execute("""
+            SELECT
+                component_id,
+                component_type,
+                field_name,
+                hardware_model,
+                health_score,
+                health_status,
+                last_seen
+            FROM device_components
+            WHERE device_id = %s
+            ORDER BY CASE WHEN health_score IS NULL THEN 1 ELSE 0 END, health_score ASC
+            LIMIT 10
+        """, (device_id,))
+        components = cursor.fetchall()
+
+        if not components:
+            return {
+                "device_id": device_id,
+                "status": "unknown",
+                "overall_health_score": None,
+                "component_count": 0,
+                "issues_count": 0,
+                "top_components": [],
+                "message": "No components detected yet"
+            }
+
+        # Calculate overall health
+        valid_scores = [c['health_score'] for c in components if c['health_score'] is not None]
+        overall_score = sum(valid_scores) / len(valid_scores) if valid_scores else None
+
+        # Count issues
+        issues_count = sum(1 for c in components if c['health_status'] in ('degraded', 'failed'))
+
+        # Get overall status
+        if issues_count > 0:
+            status = "degraded" if issues_count < len(components) else "failed"
+        else:
+            status = "healthy"
+
+        return {
+            "device_id": device_id,
+            "status": status,
+            "overall_health_score": overall_score,
+            "component_count": len(components),
+            "issues_count": issues_count,
+            "top_components": [
+                {
+                    "component_id": c['component_id'],
+                    "component_type": c['component_type'],
+                    "field_name": c['field_name'],
+                    "hardware_model": c['hardware_model'],
+                    "health_score": c['health_score'],
+                    "health_status": c['health_status']
+                }
+                for c in components[:5]
+            ]
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/components/{device_id}")
+async def list_device_components(
+    device_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all components for a device."""
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT
+                id,
+                component_id as component_id_name,
+                component_type,
+                field_name,
+                hardware_model,
+                connection_type,
+                detection_confidence,
+                device_type,
+                device_type_confidence,
+                health_status,
+                health_score,
+                metadata,
+                first_seen,
+                last_seen
+            FROM device_components
+            WHERE device_id = %s
+            ORDER BY component_type, field_name
+        """, (device_id,))
+        rows = cursor.fetchall()
+        
+        components = []
+        for row in rows:
+            metadata = row.get('metadata')
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except:
+                    metadata = None
+            components.append({
+                "id": row['id'],
+                "component_id": row['component_id_name'],
+                "component_type": row['component_type'],
+                "field_name": row['field_name'],
+                "hardware_model": row['hardware_model'],
+                "connection_type": row['connection_type'],
+                "detection_confidence": row['detection_confidence'],
+                "device_type": row['device_type'],
+                "device_type_confidence": row['device_type_confidence'],
+                "health_status": row['health_status'] or 'unknown',
+                "health_score": row['health_score'],
+                "metadata": metadata,
+                "first_seen": row['first_seen'].isoformat() if row['first_seen'] else None,
+                "last_seen": row['last_seen'].isoformat() if row['last_seen'] else None
+            })
+        
+        return {"device_id": device_id, "components": components, "count": len(components)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.post("/components/{device_id}")
+async def create_component(
+    device_id: str,
+    request: ComponentCreateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a new component for a device."""
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Check if component_id already exists
+        cursor.execute("""
+            SELECT id FROM device_components
+            WHERE device_id = %s AND component_id = %s
+        """, (device_id, request.component_id))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Component ID already exists")
+        
+        # Infer component_type if not provided
+        component_type = request.component_type
+        if not component_type and request.field_name:
+            component_type = infer_component_type(request.field_name) or 'unknown'
+        
+        # Infer hardware_model
+        hardware_model = request.hardware_model
+        if not hardware_model:
+            hardware_model = infer_hardware_model([component_type] if component_type else [], [request.field_name] if request.field_name else [])
+        
+        # Insert new component
+        metadata_json = json.dumps(request.metadata) if request.metadata else None
+        cursor.execute("""
+            INSERT INTO device_components
+            (device_id, component_id, component_type, field_name, hardware_model,
+             connection_type, detection_confidence, metadata, first_seen, last_seen)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+        """, (
+            device_id, request.component_id, component_type, request.field_name,
+            hardware_model, request.connection_type, 1.0, metadata_json
+        ))
+        conn.commit()
+        
+        component_db_id = cursor.lastrowid
+        
+        # Log event
+        cursor.execute("""
+            INSERT INTO component_events (device_id, component_id, event_type, severity, details)
+            VALUES (%s, %s, 'created', 'info', %s)
+        """, (device_id, request.component_id, json.dumps({"action": "manual_create", "hardware_model": hardware_model})))
+        conn.commit()
+        
+        return {
+            "success": True,
+            "id": component_db_id,
+            "component_id": request.component_id,
+            "component_type": component_type,
+            "hardware_model": hardware_model
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.put("/components/{device_id}/{component_id}")
+async def update_component(
+    device_id: str,
+    component_id: str,
+    request: ComponentUpdateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update a component."""
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Check if component exists
+        cursor.execute("""
+            SELECT id FROM device_components
+            WHERE device_id = %s AND component_id = %s
+        """, (device_id, component_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Component not found")
+        
+        # Build update query dynamically
+        updates = []
+        params = []
+        if request.component_type is not None:
+            updates.append("component_type = %s")
+            params.append(request.component_type)
+        if request.field_name is not None:
+            updates.append("field_name = %s")
+            params.append(request.field_name)
+        if request.hardware_model is not None:
+            updates.append("hardware_model = %s")
+            params.append(request.hardware_model)
+        if request.connection_type is not None:
+            updates.append("connection_type = %s")
+            params.append(request.connection_type)
+        if request.detection_confidence is not None:
+            updates.append("detection_confidence = %s")
+            params.append(request.detection_confidence)
+        if request.metadata is not None:
+            updates.append("metadata = %s")
+            params.append(json.dumps(request.metadata))
+        
+        if updates:
+            updates.append("last_seen = NOW()")
+            params.extend([device_id, component_id])
+            cursor.execute(f"""
+                UPDATE device_components
+                SET {', '.join(updates)}
+                WHERE device_id = %s AND component_id = %s
+            """, params)
+            conn.commit()
+        
+        return {"success": True, "message": "Component updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.delete("/components/{device_id}/{component_id}")
+async def delete_component(
+    device_id: str,
+    component_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a component."""
+    conn = get_mysql()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            DELETE FROM device_components
+            WHERE device_id = %s AND component_id = %s
+        """, (device_id, component_id))
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Component not found")
+        
+        conn.commit()
+        return {"success": True, "message": "Component deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.put("/components/{device_id}/{component_id}/assign-fields")
+async def assign_fields_to_component(
+    device_id: str,
+    component_id: str,
+    request: AssignFieldsRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Assign fields to a component."""
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Verify component exists
+        cursor.execute("""
+            SELECT id, component_type FROM device_components
+            WHERE device_id = %s AND component_id = %s
+        """, (device_id, component_id))
+        component = cursor.fetchone()
+        if not component:
+            raise HTTPException(status_code=404, detail="Component not found")
+        
+        # Unassign these fields from other components
+        if request.field_names:
+            placeholders = ','.join(['%s'] * len(request.field_names))
+            cursor.execute(f"""
+                UPDATE device_components
+                SET field_name = NULL, last_seen = NOW()
+                WHERE device_id = %s AND component_id != %s
+                  AND field_name IN ({placeholders})
+            """, [device_id, component_id] + request.field_names)
+        
+        # Update component with new fields
+        field_name_str = ','.join(request.field_names) if request.field_names else None
+        
+        # Re-infer hardware_model based on new fields
+        inferred_types = [infer_component_type(fn) for fn in request.field_names]
+        inferred_types = [t for t in inferred_types if t]
+        hw_model = infer_hardware_model(inferred_types, request.field_names)
+        
+        cursor.execute("""
+            UPDATE device_components
+            SET field_name = %s, hardware_model = COALESCE(%s, hardware_model),
+                detection_confidence = LEAST(detection_confidence + 0.1, 1.0),
+                last_seen = NOW()
+            WHERE device_id = %s AND component_id = %s
+        """, (field_name_str, hw_model, device_id, component_id))
+        conn.commit()
+        
+        return {
+            "success": True,
+            "component_id": component_id,
+            "assigned_fields": request.field_names,
+            "hardware_model": hw_model
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
