@@ -84,7 +84,7 @@ class Room {
   }
 
   String get occupancyText {
-    if (occupancy <= 0) return 'Khong co nguoi';
+    if (occupancy <= 0) return 'Không có người';
     if (occupancy == 1) return '1 nguoi';
     return '$occupancy nguoi';
   }

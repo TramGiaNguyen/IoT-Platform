@@ -19,6 +19,9 @@ dependencies:
   # Secure storage for token
   flutter_secure_storage: ^9.0.0
 
+  # Shared preferences for local settings
+  shared_preferences: ^2.2.0
+
   # Universal video player (RTSP, RTMP, HLS, DASH, MJPEG, file) on
   # Android/iOS/macOS/Windows/Linux with hardware acceleration.
   # Replaces flutter_mjpeg (which only handled MJPEG) so the mobile app

@@ -359,7 +359,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                   borderRadius: BorderRadius.circular(9999),
                                 ),
                                 child: const Text(
-                                  'Thu lai',
+                                  'Thử lại',
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontFamily: 'Manrope',
@@ -381,7 +381,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                 child: TextField(
                                   controller: _searchController,
                                   decoration: InputDecoration(
-                                    hintText: 'Tim kiem phong...',
+                                    hintText: 'Tìm kiếm phòng...',
                                     prefixIcon: const Icon(
                                       Icons.search,
                                       color: Color(0xFF006a6a),
@@ -428,7 +428,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                 child: Row(
                                   children: [
                                     Text(
-                                      '${_filteredRooms.length} PHONG',
+                                      '${_filteredRooms.length} PHÒNG',
                                       style: const TextStyle(
                                         fontFamily: 'Inter',
                                         fontSize: 10,
@@ -456,8 +456,8 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                             const SizedBox(height: 16),
                                             Text(
                                               _searchController.text.isNotEmpty
-                                                  ? 'Khong tim thay phong'
-                                                  : 'Chua co phong nao',
+                                                  ? 'Không tìm thấy phòng'
+                                                  : 'Chưa có phòng nào',
                                               style: const TextStyle(
                                                 fontSize: 16,
                                                 color: Color(0xFF40484C),

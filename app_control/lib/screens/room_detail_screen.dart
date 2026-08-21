@@ -264,7 +264,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     if (timedOut) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Thiet bi khong phan hoi. Vui long thu lai.'),
+          content: const Text('Thiết bị không phản hồi. Vui lòng thử lại.'),
           backgroundColor: Colors.orange,
           duration: const Duration(seconds: 3),
         ),
@@ -525,7 +525,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                                       ),
                                       const SizedBox(height: 16),
                                       const Text(
-                                        'Chua co thiet bi trong phong',
+                                        'Chưa có thiết bị trong phòng',
                                         style: TextStyle(
                                           fontSize: 16,
                                           color: Color(0xFF40484C),

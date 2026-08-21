@@ -98,7 +98,7 @@ class _RulesScreenState extends State<RulesScreen>
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(newStatus == 'enabled' ? 'Da bat rule' : 'Da tat rule'),
+          content: Text(newStatus == 'enabled' ? 'Đã bật rule' : 'Đã tắt rule'),
           backgroundColor: const Color(0xFF006a6a),
         ),
       );
@@ -121,7 +121,7 @@ class _RulesScreenState extends State<RulesScreen>
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(newStatus == 'enabled' ? 'Da bat lich trinh' : 'Da tat lich trinh'),
+          content: Text(newStatus == 'enabled' ? 'Đã bật lịch trình' : 'Đã tắt lịch trình'),
           backgroundColor: const Color(0xFF006a6a),
         ),
       );
@@ -142,7 +142,7 @@ class _RulesScreenState extends State<RulesScreen>
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Xac nhan xoa'),
-        content: Text('Ban co chac muon xoa rule "${rule.tenRule}"?'),
+        content: Text('Bạn có chắc muốn xóa rule "${rule.tenRule}"?'),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         backgroundColor: Colors.white,
         titleTextStyle: const TextStyle(fontFamily: 'Manrope', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF003345)),
@@ -187,7 +187,7 @@ class _RulesScreenState extends State<RulesScreen>
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Xac nhan xoa'),
-        content: Text('Ban co chac muon xoa lich trinh "${rule.tenRule}"?'),
+        content: Text('Bạn có chắc muốn xóa lịch trình "${rule.tenRule}"?'),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         backgroundColor: Colors.white,
         titleTextStyle: const TextStyle(fontFamily: 'Manrope', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF003345)),
@@ -335,7 +335,7 @@ class _RulesScreenState extends State<RulesScreen>
                         const DropdownMenuItem<int?>(
                           value: null,
                           child: Text(
-                            'Tat ca phong',
+                            'Tất cả phòng',
                             style: TextStyle(
                               fontFamily: 'Manrope',
                               fontWeight: FontWeight.w500,
@@ -410,7 +410,7 @@ class _RulesScreenState extends State<RulesScreen>
                 children: [
                   // Conditional Rules Tab
                   _conditionalRules.isEmpty
-                      ? _buildEmptyState('Chua co rule dieu kien', Icons.rule)
+                      ? _buildEmptyState('Chưa có rule điều kiện', Icons.rule)
                       : RefreshIndicator(
                           color: const Color(0xFF006a6a),
                           onRefresh: _loadRules,
@@ -428,7 +428,7 @@ class _RulesScreenState extends State<RulesScreen>
                   
                   // Scheduled Rules Tab
                   _scheduledRules.isEmpty
-                      ? _buildEmptyState('Chua co lich trinh', Icons.schedule)
+                      ? _buildEmptyState('Chưa có lịch trình', Icons.schedule)
                       : RefreshIndicator(
                           color: const Color(0xFF006a6a),
                           onRefresh: _loadRules,

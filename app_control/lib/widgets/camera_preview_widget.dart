@@ -117,7 +117,7 @@ class CameraPreviewWidget extends StatelessWidget {
             ),
             SizedBox(height: 8),
             Text(
-              'Chua co camera',
+              'Chưa có camera',
               style: TextStyle(
                 color: Color(0xFF40484C),
                 fontSize: 13,

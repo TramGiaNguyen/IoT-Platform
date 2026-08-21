@@ -32,6 +32,14 @@ AC_CONTROL_URL = os.getenv("AC_CONTROL_URL", "http://192.168.190.101")
 
 security = HTTPBearer()
 
+
+# Helper: Force UTF-8 decoding for Vietnamese characters in HTTP responses
+def _json_response(response: httpx.Response) -> dict:
+    """Decode response as UTF-8 before parsing JSON to preserve Vietnamese characters."""
+    response.encoding = 'utf-8'
+    return response.json()
+
+
 # Models
 class LoginRequest(BaseModel):
     username: str
@@ -193,7 +201,7 @@ async def get_relay_status(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail="Không lấy được dữ liệu thiết bị")
-            device_data = response.json()
+            device_data = _json_response(response)
             data = device_data.get("data", {})
             
             # Lấy config control-lines (danh sách relay)
@@ -203,7 +211,7 @@ async def get_relay_status(
             )
             lines_data = []
             if lines_resp.status_code == 200:
-                lines_data = lines_resp.json().get("control_lines", [])
+                lines_data = _json_response(lines_resp).get("control_lines", [])
                 
             dynamic_relays = []
             for line in lines_data:
@@ -414,7 +422,7 @@ async def get_rooms(
                     detail=f"Không lấy được danh sách phòng (HTTP {response.status_code})"
                 )
 
-            data = response.json()
+            data = _json_response(response)
             return data
 
         except httpx.RequestError as e:
@@ -440,7 +448,7 @@ async def list_class_students(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return response.json()
+            return _json_response(response)
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -463,7 +471,7 @@ async def add_student_to_class(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return response.json()
+            return _json_response(response)
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -485,7 +493,7 @@ async def remove_student_from_class(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return response.json()
+            return _json_response(response)
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -506,7 +514,7 @@ async def list_available_students(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return response.json()
+            return _json_response(response)
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -530,7 +538,7 @@ async def list_class_groups(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return response.json()
+            return _json_response(response)
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -553,7 +561,7 @@ async def create_class_group(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return response.json()
+            return _json_response(response)
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -576,7 +584,7 @@ async def update_group(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return response.json()
+            return _json_response(response)
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -597,7 +605,7 @@ async def delete_group(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return response.json()
+            return _json_response(response)
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -618,7 +626,7 @@ async def list_group_members(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return response.json()
+            return _json_response(response)
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -641,7 +649,7 @@ async def add_group_member(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return response.json()
+            return _json_response(response)
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -663,7 +671,7 @@ async def remove_group_member(
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
-            return response.json()
+            return _json_response(response)
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")
 
@@ -1001,6 +1009,8 @@ async def _proxy_platform_json_get(
                     status_code=response.status_code,
                     detail=fail_detail,
                 )
+            # Force UTF-8 decode for Vietnamese characters
+            response.encoding = 'utf-8'
             return response.json()
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Lỗi kết nối: {str(e)}")

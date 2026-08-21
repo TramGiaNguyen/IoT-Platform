@@ -417,7 +417,7 @@ class _ControlScreenState extends State<ControlScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Dieu khien may lanh',
+            'Điều khiển máy lạnh',
             style: TextStyle(
               fontFamily: 'Manrope',
               fontSize: 20,
@@ -442,7 +442,7 @@ class _ControlScreenState extends State<ControlScreen> {
                       ),
                     ),
                     Text(
-                      'Nhiet do phong: ${indoorTemp ?? "--"}\u00B0C',
+                      'Nhiệt độ phòng: ${indoorTemp ?? "--"}\u00B0C',
                       style: TextStyle(
                         fontFamily: 'Inter',
                         fontSize: 12,
@@ -759,7 +759,7 @@ class _ControlScreenState extends State<ControlScreen> {
                                     _buildInfoCard('Cong suat', _relayData!['power'].toStringAsFixed(2), 'kW', Icons.power, const Color(0xFF22C55E)),
                                     _buildInfoCard('Nang luong', _relayData!['energy'].toStringAsFixed(2), 'kWh', Icons.battery_charging_full, const Color(0xFF14B8A6)),
                                     _buildInfoCard('Tan so', _relayData!['frequency'].toStringAsFixed(1), 'Hz', Icons.waves, const Color(0xFFA855F7)),
-                                    _buildInfoCard('He so cong suat', _relayData!['power_factor'].toStringAsFixed(2), '', Icons.speed, const Color(0xFF92400E)),
+                                    _buildInfoCard('Hệ số công suất', _relayData!['power_factor'].toStringAsFixed(2), '', Icons.speed, const Color(0xFF92400E)),
                                   ],
                                 ),
                                 const SizedBox(height: 16),

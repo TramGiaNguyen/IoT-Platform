@@ -40,7 +40,7 @@ class BottomNavBar extends StatelessWidget {
                 index: 1,
                 icon: Icons.meeting_room_outlined,
                 activeIcon: Icons.meeting_room,
-                label: 'Phong',
+                label: 'Phòng',
               ),
               _buildNavItem(
                 index: 2,

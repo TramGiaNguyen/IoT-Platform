@@ -303,7 +303,7 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     child: const Text(
-                      'Khong the dieu khien',
+                      'Không thể điều khiển',
                       style: TextStyle(
                         fontFamily: 'Inter',
                         fontSize: 11,
@@ -719,11 +719,11 @@ class _RelayControlWidgetState extends State<RelayControlWidget> {
   String _getTypeDescription(ControlType type) {
     switch (type) {
       case ControlType.onOff:
-        return 'Cong tac bat/tat binh thuong';
+        return 'Công tắc bật/tắt bình thường';
       case ControlType.toggle:
         return 'LOW / MED / HIGH (quat, bom...)';
       case ControlType.momentary:
-        return 'Nhan giu roi tha (chuong, cua...)';
+        return 'Nhấn giữ rồi thả (chuông, cửa...)';
     }
   }
 

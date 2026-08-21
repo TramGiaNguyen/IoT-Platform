@@ -76,7 +76,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
 
   /// Nhãn gợi ý khi API không có mo_ta (giống tên hiển thị quen thuộc).
   static const Map<String, String> _knownFieldLabels = {
-    'so_nguoi_trong_phong': 'So nguoi trong phong',
+    'so_nguoi_trong_phong': 'Số người trong phòng',
     'temperature': 'Nhiet do',
     'humidity': 'Do am',
     'voltage': 'Dien ap',
@@ -277,7 +277,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Loi tai thiet bi: ${e.toString()}'),
+            content: Text('Lỗi tải thiết bị: ${e.toString()}'),
             backgroundColor: const Color(0xFFBA1A1A),
           ),
         );
@@ -385,7 +385,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Khong tai relay: $e'),
+            content: Text('Không tải được relay: $e'),
             backgroundColor: const Color(0xFFBA1A1A),
             duration: const Duration(seconds: 4),
           ),
@@ -440,7 +440,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     if (validConditions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Can it nhat mot dieu kien'),
+          content: Text('Cần ít nhất một điều kiện'),
           backgroundColor: Color(0xFFBA1A1A),
         ),
       );
@@ -450,7 +450,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
     if (_actionDeviceId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Vui long chon thiet bi dieu khien'),
+          content: Text('Vui lòng chọn thiết bị điều khiển'),
           backgroundColor: Color(0xFFBA1A1A),
         ),
       );
@@ -519,7 +519,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                widget.rule != null ? 'Da cap nhat rule' : 'Da tao rule'),
+                widget.rule != null ? 'Đã cập nhật rule' : 'Đã tạo rule'),
             backgroundColor: const Color(0xFF006a6a),
           ),
         );
@@ -617,7 +617,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                             ),
                             validator: (value) {
                               if (value == null || value.isEmpty) {
-                                return 'Vui long nhap ten rule';
+                                return 'Vui lòng nhập tên rule'
                               }
                               return null;
                             },
@@ -643,7 +643,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                             value: _actionDeviceId,
                             isExpanded: true,
                             decoration: _inputDecoration(
-                              hintText: 'Chon thiet bi dieu khien',
+                              hintText: 'Chọn thiết bị điều khiển',
                               prefixIcon: Icons.settings_remote,
                             ),
                             items: _devices.map((device) {
@@ -665,7 +665,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                             },
                             validator: (value) {
                               if (value == null) {
-                                return 'Vui long chon thiet bi';
+                                return 'Vui lòng chọn thiết bị'
                               }
                               return null;
                             },
@@ -693,8 +693,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                                 ),
                               ),
                               child: const Text(
-                                'Chua co relay trong control_lines cho thiet bi nay. '
-                                'Kiem tra cau hinh thiet bi tren dashboard.',
+                                'Chưa có relay trong control_lines cho thiết bị này. '
+                                'Kiểm tra cấu hình thiết bị trên dashboard.',
                                 style: TextStyle(
                                   color: Color(0xFF71787D),
                                   fontFamily: 'Inter',
@@ -814,7 +814,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                             value: _priority,
                             isExpanded: true,
                             decoration: _inputDecoration(
-                              hintText: 'Muc do uu tien',
+                              hintText: 'Mức độ ưu tiên',
                               prefixIcon: Icons.priority_high,
                             ),
                             items: List.generate(10, (i) => i + 1)
@@ -853,8 +853,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                                     children: [
                                       Text(
                                         _isEnabled
-                                            ? 'Kich hoat rule'
-                                            : 'Rule dang tat',
+                                            ? 'Kích hoạt rule'
+                                            : 'Rule đang tắt',
                                         style: const TextStyle(
                                           fontFamily: 'Manrope',
                                           fontWeight: FontWeight.w600,
@@ -863,8 +863,8 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
                                       ),
                                       Text(
                                         _isEnabled
-                                            ? 'Rule se chay khi dkien thoa man'
-                                            : 'Rule khong chay',
+                                            ? 'Rule sẽ chạy khi điều kiện thỏa mãn'
+                                            : 'Rule không chạy',
                                         style: const TextStyle(
                                           fontFamily: 'Inter',
                                           fontSize: 12,
@@ -1084,7 +1084,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
               DropdownButtonFormField<String>(
                 value: cond.deviceId,
                 isExpanded: true,
-                decoration: _compactDecoration(hintText: 'Thiet bi cam bien'),
+                decoration: _compactDecoration(hintText: 'Thiết bị cảm biến'),
                 items: _devices.map((device) {
                   return DropdownMenuItem<String>(
                     value: device['device_id'] as String,
@@ -1109,7 +1109,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
               DropdownButtonFormField<String>(
                 value: cond.field.isNotEmpty ? cond.field : null,
                 isExpanded: true,
-                decoration: _compactDecoration(hintText: 'Truong du lieu'),
+                decoration: _compactDecoration(hintText: 'Trường dữ liệu'),
                 items: _buildConditionFieldItems(),
                 onChanged: (value) {
                   setState(() => cond.field = value ?? '');
@@ -1163,7 +1163,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
           onPressed: _addCondition,
           icon: const Icon(Icons.add, color: Color(0xFF006a6a)),
           label: const Text(
-            'Them dieu kien (AND)',
+            'Thêm điều kiện (AND)',
             style: TextStyle(color: Color(0xFF006a6a)),
           ),
         ),
@@ -1287,23 +1287,23 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
   String _getCommandTypeDescription(ActionCommandType type) {
     switch (type) {
       case ActionCommandType.relay:
-        return 'Dieu khien relay bat/tat';
+        return 'Điều khiển relay bật/tắt'
       case ActionCommandType.turnOn:
-        return 'Bat thi bi';
+        return 'Bật thiết bị'
       case ActionCommandType.turnOff:
-        return 'Tat thi bi';
+        return 'Tắt thiết bị'
       case ActionCommandType.toggle:
-        return 'Dao trang thai thi bi';
+        return 'Đảo trạng thái thiết bị'
       case ActionCommandType.setAcTemp:
-        return 'Dat nhiet do may lanh';
+        return 'Đặt nhiệt độ máy lạnh'
       case ActionCommandType.setMode:
-        return 'Dat che do may lanh';
+        return 'Đặt chế độ máy lạnh'
       case ActionCommandType.setFanSpeed:
-        return 'Dat toc do quat';
+        return 'Đặt tốc độ quạt'
       case ActionCommandType.setBrightness:
-        return 'Dat do sang';
+        return 'Đặt độ sáng'
       case ActionCommandType.setHumidity:
-        return 'Dat do am';
+        return 'Đặt độ ẩm'
     }
   }
 
@@ -1348,7 +1348,7 @@ class _RuleFormScreenState extends State<RuleFormScreen> {
           DropdownButtonFormField<int>(
             value: _extendedParams['speed'] as int? ?? 3,
             decoration: _inputDecoration(
-              hintText: 'Toc do quat',
+              hintText: 'Tốc độ quạt',
               prefixIcon: Icons.speed,
             ),
             items: List.generate(5, (i) => i + 1)

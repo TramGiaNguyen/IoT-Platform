@@ -144,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           TextFormField(
                             controller: _usernameController,
                             decoration: InputDecoration(
-                              labelText: 'TEN DANG NHAP',
+                              labelText: 'TÊN ĐĂNG NHẬP',
                               prefixIcon: const Icon(
                                 Icons.person,
                                 color: Color(0xFF006a6a),
@@ -178,7 +178,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             validator: (value) {
                               if (value == null || value.isEmpty) {
-                                return 'Vui long nhap ten dang nhap';
+                                'Vui lòng nhập tên đăng nhập'
                               }
                               return null;
                             },
@@ -236,7 +236,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             validator: (value) {
                               if (value == null || value.isEmpty) {
-                                return 'Vui long nhap mat khau';
+                                return 'Vui lòng nhập mật khẩu';
                               }
                               return null;
                             },
@@ -287,7 +287,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         ),
                                       )
                                     : const Text(
-                                        'DANG NHAP',
+                                        'ĐĂNG NHẬP',
                                         style: TextStyle(
                                           fontFamily: 'Manrope',
                                           fontSize: 16,

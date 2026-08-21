@@ -105,7 +105,7 @@ class RuleCondition {
         break;
     }
     final fieldLabel = field == 'so_nguoi_trong_phong'
-        ? 'So nguoi trong phong'
+        ? 'Số người trong phòng'
         : field;
     return '$fieldLabel $operatorText $value';
   }
@@ -176,31 +176,31 @@ class RuleAction {
         }
         return 'Relay';
       case 'turn_on':
-        return 'Bat thi bi';
+        return 'Bật thiết bị';
       case 'turn_off':
-        return 'Tat thi bi';
+        return 'Tắt thiết bị';
       case 'toggle':
-        return 'Dao trang thai';
+        return 'Đảo trạng thái';
       case 'set_ac_temp':
         final temp = actionParams?['temperature'];
-        return 'Dat nhiet do: ${temp ?? '?'}C';
+        return 'Đặt nhiệt độ: ${temp ?? '?'}°C';
       case 'set_mode':
         final mode = actionParams?['mode'];
-        return 'Che do: ${mode ?? '?'}';
+        return 'Chế độ: ${mode ?? '?'}';
       case 'set_fan_speed':
         final speed = actionParams?['speed'];
-        return 'Toc do quat: ${speed ?? '?'}';
+        return 'Tốc độ quạt: ${speed ?? '?'}';
       case 'set_brightness':
         final brightness = actionParams?['brightness'];
-        return 'Do sang: ${brightness ?? '?'}%';
+        return 'Độ sáng: ${brightness ?? '?'}%';
       case 'set_humidity':
         final humidity = actionParams?['humidity'];
-        return 'Do am: ${humidity ?? '?'}%';
+        return 'Độ ẩm: ${humidity ?? '?'}%';
       default:
         if (actionCommand.isNotEmpty) {
           return actionCommand;
         }
-        return 'Han dong';
+        return 'Hành động';
     }
   }
 }
