@@ -26,6 +26,7 @@ export default function UserManagement({ token, onBack, userInfo }) {
     const [myRooms, setMyRooms] = useState([]);                  // rooms owned by current admin
     const [assignedRoomIds, setAssignedRoomIds] = useState([]); // ids assigned to edited user
     const [assignmentLoading, setAssignmentLoading] = useState(false);
+    const [roomSearch, setRoomSearch] = useState('');
 
     // Pagination & filter state
     const [currentPage, setCurrentPage] = useState(1);
@@ -88,6 +89,7 @@ export default function UserManagement({ token, onBack, userInfo }) {
         setFormData({ ten: '', email: '', password: '', vai_tro: 'student' });
         setEditUserId(null);
         setAssignedRoomIds([]);
+        setRoomSearch('');
     };
 
     const handleOpenAdd = () => { resetForm(); setFormVisible(true); };
@@ -341,7 +343,7 @@ export default function UserManagement({ token, onBack, userInfo }) {
             {/* Modal: Add / Edit user */}
             {formVisible && (
                 <div className="rules-modal-backdrop">
-                    <div className="rules-modal" style={{ maxWidth: 500 }}>
+                    <div className="rules-modal" style={{ maxWidth: 640, width: '90vw' }}>
                         <div className="rules-modal-header">
                             <h3>{editUserId ? 'Sửa người dùng' : 'Thêm người dùng'}</h3>
                             <button className="rules-modal-close" onClick={() => { resetForm(); setFormVisible(false); }}>×</button>
@@ -403,42 +405,142 @@ export default function UserManagement({ token, onBack, userInfo }) {
                                     <option value="admin">Admin</option>
                                 </select>
                             </label>
-                            {editUserId && (formData.vai_tro === 'teacher' || formData.vai_tro === 'student') && (
-                                <div className="user-rooms-assignment">
-                                    <div className="user-rooms-assignment-header">
-                                        <strong>Phòng được gán quyền sử dụng</strong>
-                                        <span className="user-rooms-assignment-count">
-                                            {assignedRoomIds.length} / {myRooms.length} phòng
-                                        </span>
-                                    </div>
-                                    <p className="help-text" style={{ marginTop: 4, marginBottom: 8 }}>
-                                        Chọn các phòng bạn sở hữu để cấp quyền sử dụng cho user này. User chỉ có quyền xem và tương tác thiết bị, không thể sửa hoặc xóa phòng.
-                                    </p>
-                                    {assignmentLoading ? (
-                                        <div className="help-text">Đang tải...</div>
-                                    ) : myRooms.length === 0 ? (
-                                        <div className="help-text">Bạn chưa sở hữu phòng nào để gán. Hãy tạo phòng trước.</div>
-                                    ) : (
-                                        <div className="user-rooms-assignment-list">
-                                            {myRooms.map(room => (
-                                                <label key={room.id} className="user-rooms-assignment-item">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={assignedRoomIds.includes(room.id)}
-                                                        onChange={() => toggleAssignedRoom(room.id)}
-                                                    />
-                                                    <span className="user-rooms-assignment-item-name">
-                                                        {room.ten_phong || room.name}
-                                                    </span>
-                                                    {room.ma_phong && (
-                                                        <span className="user-rooms-assignment-item-code">{room.ma_phong}</span>
-                                                    )}
-                                                </label>
-                                            ))}
+                            {editUserId && (formData.vai_tro === 'teacher' || formData.vai_tro === 'student') && (() => {
+                                const q = roomSearch.trim().toLowerCase();
+                                const filteredRooms = q
+                                    ? myRooms.filter(r => {
+                                        const name = (r.ten_phong || r.name || '').toLowerCase();
+                                        const code = (r.ma_phong || '').toLowerCase();
+                                        const loc = (r.vi_tri || '').toLowerCase();
+                                        return name.includes(q) || code.includes(q) || loc.includes(q);
+                                    })
+                                    : myRooms;
+                                const visibleSelected = filteredRooms.filter(r => assignedRoomIds.includes(r.id)).length;
+                                const allVisibleSelected = filteredRooms.length > 0 && visibleSelected === filteredRooms.length;
+                                const CheckIcon = (
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                );
+                                const KeyIcon = (
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+                                    </svg>
+                                );
+                                const SearchIcon = (
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="room-assign-search-icon">
+                                        <circle cx="11" cy="11" r="8"/>
+                                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                                    </svg>
+                                );
+                                const InboxIcon = (
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="room-assign-empty-icon">
+                                        <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
+                                        <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+                                    </svg>
+                                );
+                                const toggleAllVisible = () => {
+                                    if (allVisibleSelected) {
+                                        setAssignedRoomIds(prev => prev.filter(id => !filteredRooms.some(r => r.id === id)));
+                                    } else {
+                                        const ids = filteredRooms.map(r => r.id);
+                                        setAssignedRoomIds(prev => Array.from(new Set([...prev, ...ids])));
+                                    }
+                                };
+                                return (
+                                    <div className="room-assign-panel">
+                                        <div className="room-assign-panel-header">
+                                            <div className="room-assign-panel-title">
+                                                <span className="room-assign-panel-title-icon">{KeyIcon}</span>
+                                                Phòng được gán quyền sử dụng
+                                            </div>
+                                            <span className="room-assign-panel-counter">
+                                                <strong>{assignedRoomIds.length}</strong>
+                                                <span>/ {myRooms.length}</span>
+                                                <span>phòng</span>
+                                            </span>
                                         </div>
-                                    )}
-                                </div>
-                            )}
+                                        <div className="room-assign-panel-body">
+                                            <p className="room-assign-hint">
+                                                Chọn các phòng bạn sở hữu để cấp quyền sử dụng cho user này. User chỉ có quyền xem và tương tác thiết bị, không thể sửa hoặc xóa phòng.
+                                            </p>
+                                            {assignmentLoading ? (
+                                                <div className="room-assign-empty">{InboxIcon}Đang tải danh sách phòng...</div>
+                                            ) : myRooms.length === 0 ? (
+                                                <div className="room-assign-empty">{InboxIcon}Bạn chưa sở hữu phòng nào để gán. Hãy tạo phòng trước.</div>
+                                            ) : (
+                                                <>
+                                                    <div className="room-assign-toolbar">
+                                                        <div className="room-assign-search">
+                                                            {SearchIcon}
+                                                            <input
+                                                                type="text"
+                                                                value={roomSearch}
+                                                                onChange={e => setRoomSearch(e.target.value)}
+                                                                placeholder="Tìm theo tên, mã hoặc vị trí..."
+                                                            />
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            className="room-assign-select-all"
+                                                            onClick={toggleAllVisible}
+                                                            disabled={filteredRooms.length === 0}
+                                                            title={allVisibleSelected ? 'Bỏ chọn tất cả (đang lọc)' : 'Chọn tất cả (đang lọc)'}
+                                                        >
+                                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                                {allVisibleSelected ? (
+                                                                    <rect x="3" y="3" width="18" height="18" rx="3"/>
+                                                                ) : (
+                                                                    <polyline points="20 6 9 17 4 12"/>
+                                                                )}
+                                                            </svg>
+                                                            {allVisibleSelected ? 'Bỏ chọn' : 'Chọn tất cả'}
+                                                        </button>
+                                                    </div>
+                                                    {filteredRooms.length === 0 ? (
+                                                        <div className="room-assign-empty">{InboxIcon}Không có phòng nào khớp với "{roomSearch}"</div>
+                                                    ) : (
+                                                        <div className="room-assign-grid">
+                                                            {filteredRooms.map(room => {
+                                                                const checked = assignedRoomIds.includes(room.id);
+                                                                return (
+                                                                    <div
+                                                                        key={room.id}
+                                                                        className={`room-assign-card${checked ? ' checked' : ''}`}
+                                                                        onClick={() => toggleAssignedRoom(room.id)}
+                                                                        role="checkbox"
+                                                                        aria-checked={checked}
+                                                                        tabIndex={0}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === ' ' || e.key === 'Enter') {
+                                                                                e.preventDefault();
+                                                                                toggleAssignedRoom(room.id);
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        <span className="room-assign-card-check">
+                                                                            {checked ? CheckIcon : null}
+                                                                        </span>
+                                                                        <span className="room-assign-card-content">
+                                                                            <span className="room-assign-card-name" title={room.ten_phong || room.name}>
+                                                                                {room.ten_phong || room.name || `Phòng #${room.id}`}
+                                                                            </span>
+                                                                            <span className="room-assign-card-meta">
+                                                                                {room.ma_phong && <span className="room-assign-card-code">{room.ma_phong}</span>}
+                                                                                {room.vi_tri && <span className="room-assign-card-location" title={room.vi_tri}>{room.vi_tri}</span>}
+                                                                            </span>
+                                                                        </span>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                             <div className="form-actions">
                                 <button type="button" onClick={() => { resetForm(); setFormVisible(false); }}>Hủy</button>
                                 <button type="submit">{editUserId ? 'Cập nhật' : 'Tạo người dùng'}</button>
