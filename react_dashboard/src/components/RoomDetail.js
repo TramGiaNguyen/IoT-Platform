@@ -16,184 +16,1149 @@ import { useGlobalCache } from '../context/GlobalCache';
 
 /* ------------------------------------------------------------------ */
 /* CSS classes for this component (appended to style.css)              */
+/* Uses CSS variables for light/dark mode support                       */
 /* ------------------------------------------------------------------ */
 const _css = `
-.room-detail-page { padding: 24px 32px; }
-.room-detail-header { margin-bottom: 28px; }
-.room-detail-header h2 { margin: 0 0 4px; color: #e2e8f0; font-size: 1.4rem; }
-.room-detail-header .room-meta { color: #94a3b8; font-size: 0.9rem; }
-.room-detail-devices { margin-bottom: 32px; }
-.room-detail-devices h3 { color: #e2e8f0; margin-bottom: 12px; font-size: 1rem; }
-.room-detail-section { margin-bottom: 32px; }
-.room-detail-section h3 { color: #e2e8f0; margin-bottom: 12px; font-size: 1rem; }
+/* ===== Room Detail Page Variables ===== */
+.room-detail-page {
+  --rd-bg: #0b1120;
+  --rd-bg-gradient: radial-gradient(circle at 20% 0%, rgba(6, 182, 212, 0.06), transparent 50%),
+                    radial-gradient(circle at 80% 100%, rgba(59, 130, 246, 0.05), transparent 40%),
+                    #0b1120;
+  --rd-text: #e2e8f0;
+  --rd-text-secondary: #94a3b8;
+  --rd-text-muted: #64748b;
+  --rd-text-accent: #22d3ee;
+
+  --rd-card-bg: linear-gradient(145deg, rgba(15, 23, 42, 0.9), rgba(9, 12, 24, 0.95));
+  --rd-card-border: rgba(255, 255, 255, 0.08);
+  --rd-card-hover-border: rgba(6, 182, 212, 0.35);
+
+  --rd-header-bg: rgba(15, 23, 42, 0.6);
+  --rd-header-border: rgba(255, 255, 255, 0.06);
+
+  --rd-chip-bg: rgba(15, 23, 42, 0.6);
+  --rd-chip-border: rgba(255, 255, 255, 0.1);
+  --rd-chip-text: #cbd5e1;
+
+  --rd-btn-bg: rgba(15, 23, 42, 0.8);
+  --rd-btn-border: rgba(255, 255, 255, 0.1);
+  --rd-btn-text: #94a3b8;
+  --rd-btn-hover-bg: rgba(6, 182, 212, 0.1);
+  --rd-btn-hover-border: #22d3ee;
+  --rd-btn-hover-text: #22d3ee;
+
+  --rd-primary-btn-bg: #22d3ee;
+  --rd-primary-btn-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+
+  --rd-select-bg: rgba(15, 23, 42, 0.8);
+  --rd-select-border: rgba(255, 255, 255, 0.12);
+
+  --rd-empty-text: #64748b;
+
+  --rd-status-online: #22c55e;
+  --rd-status-offline: #475569;
+  --rd-danger-bg: rgba(239, 68, 68, 0.15);
+  --rd-danger-text: #fca5a5;
+  --rd-danger-border: rgba(239, 68, 68, 0.4);
+
+  --rd-camera-bg: #000;
+  --rd-camera-border: rgba(255, 255, 255, 0.08);
+  --rd-camera-streaming-border: rgba(34, 211, 238, 0.35);
+
+  --rd-modal-bg: #0f172a;
+  --rd-modal-border: rgba(34, 211, 238, 0.3);
+
+  padding: 0;
+  min-height: 100vh;
+  background: var(--rd-bg-gradient);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Light mode */
+[data-theme="light"] .room-detail-page {
+  --rd-bg: #f1f5f9;
+  --rd-bg-gradient: #f1f5f9;
+  --rd-text: #1e293b;
+  --rd-text-secondary: #475569;
+  --rd-text-muted: #94a3b8;
+  --rd-text-accent: #0891b2;
+
+  --rd-card-bg: #ffffff;
+  --rd-card-border: #e2e8f0;
+  --rd-card-hover-border: rgba(6, 182, 212, 0.5);
+
+  --rd-header-bg: #f8fafc;
+  --rd-header-border: #e2e8f0;
+
+  --rd-chip-bg: #f1f5f9;
+  --rd-chip-border: #e2e8f0;
+  --rd-chip-text: #475569;
+
+  --rd-btn-bg: #ffffff;
+  --rd-btn-border: #e2e8f0;
+  --rd-btn-text: #64748b;
+  --rd-btn-hover-bg: rgba(6, 182, 212, 0.08);
+  --rd-btn-hover-border: #0891b2;
+  --rd-btn-hover-text: #0891b2;
+
+  --rd-primary-btn-bg: #0891b2;
+  --rd-primary-btn-shadow: 0 4px 12px rgba(6, 182, 212, 0.25);
+
+  --rd-select-bg: #ffffff;
+  --rd-select-border: #e2e8f0;
+
+  --rd-empty-text: #94a3b8;
+
+  --rd-status-online: #16a34a;
+  --rd-status-offline: #94a3b8;
+  --rd-danger-bg: rgba(220, 38, 38, 0.08);
+  --rd-danger-text: #dc2626;
+  --rd-danger-border: rgba(220, 38, 38, 0.4);
+
+  --rd-camera-bg: #1e293b;
+  --rd-camera-border: #e2e8f0;
+  --rd-camera-streaming-border: #0891b2;
+
+  --rd-modal-bg: #ffffff;
+  --rd-modal-border: #e2e8f0;
+}
+
+/* ===== Header ===== */
+.room-detail-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--rd-header-bg);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--rd-header-border);
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin: 0;
+}
+
+.room-detail-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.room-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.room-detail-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--rd-text);
+  margin: 0;
+}
+
+.room-detail-meta {
+  font-size: 0.85rem;
+  color: var(--rd-text-secondary);
+  margin: 0;
+}
+
+.room-detail-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ===== Buttons ===== */
+.room-detail-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--rd-btn-border);
+  background: var(--rd-btn-bg);
+  color: var(--rd-btn-text);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.room-detail-btn:hover {
+  background: var(--rd-btn-hover-bg);
+  border-color: var(--rd-btn-hover-border);
+  color: var(--rd-btn-hover-text);
+}
+
+.room-detail-btn-primary {
+  background: var(--rd-primary-btn-bg);
+  border-color: transparent;
+  color: #0b1224;
+  font-weight: 600;
+  box-shadow: var(--rd-primary-btn-shadow);
+}
+
+.room-detail-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(6, 182, 212, 0.35);
+  color: #0b1224;
+}
+
+.room-detail-btn-icon {
+  padding: 8px;
+  min-width: 36px;
+  justify-content: center;
+}
+
+.room-detail-btn-danger {
+  background: var(--rd-danger-bg);
+  border-color: var(--rd-danger-border);
+  color: var(--rd-danger-text);
+}
+
+.room-detail-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* ===== Content Area ===== */
+.room-detail-content {
+  padding: 24px;
+}
+
+/* ===== Occupancy Banner ===== */
 .room-occupancy-banner {
-  display: inline-flex; align-items: center; gap: 10px;
-  background: rgba(34,211,238,0.08); border: 1px solid rgba(34,211,238,0.25);
-  border-radius: 12px; padding: 10px 20px; margin-bottom: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--rd-card-bg);
+  border: 1px solid var(--rd-card-border);
+  border-radius: 14px;
+  padding: 16px 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
-.room-occupancy-count { font-size: 2.2rem; font-weight: 700; color: #22d3ee; line-height: 1; }
-.room-occupancy-label { color: #94a3b8; font-size: 0.9rem; }
-.camera-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; }
-.camera-card {
-  background: linear-gradient(145deg, rgba(15,23,42,0.8), rgba(9,12,24,0.9));
-  border: 1px solid rgba(255,255,255,0.08); border-radius: 14px;
-  overflow: hidden; transition: box-shadow 0.2s;
+
+.room-occupancy-count {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--rd-text-accent);
+  line-height: 1;
+  min-width: 60px;
+  text-align: center;
 }
-.camera-card.streaming { border-color: rgba(34,211,238,0.35); box-shadow: 0 0 20px rgba(34,211,238,0.1); }
-.camera-card-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05);
+
+.room-occupancy-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
-.camera-card-header .cam-title { font-size: 0.95rem; font-weight: 600; color: #e2e8f0; }
-.camera-card-header .cam-sub { font-size: 0.8rem; color: #64748b; }
-.camera-stream-wrap { position: relative; background: #000; min-height: 200px; }
-.camera-stream-wrap img { width: 100%; display: block; }
-.camera-stream-placeholder {
-  display: flex; align-items: center; justify-content: center;
-  min-height: 200px; color: #475569; font-size: 0.85rem;
+
+.room-occupancy-label-text {
+  font-size: 0.9rem;
+  color: var(--rd-text-secondary);
 }
-.camera-overlay {
-  position: absolute; top: 8px; left: 8px;
-  background: rgba(0,0,0,0.55); border-radius: 6px; padding: 4px 8px;
-  font-size: 0.78rem; color: #fff; display: flex; align-items: center; gap: 6px;
+
+.room-occupancy-label-time {
+  font-size: 0.75rem;
+  color: var(--rd-text-muted);
 }
-.camera-count-badge {
-  background: rgba(34,211,238,0.15); border: 1px solid rgba(34,211,238,0.4);
-  border-radius: 50px; padding: 2px 8px; font-weight: 700; color: #22d3ee;
+
+/* ===== Section ===== */
+.room-detail-section {
+  margin-bottom: 32px;
 }
-.camera-form { padding: 16px; }
-.camera-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.camera-form-grid .full { grid-column: 1 / -1; }
-.camera-form input, .camera-form select {
-  width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.06); color: #e2e8f0; font-size: 0.85rem;
-  outline: none; transition: border-color 0.2s;
+
+.room-detail-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
 }
-.camera-form input:focus, .camera-form select:focus { border-color: #22d3ee; }
-.camera-form input::placeholder { color: #475569; }
-.camera-form label { display: block; font-size: 0.78rem; color: #64748b; margin-bottom: 4px; }
-.camera-form-actions { display: flex; gap: 8px; margin-top: 14px; }
-.camera-form-actions button {
-  flex: 1; padding: 8px; border-radius: 8px; border: none; cursor: pointer;
-  font-size: 0.85rem; font-weight: 600; transition: opacity 0.2s;
+
+.room-detail-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--rd-text);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.camera-form-actions button:hover { opacity: 0.85; }
-.camera-form-actions .btn-confirm { background: #22d3ee; color: #0f172a; }
-.camera-form-actions .btn-cancel { background: rgba(255,255,255,0.08); color: #94a3b8; }
-.camera-form-actions .btn-delete { background: rgba(239,68,68,0.15); color: #fca5a5; }
-.camera-form-actions .btn-edit { background: rgba(59,130,246,0.15); color: #93c5fd; }
-.btn-add-camera {
-  width: 100%; padding: 14px; border-radius: 10px;
-  border: 1px dashed rgba(34,211,238,0.3); background: transparent;
-  color: #22d3ee; cursor: pointer; font-size: 0.9rem;
-  transition: background 0.2s, border-color 0.2s;
+
+.room-detail-section-badge {
+  background: var(--rd-btn-hover-bg);
+  color: var(--rd-text-accent);
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
-.btn-add-camera:hover { background: rgba(34,211,238,0.06); border-color: #22d3ee; }
+
+/* ===== Device Chips ===== */
+.room-detail-devices {
+  margin-bottom: 24px;
+}
+
+.device-chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 36px;
+}
+
 .device-chip {
-  display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
-  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 6px; font-size: 0.78rem; color: #94a3b8; margin: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--rd-chip-bg);
+  border: 1px solid var(--rd-chip-border);
+  border-radius: 20px;
+  font-size: 0.85rem;
+  color: var(--rd-chip-text);
+  transition: all 0.15s;
 }
-.status-dot { width: 7px; height: 7px; border-radius: 50%; }
-.status-online { background: #22c55e; }
-.status-offline { background: #475569; }
-.no-device { color: #475569; font-size: 0.85rem; font-style: italic; }
-.zone-editor-modal {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.85); z-index: 1000;
-  display: flex; align-items: center; justify-content: center;
+
+.device-chip:hover {
+  border-color: var(--rd-btn-hover-border);
+  background: var(--rd-btn-hover-bg);
 }
-.zone-editor-inner {
-  background: #0f172a; border: 1px solid rgba(34,211,238,0.25);
-  border-radius: 14px; width: 96vw; max-width: 1200px; max-height: 92vh;
-  display: flex; flex-direction: column; overflow: hidden;
+
+.no-device {
+  color: var(--rd-empty-text);
+  font-size: 0.85rem;
+  font-style: italic;
 }
-.zone-editor-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.03);
+
+/* ===== Camera Grid ===== */
+.camera-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 20px;
 }
-.zone-editor-header h3 { margin: 0; color: #e2e8f0; font-size: 1.05rem; }
-.zone-editor-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
-.zone-canvas-wrap { flex: 1; position: relative; background: #000; overflow: hidden; }
-.zone-canvas-wrap img { width: 100%; display: block; max-height: 70vh; }
-.zone-canvas-wrap canvas {
-  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  cursor: crosshair;
+
+.camera-card {
+  background: var(--rd-card-bg);
+  border: 1px solid var(--rd-camera-border);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: all 0.2s;
 }
-.zone-sidebar {
-  width: 280px; background: rgba(0,0,0,0.3);
-  border-left: 1px solid rgba(255,255,255,0.06);
-  display: flex; flex-direction: column; overflow: hidden;
+
+.camera-card:hover {
+  border-color: var(--rd-card-hover-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
-.zone-sidebar-scroll { flex: 1; overflow-y: auto; padding: 12px; }
-.zone-sidebar h4 { margin: 0 0 8px; color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
-.zone-list-item {
-  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
+
+.camera-card.streaming {
+  border-color: var(--rd-camera-streaming-border);
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.15);
 }
-.zone-list-item.entry-zone { border-color: rgba(255,255,0,0.3); background: rgba(255,255,0,0.05); }
-.zone-list-item.active-zone { border-color: #22d3ee; background: rgba(34,211,238,0.08); }
-.zone-item-name { font-size: 0.85rem; color: #e2e8f0; font-weight: 600; }
-.zone-item-type { font-size: 0.72rem; color: #64748b; margin-bottom: 4px; }
-.zone-item-actions { display: flex; gap: 4px; margin-top: 6px; }
-.zone-item-actions button {
-  flex: 1; padding: 3px 6px; font-size: 0.72rem; border-radius: 4px;
-  border: 1px solid rgba(255,255,255,0.1); background: transparent; cursor: pointer; color: #94a3b8;
+
+.camera-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rd-header-border);
+  background: var(--rd-header-bg);
 }
-.zone-item-actions button:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
-.zone-item-actions .btn-delete-zone { border-color: rgba(239,68,68,0.3); color: #f87171; }
-.zone-item-actions .btn-delete-zone:hover { background: rgba(239,68,68,0.12); }
-.zone-add-form { padding: 12px; border-top: 1px solid rgba(255,255,255,0.06); }
-.zone-add-form input, .zone-add-form select {
-  width: 100%; padding: 7px 9px; border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06);
-  color: #e2e8f0; font-size: 0.82rem; margin-bottom: 6px; outline: none;
+
+.camera-card-info {
+  flex: 1;
+  min-width: 0;
 }
-.zone-add-form input:focus { border-color: #22d3ee; }
-.zone-add-form select { cursor: pointer; }
-.zone-add-form .btn-add-point {
-  width: 100%; padding: 7px; border-radius: 6px; border: 1px dashed rgba(34,211,238,0.4);
-  background: transparent; color: #22d3ee; cursor: pointer; font-size: 0.82rem;
-  transition: background 0.2s;
+
+.cam-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--rd-text);
+  margin: 0 0 2px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.zone-add-form .btn-add-point:hover { background: rgba(34,211,238,0.08); }
-.zone-mode-indicator {
-  padding: 8px 12px; border-top: 1px solid rgba(255,255,255,0.06);
-  background: rgba(0,0,0,0.2); font-size: 0.75rem; color: #64748b; display: flex; justify-content: space-between;
+
+.cam-sub {
+  font-size: 0.78rem;
+  color: var(--rd-text-muted);
+  margin: 0;
 }
-.zone-mode-indicator .mode-badge {
-  padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.72rem;
+
+.camera-card-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
-.zone-mode-indicator .mode-drawing { background: rgba(255,200,0,0.15); color: #fbbf24; }
-.zone-mode-indicator .mode-idle { background: rgba(34,211,238,0.1); color: #22d3ee; }
-.zone-editor-footer {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 12px 20px; border-top: 1px solid rgba(255,255,255,0.06);
-  background: rgba(255,255,255,0.02);
+
+.camera-live-badge {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
 }
-.zone-editor-footer button {
-  padding: 8px 20px; border-radius: 8px; border: none; cursor: pointer;
-  font-size: 0.85rem; font-weight: 600; transition: opacity 0.2s;
+
+/* Camera Stream */
+.camera-stream-wrap {
+  position: relative;
+  background: var(--rd-camera-bg);
+  min-height: 200px;
 }
-.zone-editor-footer button:hover { opacity: 0.85; }
-.zone-editor-footer .btn-cancel-zone { background: rgba(255,255,255,0.08); color: #94a3b8; }
-.zone-editor-footer .btn-save-zone { background: #22d3ee; color: #0f172a; }
-.zone-editor-footer .btn-save-zone:disabled { opacity: 0.4; cursor: not-allowed; }
-.zone-occupancy-list {
-  position: absolute; top: 8px; right: 8px;
-  background: rgba(15,23,42,0.88); border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 8px; padding: 6px 8px;
-  display: flex; flex-direction: column; gap: 4px;
-  min-width: 110px; max-height: 280px; overflow-y: auto;
+
+.camera-stream-wrap img {
+  width: 100%;
+  display: block;
+  max-height: 280px;
+  object-fit: cover;
+}
+
+.camera-stream-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--rd-empty-text);
+  font-size: 0.85rem;
+  gap: 12px;
+  padding: 24px;
+}
+
+/* Camera Overlay */
+.camera-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   backdrop-filter: blur(4px);
 }
-.btn-configure-zones {
-  margin-top: 8px; width: 100%; padding: 6px 10px; border-radius: 6px;
-  border: 1px solid rgba(34,211,238,0.25); background: rgba(34,211,238,0.06);
-  color: #22d3ee; cursor: pointer; font-size: 0.78rem; transition: background 0.2s;
+
+.camera-count-badge {
+  background: rgba(34, 211, 238, 0.2);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  border-radius: 50px;
+  padding: 3px 10px;
+  font-weight: 700;
+  color: #22d3ee;
 }
-.btn-configure-zones:hover { background: rgba(34,211,238,0.12); }
+
+/* Camera Form */
+.camera-form {
+  padding: 16px;
+}
+
+.camera-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.camera-form-grid .full {
+  grid-column: 1 / -1;
+}
+
+.camera-form-grid label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--rd-text-muted);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.camera-form-grid input,
+.camera-form-grid select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--rd-select-border);
+  background: var(--rd-select-bg);
+  color: var(--rd-text);
+  font-size: 0.85rem;
+  outline: none;
+  transition: all 0.15s;
+  box-sizing: border-box;
+}
+
+.camera-form-grid input:focus,
+.camera-form-grid select:focus {
+  border-color: var(--rd-text-accent);
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+}
+
+.camera-form-grid input::placeholder {
+  color: var(--rd-text-muted);
+}
+
+.camera-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.camera-form-actions button {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.camera-form-actions .btn-confirm {
+  background: var(--rd-primary-btn-bg);
+  color: #0f172a;
+  box-shadow: var(--rd-primary-btn-shadow);
+}
+
+.camera-form-actions .btn-confirm:hover {
+  transform: translateY(-1px);
+}
+
+.camera-form-actions .btn-cancel {
+  background: var(--rd-btn-bg);
+  color: var(--rd-btn-text);
+  border: 1px solid var(--rd-btn-border);
+}
+
+.camera-form-actions .btn-cancel:hover {
+  background: var(--rd-btn-hover-bg);
+  color: var(--rd-btn-hover-text);
+}
+
+/* Add Camera Button */
+.btn-add-camera {
+  width: 100%;
+  padding: 20px;
+  border-radius: 14px;
+  border: 2px dashed var(--rd-card-border);
+  background: transparent;
+  color: var(--rd-text-accent);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-add-camera:hover {
+  background: var(--rd-btn-hover-bg);
+  border-color: var(--rd-text-accent);
+}
+
+/* Status Dot */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-online {
+  background: var(--rd-status-online);
+  box-shadow: 0 0 6px var(--rd-status-online);
+}
+
+.status-offline {
+  background: var(--rd-status-offline);
+}
+
+/* Zone Editor Modal */
+.zone-editor-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zone-editor-inner {
+  background: var(--rd-modal-bg);
+  border: 1px solid var(--rd-modal-border);
+  border-radius: 16px;
+  width: 96vw;
+  max-width: 1200px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.zone-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--rd-header-border);
+  background: var(--rd-header-bg);
+}
+
+.zone-editor-header h3 {
+  margin: 0;
+  color: var(--rd-text);
+  font-size: 1.05rem;
+}
+
+.zone-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--rd-header-border);
+  background: var(--rd-header-bg);
+}
+
+.zone-editor-footer button {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.zone-editor-footer .btn-cancel-zone {
+  background: var(--rd-btn-bg);
+  color: var(--rd-btn-text);
+  border: 1px solid var(--rd-btn-border);
+}
+
+.zone-editor-footer .btn-save-zone {
+  background: var(--rd-primary-btn-bg);
+  color: #0f172a;
+  box-shadow: var(--rd-primary-btn-shadow);
+}
+
+/* Zone Sidebar */
+.zone-sidebar {
+  width: 280px;
+  background: rgba(0, 0, 0, 0.3);
+  border-left: 1px solid var(--rd-header-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.zone-sidebar h4 {
+  margin: 0 0 10px;
+  color: var(--rd-text-muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.zone-list-item {
+  background: var(--rd-chip-bg);
+  border: 1px solid var(--rd-chip-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.zone-item-name {
+  font-size: 0.85rem;
+  color: var(--rd-text);
+  font-weight: 600;
+}
+
+.zone-item-type {
+  font-size: 0.72rem;
+  color: var(--rd-text-muted);
+  margin-bottom: 6px;
+}
+
+.zone-item-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.zone-item-actions button {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  border-radius: 6px;
+  border: 1px solid var(--rd-btn-border);
+  background: transparent;
+  color: var(--rd-btn-text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.zone-item-actions button:hover {
+  background: var(--rd-btn-hover-bg);
+  color: var(--rd-btn-hover-text);
+}
+
+/* Zone Add Form */
+.zone-add-form {
+  padding: 12px;
+  border-top: 1px solid var(--rd-header-border);
+}
+
+.zone-add-form input,
+.zone-add-form select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--rd-select-border);
+  background: var(--rd-select-bg);
+  color: var(--rd-text);
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.zone-add-form input:focus,
+.zone-add-form select:focus {
+  border-color: var(--rd-text-accent);
+}
+
+/* Zone Occupancy List */
+.zone-occupancy-list {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid var(--rd-card-border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 120px;
+  max-height: 260px;
+  overflow-y: auto;
+  backdrop-filter: blur(4px);
+}
+
+/* App Display Fields Modal */
+.app-display-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-display-modal {
+  background: var(--rd-modal-bg);
+  border: 1px solid var(--rd-modal-border);
+  border-radius: 16px;
+  width: 90vw;
+  max-width: 500px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-display-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--rd-header-border);
+  background: var(--rd-header-bg);
+}
+
+.app-display-modal-header h3 {
+  margin: 0;
+  color: var(--rd-text);
+  font-size: 1.1rem;
+}
+
+.app-display-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.app-display-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--rd-header-border);
+  background: var(--rd-header-bg);
+}
+
+.app-display-field-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--rd-chip-bg);
+  border: 1px solid var(--rd-chip-border);
+  border-radius: 10px;
+  transition: border-color 0.15s;
+}
+
+.app-display-field-item:hover {
+  border-color: var(--rd-text-accent);
+}
+
+.app-display-field-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--rd-text-accent);
+  cursor: pointer;
+}
+
+.app-display-field-name {
+  flex: 1;
+  font-size: 0.9rem;
+  color: var(--rd-text);
+}
+
+.app-display-field-unit {
+  font-size: 0.78rem;
+  color: var(--rd-text-muted);
+}
+
+.app-display-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+
+.btn-select-all {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--rd-btn-hover-border);
+  background: var(--rd-btn-hover-bg);
+  color: var(--rd-text-accent);
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.15s;
+}
+
+.btn-select-all:hover {
+  background: rgba(6, 182, 212, 0.2);
+}
+
+.btn-clear {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--rd-danger-border);
+  background: var(--rd-danger-bg);
+  color: var(--rd-danger-text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.15s;
+}
+
+.btn-clear:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.btn-save-app-display {
+  background: var(--rd-primary-btn-bg);
+  color: #0f172a;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  box-shadow: var(--rd-primary-btn-shadow);
+  transition: all 0.15s;
+}
+
+.btn-save-app-display:hover {
+  transform: translateY(-1px);
+}
+
+.btn-cancel-app-display {
+  background: var(--rd-btn-bg);
+  color: var(--rd-btn-text);
+  border: 1px solid var(--rd-btn-border);
+  border-radius: 8px;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: all 0.15s;
+}
+
+.btn-cancel-app-display:hover {
+  background: var(--rd-btn-hover-bg);
+  color: var(--rd-btn-hover-text);
+}
+
+.app-display-no-fields {
+  text-align: center;
+  padding: 24px;
+  color: var(--rd-empty-text);
+  font-size: 0.85rem;
+}
+
+/* Zone Mode Indicator */
+.zone-mode-indicator {
+  padding: 8px 12px;
+  border-top: 1px solid var(--rd-header-border);
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 0.75rem;
+  color: var(--rd-text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.zone-mode-indicator .mode-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.72rem;
+}
+
+.zone-mode-indicator .mode-drawing {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+
+.zone-mode-indicator .mode-idle {
+  background: rgba(34, 211, 238, 0.1);
+  color: var(--rd-text-accent);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .room-detail-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  .room-detail-actions {
+    justify-content: flex-end;
+  }
+
+  .camera-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-form-grid .full {
+    grid-column: 1;
+  }
+}
+
+/* Legacy class names for backward compatibility */
+.camera-form {
+  padding: 16px;
+}
+
+.camera-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.camera-form-grid .full {
+  grid-column: 1 / -1;
+}
+
+.camera-form-grid label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--rd-text-muted);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.camera-form-grid input,
+.camera-form-grid select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--rd-select-border);
+  background: var(--rd-select-bg);
+  color: var(--rd-text);
+  font-size: 0.85rem;
+  outline: none;
+  transition: all 0.15s;
+  box-sizing: border-box;
+}
+
+.camera-form-grid input:focus,
+.camera-form-grid select:focus {
+  border-color: var(--rd-text-accent);
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+}
+
+.camera-form-grid input::placeholder {
+  color: var(--rd-text-muted);
+}
+
+.camera-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.camera-form-actions button {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.camera-form-actions .btn-confirm {
+  background: var(--rd-primary-btn-bg);
+  color: #0f172a;
+  box-shadow: var(--rd-primary-btn-shadow);
+}
+
+.camera-form-actions .btn-cancel {
+  background: var(--rd-btn-bg);
+  color: var(--rd-btn-text);
+  border: 1px solid var(--rd-btn-border);
+}
+
+/* Legacy btn-icon class */
+.btn-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--rd-btn-border);
+  background: var(--rd-btn-bg);
+  color: var(--rd-btn-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  font-size: 0.9rem;
+}
+
+.btn-icon:hover {
+  background: var(--rd-btn-hover-bg);
+  border-color: var(--rd-btn-hover-border);
+  color: var(--rd-btn-hover-text);
+}
+
+.btn-icon.danger {
+  background: var(--rd-danger-bg);
+  border-color: var(--rd-danger-border);
+  color: var(--rd-danger-text);
+}
+
+.btn-icon.danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* Zone sidebar scroll area */
+.zone-sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+/* Zone add point button */
+.zone-add-form .btn-add-point {
+  width: 100%;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px dashed var(--rd-btn-hover-border);
+  background: transparent;
+  color: var(--rd-text-accent);
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: background 0.2s;
+}
+
+.zone-add-form .btn-add-point:hover {
+  background: var(--rd-btn-hover-bg);
+}
+
+/* Zone list item variants */
+.zone-list-item.entry-zone {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.05);
+}
+
+.zone-list-item.active-zone {
+  border-color: var(--rd-text-accent);
+  background: rgba(34, 211, 238, 0.08);
+}
+
+/* Configure zones button */
+.btn-configure-zones {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--rd-btn-hover-border);
+  background: var(--rd-btn-hover-bg);
+  color: var(--rd-text-accent);
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition: background 0.2s;
+}
+
+.btn-configure-zones:hover {
+  background: rgba(6, 182, 212, 0.2);
+}
+
+/* Zone canvas wrapper */
+.zone-canvas-wrap {
+  flex: 1;
+  position: relative;
+  background: #000;
+  overflow: hidden;
+}
+
+.zone-canvas-wrap img {
+  width: 100%;
+  display: block;
+  max-height: 70vh;
+}
+
+.zone-canvas-wrap canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
 `;
 if (!document.getElementById('room-detail-css')) {
   const s = document.createElement('style');
@@ -208,7 +1173,7 @@ if (!document.getElementById('room-detail-css')) {
 function hdr(token) { return { headers: { Authorization: `Bearer ${token}` } }; }
 
 function statusDot(status) {
-  return <span className={`status-dot status-${status || 'offline'}`} />;
+  return <span className={`status-dot ${status === 'online' ? 'status-online' : 'status-offline'}`} />;
 }
 
 /* ------------------------------------------------------------------ */
@@ -484,7 +1449,7 @@ function ZoneEditor({ camera, streamSessionId, roomId, token, onClose, onSaved }
           <h3>Cấu hình Zone — {camera.ten || `Camera ${camera.id}`}</h3>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
-              title="Toàn màn hình"
+              title="Toan man hinh"
               onClick={() => {
                 const el = document.querySelector('.zone-editor-inner');
                 if (el && el.requestFullscreen) {
@@ -492,11 +1457,14 @@ function ZoneEditor({ camera, streamSessionId, roomId, token, onClose, onSaved }
                   else document.exitFullscreen();
                 }
               }}
-              style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8', fontSize: '1rem', cursor: 'pointer', borderRadius: 6, padding: '2px 8px', lineHeight: 1 }}
+              style={{ background: 'transparent', border: '1px solid var(--rd-btn-border)', color: 'var(--rd-btn-text)', fontSize: '1rem', cursor: 'pointer', borderRadius: 6, padding: '4px 10px', lineHeight: 1 }}
             >
               ⛶
             </button>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+            <button
+              onClick={onClose}
+              style={{ background: 'transparent', border: 'none', color: 'var(--rd-btn-text)', fontSize: '1.2rem', cursor: 'pointer' }}
+            >×</button>
           </div>
         </div>
 
@@ -878,7 +1846,7 @@ function CameraCard({ camera, roomId, token, onDelete, onUpdate, onPeopleCount }
         onUpdate();
       }
     } catch (e) {
-      alert('Khong the ket noi camera: ' + (e.response?.data?.detail || e.message));
+      alert('Không thể kết nối camera: ' + (e.response?.data?.detail || e.message));
     } finally {
       setConfirmLoading(false);
     }
@@ -900,7 +1868,7 @@ function CameraCard({ camera, roomId, token, onDelete, onUpdate, onPeopleCount }
       setEditing(false);
       onUpdate();
     } catch (e) {
-      alert('Loi cap nhat: ' + (e.response?.data?.detail || e.message));
+      alert('Lỗi cập nhật: ' + (e.response?.data?.detail || e.message));
     } finally {
       setLoading(false);
     }
@@ -924,28 +1892,34 @@ function CameraCard({ camera, roomId, token, onDelete, onUpdate, onPeopleCount }
   return (
     <div className={`camera-card${streamSessionId ? ' streaming' : ''}`}>
       <div className="camera-card-header">
-        <div>
+        <div className="camera-card-info">
           <div className="cam-title">{camera.ten || `Camera ${camera.id}`}</div>
           {camera.ip_address && <div className="cam-sub">{camera.ip_address}:{camera.port || 554}</div>}
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div className="camera-card-actions">
           {streamSessionId && (
-            <span style={{ fontSize: '0.75rem', color: '#22c55e' }}>● LIVE</span>
+            <span className="camera-live-badge">● LIVE</span>
           )}
-          {!editing && (
-            <button className="btn-icon" title="Sua" onClick={() => setEditing(!editing)}>
-              {editing ? '✕' : '✎'}
-            </button>
-          )}
-          <button className="btn-icon danger" title="Xoa camera" onClick={() => {
-            stopStream();
-            onDelete(camera.id);
-          }}>✕</button>
           <button
-            className="btn-icon"
-            title="Cau hinh Zone"
+            className="room-detail-btn room-detail-btn-icon"
+            title="Sua"
+            onClick={() => setEditing(!editing)}
+          >
+            ✎
+          </button>
+          <button
+            className="room-detail-btn room-detail-btn-icon room-detail-btn-danger"
+            title="Xoa camera"
+            onClick={() => {
+              stopStream();
+              onDelete(camera.id);
+            }}
+          >×</button>
+          <button
+            className="room-detail-btn room-detail-btn-icon"
+            title="Cấu hình Zone"
             onClick={() => setZoneEditorOpen(true)}
-            style={{ color: streamSessionId ? '#22d3ee' : '#475569' }}
+            style={{ color: streamSessionId ? 'var(--rd-text-accent)' : 'var(--rd-text-muted)' }}
           >
             ◇
           </button>
@@ -1034,7 +2008,7 @@ function CameraCard({ camera, roomId, token, onDelete, onUpdate, onPeopleCount }
         ) : (
           <div className="camera-stream-placeholder">
             {streamError ? (
-              <span style={{ color: '#fca5a5' }}>Loi: {streamError}</span>
+              <span style={{ color: '#fca5a5' }}>Lỗi: {streamError}</span>
             ) : (
               <div style={{ textAlign: 'center' }}>
                 <div style={{ marginBottom: '12px', color: '#64748b' }}>
@@ -1055,7 +2029,7 @@ function CameraCard({ camera, roomId, token, onDelete, onUpdate, onPeopleCount }
                     opacity: confirmLoading ? 0.6 : 1,
                   }}
                 >
-                  {confirmLoading ? 'Dang ket noi...' : '▶ Xac nhan & Mo camera'}
+                  {confirmLoading ? 'Đang kết nối...' : '▶ Xác nhận & Mở camera'}
                 </button>
               </div>
             )}
@@ -1067,18 +2041,18 @@ function CameraCard({ camera, roomId, token, onDelete, onUpdate, onPeopleCount }
       {editing && (
         <div className="camera-form">
           <div className="camera-form-grid">
-            {field('ten', 'Ten hien thi', 'VD: Camera truoc cua so', true)}
+            {field('ten', 'Tên hiển thị', 'VD: Camera trước cửa sổ', true)}
             {field('ip_address', 'IP / Hostname', 'VD: 192.168.1.100')}
             {field('port', 'RTSP Port', '554')}
             {field('rtsp_path', 'RTSP Path', 'VD: /live/ch00_0')}
             {field('username', 'Username', 'VD: admin')}
-            {field('password', camera.has_password ? 'Mat khau moi (neu doi)' : 'Mat khau', '******')}
+            {field('password', camera.has_password ? 'Mật khẩu mới (nếu đổi)' : 'Mật khẩu', '******')}
             {field('stream_url', 'Full Stream URL (thay the IP)', 'VD: rtsp://...', true)}
           </div>
           <div className="camera-form-actions">
-            <button className="btn-cancel" onClick={() => setEditing(false)}>Huy</button>
+            <button className="btn-cancel" onClick={() => setEditing(false)}>Hủy</button>
             <button className="btn-confirm" onClick={handleUpdate} disabled={loading}>
-              {loading ? 'Dang luu...' : 'Luu'}
+              {loading ? 'Đang lưu...' : 'Lưu'}
             </button>
           </div>
         </div>
@@ -1112,6 +2086,145 @@ function CameraCard({ camera, roomId, token, onDelete, onUpdate, onPeopleCount }
 }
 
 /* ------------------------------------------------------------------ */
+/* AppDisplayFieldsModal - Configure which data fields to show on mobile app */
+/* ------------------------------------------------------------------ */
+function AppDisplayFieldsModal({ room, devices, token, onClose, onSaved }) {
+  const [selectedFields, setSelectedFields] = useState(() => {
+    // Initialize from room's current app_display_fields
+    const current = room?.app_display_fields;
+    if (current && Array.isArray(current) && current.length > 0) {
+      return new Set(current);
+    }
+    return null; // null means all selected
+  });
+  const [saving, setSaving] = useState(false);
+
+  // Extract all unique data keys from all devices
+  const allFields = React.useMemo(() => {
+    const fields = [];
+    const seen = new Set();
+    devices.forEach(device => {
+      const data = device.data || {};
+      Object.keys(data).forEach(key => {
+        // Skip metadata and relay keys
+        if (seen.has(key)) return;
+        if (key === 'device_id' || key === 'timestamp' || key.startsWith('relay_') || key.startsWith('data_relay_')) return;
+        seen.add(key);
+        fields.push({
+          key,
+          unit: data[key]?.don_vi || '',
+          description: data[key]?.mo_ta || key,
+        });
+      });
+    });
+    // Sort alphabetically
+    fields.sort((a, b) => a.key.localeCompare(b.key));
+    return fields;
+  }, [devices]);
+
+  const handleToggle = (key) => {
+    setSelectedFields(prev => {
+      if (prev === null) {
+        // If all selected, create new set with all except this one
+        const allKeys = new Set(allFields.map(f => f.key));
+        allKeys.delete(key);
+        return allKeys;
+      }
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    setSelectedFields(null); // null = all selected
+  };
+
+  const handleClear = () => {
+    setSelectedFields(new Set()); // empty set = none selected
+  };
+
+  const isSelected = (key) => {
+    if (selectedFields === null) return true; // null means all
+    return selectedFields.has(key);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Convert Set to array; null means show all (empty array in DB = show all)
+      const fieldsToSave = selectedFields === null ? [] : Array.from(selectedFields);
+      await axios.put(
+        `${API_BASE}/rooms/${room.id}`,
+        { app_display_fields: fieldsToSave.length > 0 ? fieldsToSave : null },
+        hdr(token)
+      );
+      onSaved && onSaved(fieldsToSave);
+      onClose();
+    } catch (e) {
+      alert('Lỗi lưu cấu hình: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectedCount = selectedFields === null ? allFields.length : selectedFields.size;
+
+  return (
+    <div className="app-display-modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="app-display-modal">
+        <div className="app-display-modal-header">
+          <h3>Cấu hình hiển thị trên App</h3>
+          <button
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', color: 'var(--rd-btn-text)', fontSize: '1.2rem', cursor: 'pointer' }}
+          >
+            ×
+          </button>
+        </div>
+        <div className="app-display-modal-body">
+          <p style={{ fontSize: '0.85rem', color: 'var(--rd-text-muted)', marginBottom: 12 }}>
+            Tick chon cac truong du lieu se hien thi tren App mobile. Bo trong de hien thi tat ca.
+          </p>
+          <div className="app-display-actions">
+            <button className="btn-select-all" onClick={handleSelectAll}>Chon tat ca</button>
+            <button className="btn-clear" onClick={handleClear}>Bo chon tat ca</button>
+            <span style={{ marginLeft: 'auto' }}>{selectedCount}/{allFields.length} duoc chon</span>
+          </div>
+          {allFields.length === 0 ? (
+            <div className="app-display-no-fields">
+              Không có trường dữ liệu nào. Vui lòng thêm thiết bị vào phòng trước.
+            </div>
+          ) : (
+            allFields.map(field => (
+              <div key={field.key} className="app-display-field-item">
+                <input
+                  type="checkbox"
+                  checked={isSelected(field.key)}
+                  onChange={() => handleToggle(field.key)}
+                />
+                <span className="app-display-field-name">{field.key}</span>
+                {field.unit && <span className="app-display-field-unit">({field.unit})</span>}
+              </div>
+            ))
+          )}
+        </div>
+        <div className="app-display-modal-footer">
+          <button className="btn-cancel-app-display" onClick={onClose}>Hủy</button>
+          <button className="btn-save-app-display" onClick={handleSave} disabled={saving}>
+            {saving ? 'Đang lưu...' : 'Lưu cấu hình'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* RoomDetail main component                                            */
 /* ------------------------------------------------------------------ */
 export default function RoomDetail({ roomId, token, onBack, workspaceContext }) {
@@ -1123,7 +2236,7 @@ export default function RoomDetail({ roomId, token, onBack, workspaceContext }) 
   const [occupancy, setOccupancy] = useState(null);
   // Số người tức thời từ CameraCard (AI đang chạy), đồng bộ với banner nhanh hơn poll DB
   const [liveOccupancy, setLiveOccupancy] = useState(null);
-  // Cùng nguồn với poll /sessions/.../status (1s) — tránh banner số động mà "Cap nhat" đứng im
+  // Cùng nguồn với poll /sessions/.../status (1s) — tránh banner số động mà "Cập nhật" đứng im
   const [liveOccupancyAt, setLiveOccupancyAt] = useState(null);
 
   const handleCameraPeopleCount = useCallback((count) => {
@@ -1138,6 +2251,7 @@ export default function RoomDetail({ roomId, token, onBack, workspaceContext }) 
   const [error, setError] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showAppDisplayFields, setShowAppDisplayFields] = useState(false);
   const [addForm, setAddForm] = useState({
     ten: '',
     ip_address: '',
@@ -1218,13 +2332,13 @@ export default function RoomDetail({ roomId, token, onBack, workspaceContext }) 
   }, [roomId, token]);
 
   const handleDeleteCamera = async (cameraId) => {
-    if (!window.confirm('Xoa camera nay?')) return;
+    if (!window.confirm('Xóa camera này?')) return;
     try {
       await deleteRoomCamera(roomId, cameraId, token);
       setCameras(cs => cs.filter(c => c.id !== cameraId));
       try { sessionStorage.removeItem(_cacheKey); } catch (_) {}
     } catch (e) {
-      alert('Loi xoa: ' + (e.response?.data?.detail || e.message));
+      alert('Lỗi xóa: ' + (e.response?.data?.detail || e.message));
     }
   };
 
@@ -1240,7 +2354,7 @@ export default function RoomDetail({ roomId, token, onBack, workspaceContext }) 
       try { sessionStorage.removeItem(_cacheKey); } catch (_) {}
       loadData();
     } catch (e) {
-      alert('Loi tao camera: ' + (e.response?.data?.detail || e.message));
+      alert('Lỗi tạo camera: ' + (e.response?.data?.detail || e.message));
     }
   };
 
@@ -1256,169 +2370,211 @@ export default function RoomDetail({ roomId, token, onBack, workspaceContext }) 
   return (
     <div className="room-detail-page">
       {/* Header */}
-      <div className="room-detail-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
+      <div className="room-detail-header">
+        <div className="room-detail-header-left">
           <button
+            className="room-detail-btn"
             onClick={() => { window.location.hash = '#/rooms'; }}
-            style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.85rem', marginBottom: 8, padding: 0 }}
           >
-            ← Quay lai Quan ly phong
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Quay lại Quản lý phòng
           </button>
-          <h2>{room?.ten_phong || `Phong #${roomId}`}</h2>
-          {room?.vi_tri && <div className="room-meta">{room.vi_tri}</div>}
-          {room?.mo_ta && <div className="room-meta">{room.mo_ta}</div>}
-        </div>
-        <button
-          title="Full màn hình"
-          onClick={() => {
-            const el = document.querySelector('.room-detail-page');
-            if (el && el.requestFullscreen) {
-              if (!document.fullscreenElement) el.requestFullscreen();
-              else document.exitFullscreen();
-            }
-          }}
-          style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer', borderRadius: 6, padding: '4px 10px', marginTop: 20 }}
-        >
-          ⛶
-        </button>
-      </div>
-
-      {/* Occupancy banner */}
-      <div className="room-occupancy-banner">
-        <div className="room-occupancy-count">{bannerCount}</div>
-        <div className="room-occupancy-label">
-          <div>nguoi trong phong</div>
-          {(liveOccupancy !== null && liveOccupancyAt) || occupancy?.cap_nhat_luc ? (
-            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-              Cap nhat:{' '}
-              {(liveOccupancy !== null && liveOccupancyAt
-                ? liveOccupancyAt
-                : new Date(occupancy.cap_nhat_luc)
-              ).toLocaleTimeString()}
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Devices */}
-      <div className="room-detail-devices">
-        <h3>Thiet bi ({devices.length})</h3>
-        {devices.length === 0 ? (
-          <p className="no-device">Chua co thiet bi nao</p>
-        ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {devices.map(d => (
-              <div key={d.id} className="device-chip">
-                {statusDot(d.trang_thai)}
-                {d.ten_thiet_bi || d.ma_thiet_bi}
-              </div>
-            ))}
+          <div className="room-detail-title-row">
+            <h1 className="room-detail-title">{room?.ten_phong || `Phòng #${roomId}`}</h1>
           </div>
-        )}
-      </div>
-
-      {/* Cameras */}
-      <div className="room-detail-section">
-        <h3>Camera ({cameras.length})</h3>
-        <div className="camera-grid">
-          {cameras.map(cam => (
-            <CameraCard
-              key={cam.id}
-              camera={cam}
-              roomId={roomId}
-              token={token}
-              onDelete={handleDeleteCamera}
-              onUpdate={loadData}
-              onPeopleCount={handleCameraPeopleCount}
-            />
-          ))}
-
-          {/* Add camera card */}
-          {!showAdd ? (
-            <button className="btn-add-camera" onClick={() => setShowAdd(true)}>
-              + Them Camera
-            </button>
-          ) : (
-            <div className="camera-card">
-              <div className="camera-card-header">
-                <div className="cam-title">Them Camera Moi</div>
-                <button className="btn-icon" onClick={() => setShowAdd(false)}>✕</button>
-              </div>
-              <div className="camera-form">
-                <div className="camera-form-grid">
-                  <div className="full">
-                    <label>Ten hien thi</label>
-                    <input placeholder="VD: Camera truoc cua so"
-                      value={addForm.ten} onChange={e => setAddForm(f => ({ ...f, ten: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label>IP / Hostname</label>
-                    <input placeholder="VD: 192.168.1.100"
-                      value={addForm.ip_address} onChange={e => setAddForm(f => ({ ...f, ip_address: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label>RTSP Port</label>
-                    <input placeholder="554"
-                      value={addForm.port} onChange={e => setAddForm(f => ({ ...f, port: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label>RTSP Path</label>
-                    <input placeholder="VD: /live/ch00_0"
-                      value={addForm.rtsp_path} onChange={e => setAddForm(f => ({ ...f, rtsp_path: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label>Username</label>
-                    <input placeholder="VD: admin"
-                      value={addForm.username} onChange={e => setAddForm(f => ({ ...f, username: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label>Mat khau</label>
-                    <div style={{ position: 'relative' }}>
-                        <input
-                            type={showPassword ? 'text' : 'password'}
-                            placeholder="******"
-                            value={addForm.password}
-                            onChange={e => setAddForm(f => ({ ...f, password: e.target.value }))}
-                            style={{ paddingRight: '40px', width: '100%' }}
-                        />
-                        <button
-                            type="button"
-                            onClick={() => setShowPassword(v => !v)}
-                            style={{
-                                position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
-                                background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}
-                            title={showPassword ? 'An mat khau' : 'Hien mat khau'}
-                        >
-                            {showPassword ? (
-                                <svg width="18" height="18" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg">
-                                    <path fill="#64748b" d="M8 3.5C5.5 3.5 3.8 5.6 2.1 7.5c0.2 0.3.2 0.7 0 1L3 9.3c0.1.2.2.3.4.3.1 0 .2 0 .3-.1C5.8 8.1 6.9 7.5 8 7.5s2.2.6 4.3 1.9c.1.1.2.1.3.1.1 0 .3-.1.4-.3L13.9 8.5c.2-.3.2-.7 0-1C12.2 5.6 10.5 3.5 8 3.5zM5.5 5.7c0.4-.2.9-.2 1.3-.2s0.9 0 1.3.2C6.4 6.2 5.5 7.5 5.5 8.5c0 1-.9 2.3-1.6 3.1-.4.2-.9.2-1.3.2s-.9 0-1.3-.2C1.9 10.8 1 9.5 1 8.5S2.3 5.7 5.5 5.7zM8 9.5c1.1 0 2-.4 2-.4s-.9.4-2 .4-2-.4-2-.4.9.4 2 .4z"/>
-                                    <path fill="#64748b" d="M8 1.5C3.3 1.5 1 5.6 1 5.6s.8 2.5 4 3.6c0 0-.4-.6-.4-1.4 0-1.5 1.2-2.8 2.8-2.8s2.8 1.3 2.8 2.8c0 .8-.2 1.4-.4 1.4 3.2-1.1 4-3.6 4-3.6S12.7 1.5 8 1.5z"/>
-                                </svg>
-                            ) : (
-                                <svg width="18" height="18" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg">
-                                    <path fill="#64748b" d="M8 3.5C5.5 3.5 3.8 5.6 2.1 7.5c0.2 0.3.2 0.7 0 1L3 9.3c0.1.2.2.3.4.3.1 0 .2 0 .3-.1C5.8 8.1 6.9 7.5 8 7.5s2.2.6 4.3 1.9c.1.1.2.1.3.1.1 0 .3-.1.4-.3L13.9 8.5c.2-.3.2-.7 0-1C12.2 5.6 10.5 3.5 8 3.5zM5.5 5.7c0.4-.2.9-.2 1.3-.2s0.9 0 1.3.2C6.4 6.2 5.5 7.5 5.5 8.5c0 1-.9 2.3-1.6 3.1-.4.2-.9.2-1.3.2s-.9 0-1.3-.2C1.9 10.8 1 9.5 1 8.5S2.3 5.7 5.5 5.7zM8 9.5c1.1 0 2-.4 2-.4s-.9.4-2 .4-2-.4-2-.4.9.4 2 .4z"/>
-                                    <path fill="#64748b" d="M8 1.5C3.3 1.5 1 5.6 1 5.6s.8 2.5 4 3.6c0 0-.4-.6-.4-1.4 0-1.5 1.2-2.8 2.8-2.8s2.8 1.3 2.8 2.8c0 .8-.2 1.4-.4 1.4 3.2-1.1 4-3.6 4-3.6S12.7 1.5 8 1.5zM3.5 5.7c0.5-.3 1.3-.3 1.3-.3s-0.5.9-.5 1.6c0 .7.2 1.1.2 1.1l-1.1.2c0 0-.3-.5-.3-1.2 0-.8.4-1.4.4-1.4z"/>
-                                </svg>
-                            )}
-                        </button>
-                    </div>
-                  </div>
-                  <div className="full">
-                    <label>Full Stream URL (thay the IP/port/path)</label>
-                    <input placeholder="VD: rtsp://user:pass@192.168.1.100:554/stream"
-                      value={addForm.stream_url} onChange={e => setAddForm(f => ({ ...f, stream_url: e.target.value }))} />
-                  </div>
-                </div>
-                <div className="camera-form-actions">
-                  <button className="btn-cancel" onClick={() => setShowAdd(false)}>Huy</button>
-                  <button className="btn-confirm" onClick={handleAddCamera}>Luu</button>
-                </div>
-              </div>
+          {(room?.vi_tri || room?.mo_ta) && (
+            <div className="room-detail-meta">
+              {room?.vi_tri && <span>{room.vi_tri}</span>}
+              {room?.vi_tri && room?.mo_ta && <span> • </span>}
+              {room?.mo_ta && <span>{room.mo_ta}</span>}
             </div>
           )}
         </div>
+        <div className="room-detail-actions">
+          <button
+            className="room-detail-btn room-detail-btn-primary"
+            title="Cấu hình hiển thị trên App"
+            onClick={() => setShowAppDisplayFields(true)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            App Display
+          </button>
+          <button
+            className="room-detail-btn room-detail-btn-icon"
+            title="Full man hinh"
+            onClick={() => {
+              const el = document.querySelector('.room-detail-page');
+              if (el && el.requestFullscreen) {
+                if (!document.fullscreenElement) el.requestFullscreen();
+                else document.exitFullscreen();
+              }
+            }}
+          >
+            ⛶
+          </button>
+        </div>
+      </div>
+
+      <div className="room-detail-content">
+        {/* Occupancy banner */}
+        <div className="room-occupancy-banner">
+          <div className="room-occupancy-count">{bannerCount}</div>
+          <div className="room-occupancy-label">
+            <span className="room-occupancy-label-text">nguoi trong phong</span>
+            {(liveOccupancy !== null && liveOccupancyAt) || occupancy?.cap_nhat_luc ? (
+              <span className="room-occupancy-label-time">
+                Cập nhật: {(liveOccupancy !== null && liveOccupancyAt ? liveOccupancyAt : new Date(occupancy.cap_nhat_luc)).toLocaleTimeString()}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Devices */}
+        <div className="room-detail-devices">
+          <div className="room-detail-section-header">
+            <h3 className="room-detail-section-title">
+              Thiết bị
+              <span className="room-detail-section-badge">{devices.length}</span>
+            </h3>
+          </div>
+          {devices.length === 0 ? (
+            <p className="no-device">Chua co thiet bi nao</p>
+          ) : (
+            <div className="device-chips-container">
+              {devices.map(d => (
+                <div key={d.id} className="device-chip">
+                  <span className={`status-dot ${d.trang_thai === 'online' ? 'status-online' : 'status-offline'}`}></span>
+                  {d.ten_thiet_bi || d.ma_thiet_bi}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Cameras */}
+        <div className="room-detail-section">
+          <div className="room-detail-section-header">
+            <h3 className="room-detail-section-title">
+              Camera
+              <span className="room-detail-section-badge">{cameras.length}</span>
+            </h3>
+          </div>
+          <div className="camera-grid">
+            {cameras.map(cam => (
+              <CameraCard
+                key={cam.id}
+                camera={cam}
+                roomId={roomId}
+                token={token}
+                onDelete={handleDeleteCamera}
+                onUpdate={loadData}
+                onPeopleCount={handleCameraPeopleCount}
+              />
+            ))}
+
+            {/* Add camera card */}
+            {!showAdd ? (
+              <button className="btn-add-camera" onClick={() => setShowAdd(true)}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Thêm Camera
+              </button>
+            ) : (
+              <div className="camera-card">
+                <div className="camera-card-header">
+                  <div className="cam-title">Thêm Camera Mới</div>
+                  <button className="room-detail-btn room-detail-btn-icon" onClick={() => setShowAdd(false)}>×</button>
+                </div>
+                <div className="camera-form">
+                  <div className="camera-form-grid">
+                    <div className="full">
+                      <label>Tên hiển thị</label>
+                      <input placeholder="VD: Camera trước cửa sổ"
+                        value={addForm.ten} onChange={e => setAddForm(f => ({ ...f, ten: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label>IP / Hostname</label>
+                      <input placeholder="VD: 192.168.1.100"
+                        value={addForm.ip_address} onChange={e => setAddForm(f => ({ ...f, ip_address: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label>RTSP Port</label>
+                      <input placeholder="554"
+                        value={addForm.port} onChange={e => setAddForm(f => ({ ...f, port: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label>RTSP Path</label>
+                      <input placeholder="VD: /live/ch00_0"
+                        value={addForm.rtsp_path} onChange={e => setAddForm(f => ({ ...f, rtsp_path: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label>Username</label>
+                      <input placeholder="VD: admin"
+                        value={addForm.username} onChange={e => setAddForm(f => ({ ...f, username: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label>Mật khẩu</label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          placeholder="******"
+                          value={addForm.password}
+                          onChange={e => setAddForm(f => ({ ...f, password: e.target.value }))}
+                          style={{ paddingRight: '40px', width: '100%' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(v => !v)}
+                          style={{
+                            position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                            background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}
+                          title={showPassword ? 'An mat khau' : 'Hien mat khau'}
+                        >
+                          {showPassword ? (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                              <line x1="1" y1="1" x2="23" y2="23"/>
+                            </svg>
+                          ) : (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                              <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="full">
+                      <label>Full Stream URL (thay the IP/port/path)</label>
+                      <input placeholder="VD: rtsp://user:pass@192.168.1.100:554/stream"
+                        value={addForm.stream_url} onChange={e => setAddForm(f => ({ ...f, stream_url: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="camera-form-actions">
+                    <button className="btn-cancel" onClick={() => setShowAdd(false)}>Hủy</button>
+                    <button className="btn-confirm" onClick={handleAddCamera}>Lưu</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* App Display Fields Modal */}
+        {showAppDisplayFields && (
+          <AppDisplayFieldsModal
+            room={room}
+            devices={devices}
+            token={token}
+            onClose={() => setShowAppDisplayFields(false)}
+            onSaved={(fields) => {
+              setRoom(prev => prev ? { ...prev, app_display_fields: fields } : prev);
+              try { sessionStorage.removeItem(_cacheKey); } catch (_) {}
+              loadData();
+            }}
+          />
+        )}
       </div>
     </div>
   );

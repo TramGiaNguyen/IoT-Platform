@@ -107,88 +107,104 @@ export default function ClassManagement({ token, onBack, onClassChanged, workspa
   for (let p = startPage; p <= endPage; p++) pageNumbers.push(p);
 
   return (
-    <div className="rules-container">
-      <div className="rules-header">
-        <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại</button>
+    <div className="ai-page-container">
+      <div className="ai-page-header">
+        <div className="ai-page-header-left">
+          <button type="button" className="back-btn" onClick={onBack}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Quay lại
+          </button>
+          <div className="ai-page-header-title">
+            <div className="ai-page-header-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+            </div>
+            <div>
+<h1>Quản lý Lớp học</h1>
+            <p className="ai-page-subtitle-text">Quản lý lớp học, học viên và nhóm</p>
+            </div>
+          </div>
+        </div>
         <div className="rules-actions">
-          <button className="primary-btn" onClick={() => setShowClassModal(true)}>+ Thêm lớp</button>
+          <button className="primary-btn" onClick={() => setShowClassModal(true)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Thêm Lớp
+          </button>
         </div>
       </div>
 
+      <div className="ai-page-content">
+
       {loading ? (
-        <div className="loading">Đang tải...</div>
+        <div className="ai-empty-state">Đang tải...</div>
       ) : (
         <>
-        <div className="devices-grid neo-grid">
+        <div className="classes-grid">
           {classes.map(cls => (
             <div
               key={cls.id}
-              className="neo-card class-card-clickable"
+              className="class-card"
               onClick={() => setSelectedClass(cls)}
             >
-              <div className="card-header">
-                <div className="icon-wrap" style={{ fontSize: '24px' }}>🏫</div>
-                <div className="card-meta">
+              <div className="class-card-header">
+                <div className="class-card-icon">🏫</div>
+                <div className="class-card-info">
                   <h3>{cls.ten_lop}</h3>
                   <p>Mã lớp: {cls.id}</p>
                 </div>
-                <button className="delete-device-btn" onClick={(e) => handleDeleteClass(cls, e)} title="Xóa lớp">×</button>
               </div>
-              <div className="card-body">
-                <div className="metric-row">
-                  <span className="label">Giáo viên phụ trách</span>
-                  <span className="value">{cls.giao_vien_ten || <span className="cm-empty-teacher">Chưa phân công</span>}</span>
+              <div className="class-card-stats">
+                <div className="class-stat">
+                  <div className="class-stat-value">{cls.so_luong_sv || 0}</div>
+                  <div className="class-stat-label">Học viên</div>
                 </div>
-                <div className="metric-row">
-                  <span className="label">Sĩ số</span>
-                  <span className="value">
-                    <span className={`role-badge ${(cls.so_luong_sv || 0) >= MAX_STUDENTS_PER_CLASS ? 'student' : 'teacher'}`}>
-                      {cls.so_luong_sv || 0} / {MAX_STUDENTS_PER_CLASS}
-                    </span>
-                  </span>
+                <div className="class-stat">
+                  <div className="class-stat-value">{cls.so_luong_nhom || 0}</div>
+                  <div className="class-stat-label">Nhóm</div>
                 </div>
-                <div className="metric-row" style={{ borderBottom: 'none' }}>
-                  <span className="label">Số nhóm</span>
-                  <span className="value">
-                    <span className="role-badge teacher">{cls.so_luong_nhom || 0}</span>
-                  </span>
+                <div className="class-stat">
+                  <div className="class-stat-value">{cls.giao_vien_ten || '—'}</div>
+                  <div className="class-stat-label">Giáo viên</div>
                 </div>
-                <div className="metric-row" style={{ borderBottom: 'none' }}>
-                  <span className="label">Ngày tạo</span>
-                  <span className="value">{cls.ngay_tao ? new Date(cls.ngay_tao).toLocaleDateString('vi-VN') : '—'}</span>
+                <div className="class-stat">
+                  <div className="class-stat-value">{cls.ngay_tao ? new Date(cls.ngay_tao).toLocaleDateString('vi-VN') : '—'}</div>
+                  <div className="class-stat-label">Ngày tạo</div>
                 </div>
               </div>
-              <div className="card-footer" style={{ justifyContent: 'center' }}>
+              <div className="class-card-footer">
                 <button
                   onClick={(e) => { e.stopPropagation(); setSelectedClass(cls); }}
-                  className="cm-btn-detail"
+                  className="btn-detail"
                 >
-                  Xem chi tiết
+                  Xem chi tiet
                 </button>
               </div>
             </div>
           ))}
           {classes.length === 0 && (
-            <div className="empty-state" style={{ width: '100%', gridColumn: '1 / -1' }}>
-              <p>Chưa có lớp nào được tạo. Nhấn "+ Thêm lớp" để bắt đầu.</p>
+            <div className="ai-empty-state" style={{ gridColumn: '1 / -1' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+              <p>Chưa có lớp nào được tạo. Nhấn "Thêm Lớp" để bắt đầu.</p>
             </div>
           )}
         </div>
 
-        {/* Pagination */}
         {totalPages > 1 && (
-          <div className="pagination-bar">
+          <div className="pagination-container">
             <span className="pagination-info">
-              Hiển thị {classes.length} / {totalClasses} lớp — Trang {currentPage} / {totalPages}
+              Hiển thị {classes.length} / {totalClasses} lop — Trang {currentPage} / {totalPages}
             </span>
             <div className="pagination-controls">
               <button onClick={() => loadClasses(1)} disabled={currentPage === 1}>«</button>
               <button onClick={() => loadClasses(currentPage - 1)} disabled={currentPage === 1}>‹</button>
-              <div className="page-numbers">
-                {pageNumbers.map(p => (
-                  <button key={p} className={`page-num ${p === currentPage ? 'active' : ''}`} onClick={() => loadClasses(p)}>{p}</button>
-                ))}
-              </div>
+              {pageNumbers.map(p => (
+                <button key={p} className={p === currentPage ? 'active' : ''} onClick={() => loadClasses(p)}>{p}</button>
+              ))}
               <button onClick={() => loadClasses(currentPage + 1)} disabled={currentPage === totalPages}>›</button>
               <button onClick={() => loadClasses(totalPages)} disabled={currentPage === totalPages}>»</button>
             </div>
@@ -199,25 +215,25 @@ export default function ClassManagement({ token, onBack, onClassChanged, workspa
 
       {/* Modal: Thêm lớp */}
       {showClassModal && (
-        <div className="modal-backdrop">
-          <div className="modal-content" style={{ maxWidth: 420 }}>
-            <div className="modal-header">
+        <div className="rules-modal-backdrop">
+          <div className="rules-modal" style={{ maxWidth: 420 }}>
+            <div className="rules-modal-header">
               <h3>Thêm lớp học</h3>
-              <button onClick={() => { setShowClassModal(false); setNewClassName(''); }}>×</button>
+              <button className="rules-modal-close" onClick={() => { setShowClassModal(false); setNewClassName(''); }}>×</button>
             </div>
-            <form className="rule-form" onSubmit={handleCreateClass}>
+            <form className="rules-form" onSubmit={handleCreateClass}>
               <label>
                 Tên lớp *
                 <input type="text" value={newClassName}
                   onChange={e => setNewClassName(e.target.value)}
                   placeholder="VD: Lớp CNTT K20A" required autoFocus />
               </label>
-              <p className="cm-help-text" style={{ margin: '8px 0 16px' }}>
-                Sau khi tạo lớp, click vào thẻ lớp để thêm học viên và quản lý nhóm.
+              <p style={{ margin: '8px 0 16px', fontSize: '0.9rem', color: 'var(--rules-text-secondary)' }}>
+                Sau khi tao lop, click vao the lop de them hoc vien va quan ly nhom.
               </p>
               <div className="form-actions">
-                <button type="submit">Tạo lớp</button>
-                <button type="button" onClick={() => { setShowClassModal(false); setNewClassName(''); }}>Huỷ</button>
+                <button type="button" onClick={() => { setShowClassModal(false); setNewClassName(''); }}>Hủy</button>
+                <button type="submit">Tao lop</button>
               </div>
             </form>
           </div>
@@ -233,6 +249,7 @@ export default function ClassManagement({ token, onBack, onClassChanged, workspa
           onChanged={() => { loadClasses(currentPage); if (onClassChanged) onClassChanged(token); }}
         />
       )}
+      </div>
     </div>
   );
 }
@@ -246,31 +263,42 @@ function ClassDetailPanel({ cls, token, onClose, onChanged }) {
   const pendingRef = useRef(false); // Chan race condition voi realtime updates
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-content class-detail-panel">
-        <div className="modal-header">
+    <div className="rules-modal-backdrop">
+      <div className="rules-modal" style={{ maxWidth: 800 }}>
+        <div className="rules-modal-header">
           <h3>Lớp "{classData.ten_lop}"</h3>
-          <button onClick={onClose}>×</button>
+          <button className="rules-modal-close" onClick={onClose}>×</button>
         </div>
 
-        {/* Tabs */}
-        <div className="class-detail-tabs">
-          <button className={activeTab === 'students' ? 'active' : ''} onClick={() => setActiveTab('students')}>
-            👤 Học viên ({classData.so_luong_sv || 0})
-          </button>
-          <button className={activeTab === 'groups' ? 'active' : ''} onClick={() => setActiveTab('groups')}>
-            👥 Nhóm ({classData.so_luong_nhom || 0})
-          </button>
+        <div style={{ padding: '16px' }}>
+          <div className="ai-analytics-tabs">
+            <button className={`tab-btn ${activeTab === 'students' ? 'active' : ''}`} onClick={() => setActiveTab('students')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+              Hoc vien ({classData.so_luong_sv || 0})
+            </button>
+            <button className={`tab-btn ${activeTab === 'groups' ? 'active' : ''}`} onClick={() => setActiveTab('groups')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+              Nhóm ({classData.so_luong_nhom || 0})
+            </button>
+          </div>
+
+          {activeTab === 'students' ? (
+            <StudentTab cls={classData} token={token} onChanged={onChanged} />
+          ) : (
+            <GroupTab cls={classData} token={token} onChanged={onChanged} />
+          )}
         </div>
 
-        {activeTab === 'students' ? (
-          <StudentTab cls={classData} token={token} onChanged={onChanged} />
-        ) : (
-          <GroupTab cls={classData} token={token} onChanged={onChanged} />
-        )}
-
-        <div className="form-actions" style={{ marginTop: '16px' }}>
-          <button type="button" onClick={onClose}>Đóng</button>
+        <div className="rules-modal-footer">
+          <button type="button" onClick={onClose} className="btn-cancel">Đóng</button>
         </div>
       </div>
     </div>
@@ -354,44 +382,53 @@ function StudentTab({ cls, token, onChanged }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <p className="cm-help-text">
-          Sĩ số tối đa <strong>{MAX_STUDENTS_PER_CLASS}</strong> học viên.
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <p className="help-text">
+          Si so toi da <strong style={{ color: 'var(--rules-text-accent)' }}>{MAX_STUDENTS_PER_CLASS}</strong> hoc vien.
         </p>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="secondary-btn" onClick={() => setShowBulkModal(true)} style={{ fontSize: '13px', padding: '8px 14px' }}>
-            Nhập file .xlsx
+          <button className="secondary-btn" onClick={() => setShowBulkModal(true)}>
+            Nhap file .xlsx
           </button>
-          <button className="primary-btn" onClick={() => setShowPickerModal(true)} style={{ fontSize: '13px', padding: '8px 14px' }}>
+          <button className="primary-btn" onClick={() => setShowPickerModal(true)}>
             + Thêm học viên
           </button>
         </div>
       </div>
 
       {loading ? (
-        <div className="loading">Đang tải học viên...</div>
+        <div className="ai-empty-state">Dang tai hoc vien...</div>
       ) : students.length === 0 ? (
-        <div className="empty-state"><p>Chưa có học viên nào trong lớp.</p></div>
+        <div className="ai-empty-state" style={{ padding: '40px' }}>
+          <p>Chua co hoc vien nao trong lop.</p>
+        </div>
       ) : (
-        <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-          <table className="table cm-table" style={{ width: '100%' }}>
+        <div className="users-table-container" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+          <table className="users-table">
             <thead>
               <tr>
                 <th>ID</th>
                 <th>Tên</th>
                 <th>Email</th>
-                <th>Thao tác</th>
+                <th>Thao tac</th>
               </tr>
             </thead>
             <tbody>
               {students.map(s => (
                 <tr key={s.id}>
                   <td>{s.id}</td>
-                  <td>{s.ten}</td>
-                  <td className="cm-table-muted">{s.email || '—'}</td>
-                  <td className="cm-table-actions">
-                    <button className="btn-edit" onClick={() => handleImpersonate(s)} style={{ fontSize: '11px', padding: '4px 8px' }}>Đăng nhập</button>
-                    <button className="btn-delete" onClick={() => handleRemoveStudent(s)} style={{ fontSize: '11px', padding: '4px 8px' }}>Xoá</button>
+                  <td>
+                    <div className="user-name-cell">
+                      <div className="user-avatar">{(s.ten || 'S').charAt(0).toUpperCase()}</div>
+                      <span className="user-name">{s.ten}</span>
+                    </div>
+                  </td>
+                  <td style={{ color: 'var(--rules-text-muted)' }}>{s.email || '—'}</td>
+                  <td>
+                    <div className="user-actions">
+                      <button className="btn-login" onClick={() => handleImpersonate(s)}>Đăng nhập</button>
+                      <button className="btn-delete" onClick={() => handleRemoveStudent(s)}>Xóa</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -400,7 +437,6 @@ function StudentTab({ cls, token, onChanged }) {
         </div>
       )}
 
-      {/* Modal: Picker chọn học viên chưa thuộc lớp nào */}
       {showPickerModal && (
         <StudentPickerModal
           cls={cls}
@@ -410,48 +446,51 @@ function StudentTab({ cls, token, onChanged }) {
         />
       )}
 
-      {/* Modal: Bulk import xlsx */}
       {showBulkModal && (
-        <div className="modal-backdrop" style={{ zIndex: 1100 }}>
-          <div className="modal-content" style={{ maxWidth: 520 }}>
-            <div className="modal-header">
+        <div className="rules-modal-backdrop" style={{ zIndex: 1100 }}>
+          <div className="rules-modal" style={{ maxWidth: 520 }}>
+            <div className="rules-modal-header">
               <h3>Nhập hàng loạt học viên từ file .xlsx</h3>
-              <button onClick={() => { setShowBulkModal(false); setBulkFile(null); setBulkResult(null); setBulkError(null); }}>×</button>
+              <button className="rules-modal-close" onClick={() => { setShowBulkModal(false); setBulkFile(null); setBulkResult(null); setBulkError(null); }}>×</button>
             </div>
-            <p className="cm-bulk-helper">
-              File cần có cột <strong>"Mã SV"</strong>. Tài khoản tạo ra sẽ có mật khẩu <strong>111111</strong> và yêu cầu đổi mật khẩu khi đăng nhập lần đầu.
-            </p>
-            <div
-              className="bulk-import-dropzone cm-bulk-dropzone"
-              onClick={() => document.getElementById('bulk-student-input').click()}
-              onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
-              onDragLeave={e => e.currentTarget.classList.remove('drag-over')}
-              onDrop={e => {
-                e.preventDefault();
-                e.currentTarget.classList.remove('drag-over');
-                const f = e.dataTransfer.files[0];
-                if (f && f.name.endsWith('.xlsx')) setBulkFile(f);
-              }}
-            >
-              <input id="bulk-student-input" type="file" accept=".xlsx" style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files[0]; if (f) setBulkFile(f); }} />
-              {bulkFile ? (
-                <p className="cm-bulk-file-name">{bulkFile.name}</p>
-              ) : (
-                <>
-                  <p style={{ fontSize: '18px', margin: '0 0 4px' }}>📄</p>
-                  <p>Kéo thả file .xlsx hoặc click để chọn</p>
-                </>
-              )}
-              <p className="file-hint">Chỉ hỗ trợ định dạng .xlsx</p>
-            </div>
-            {bulkResult && <div className="bulk-import-result success"><p style={{ margin: 0 }}>{bulkResult.message}</p></div>}
-            {bulkError && <div className="bulk-import-result error"><p style={{ margin: 0 }}>{bulkError}</p></div>}
-            <div className="cm-bulk-footer">
-              <button className="secondary-btn" onClick={() => setShowBulkModal(false)}>Huỷ</button>
-              <button className="primary-btn" onClick={handleBulkImport} disabled={!bulkFile || bulkLoading}>
-                {bulkLoading ? 'Đang xử lý...' : 'Nhập'}
-              </button>
+            <div style={{ padding: '20px' }}>
+              <p className="help-text" style={{ marginBottom: '16px' }}>
+                File can co cot <strong>"Mã SV"</strong>. Tài khoản tạo ra sẽ có mật khẩu <strong>111111</strong> và yêu cầu đổi mật khẩu khi đăng nhập lần đầu.
+              </p>
+              <div
+                className={`bulk-dropzone ${bulkFile ? 'drag-over' : ''}`}
+                onClick={() => document.getElementById('bulk-student-input').click()}
+                onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }}
+                onDragLeave={e => e.currentTarget.classList.remove('drag-over')}
+                onDrop={e => {
+                  e.preventDefault();
+                  e.currentTarget.classList.remove('drag-over');
+                  const f = e.dataTransfer.files[0];
+                  if (f && f.name.endsWith('.xlsx')) setBulkFile(f);
+                }}
+              >
+                <input id="bulk-student-input" type="file" accept=".xlsx" style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files[0]; if (f) setBulkFile(f); }} />
+                {bulkFile ? (
+                  <p style={{ color: 'var(--rules-text-accent)', fontWeight: 600 }}>{bulkFile.name}</p>
+                ) : (
+                  <>
+                    <div className="bulk-dropzone-icon">📄</div>
+                    <p>Keo tha file .xlsx hoac click de chon</p>
+                  </>
+                )}
+                <p className="hint">Chi ho tro dinh dang .xlsx</p>
+              </div>
+
+              {bulkResult && <div className="import-result success"><p>{bulkResult.message}</p></div>}
+              {bulkError && <div className="import-result error"><p>{bulkError}</p></div>}
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
+                <button className="secondary-btn" onClick={() => setShowBulkModal(false)}>Huy</button>
+                <button className="primary-btn" onClick={handleBulkImport} disabled={!bulkFile || bulkLoading}>
+                  {bulkLoading ? 'Đang xử lý...' : 'Nhập'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -548,94 +587,98 @@ function StudentPickerModal({ cls, token, onClose, onAdded }) {
       setPickerError(errorMessages[0] + (errorMessages.length > 1 ? ` (+${errorMessages.length - 1} lỗi khác)` : ''));
     }
 
-    // Thanh cong - reload picker + clear selection
+    // Thành công - reload picker + clear selection
     onAdded();
     setPickerSelected(new Set());
     loadPickerStudents(pickerSearch);
   };
 
   return (
-    <div className="modal-backdrop" style={{ zIndex: 1100 }}>
-      <div className="modal-content" style={{ maxWidth: 720 }}>
-        <div className="modal-header">
+    <div className="rules-modal-backdrop" style={{ zIndex: 1100 }}>
+      <div className="rules-modal" style={{ maxWidth: 720 }}>
+        <div className="rules-modal-header">
           <h3>Thêm học viên vào lớp "{cls.ten_lop}"</h3>
-          <button onClick={onClose}>×</button>
+          <button className="rules-modal-close" onClick={onClose}>×</button>
         </div>
-        <p className="cm-bulk-picker-helper">
-          Chọn từ danh sách sinh viên chưa thuộc lớp học nào. Tick chọn rồi nhấn "Thêm vào lớp".
-        </p>
+        <div style={{ padding: '20px' }}>
+          <p className="help-text" style={{ marginBottom: '16px' }}>
+            Chọn từ danh sách sinh viên chưa thuộc lớp học nào. Tick chọn rồi nhấn "Thêm vào lớp".
+          </p>
 
-        <div className="filter-bar" style={{ marginBottom: '12px' }}>
-          <input
-            type="text"
-            placeholder="Tìm kiếm theo tên..."
-            value={pickerSearch}
-            onChange={e => handleSearchChange(e.target.value)}
-            autoFocus
-          />
-          <span className="cm-help-text" style={{ whiteSpace: 'nowrap' }}>
-            {pickerLoading ? 'Đang tải...' : `${pickerStudents.length} học viên`}
-          </span>
-        </div>
+          <div className="ai-filter-bar">
+            <input
+              type="text"
+              placeholder="Tìm kiếm theo tên..."
+              value={pickerSearch}
+              onChange={e => handleSearchChange(e.target.value)}
+              autoFocus
+            />
+            <span className="help-text" style={{ whiteSpace: 'nowrap' }}>
+              {pickerLoading ? 'Đang tải...' : `${pickerStudents.length} học viên`}
+            </span>
+          </div>
 
-        {pickerError && <div className="bulk-import-result error" style={{ marginBottom: '8px' }}><p style={{ margin: 0 }}>{pickerError}</p></div>}
+          {pickerError && <div className="import-result error" style={{ marginBottom: '12px' }}>{pickerError}</div>}
 
-        {pickerStudents.length === 0 && !pickerLoading ? (
-          <div className="empty-state"><p>Không có học viên nào chưa thuộc lớp.</p></div>
-        ) : (
-          <div className="cm-picker-table-wrap">
-            <table className="table" style={{ width: '100%' }}>
-              <thead className="cm-picker-thead">
-                <tr>
-                  <th>
-                    <input
-                      type="checkbox"
-                      checked={allCurrentSelected}
-                      onChange={toggleAllCurrent}
-                      title="Chọn tất cả trên trang"
-                    />
-                  </th>
-                  <th>ID</th>
-                  <th>Ten</th>
-                  <th>Email</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pickerStudents.map(s => (
-                  <tr key={s.id}
-                      className={pickerSelected.has(s.id) ? 'cm-picker-row-selected' : ''}
-                      onClick={() => toggleOne(s.id)}>
-                    <td className="cm-picker-cell-center">
+          {pickerStudents.length === 0 && !pickerLoading ? (
+            <div className="ai-empty-state" style={{ padding: '40px' }}>
+              <p>Không có học viên nào chưa thuộc lớp.</p>
+            </div>
+          ) : (
+            <div className="users-table-container" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              <table className="users-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '40px' }}>
                       <input
                         type="checkbox"
-                        checked={pickerSelected.has(s.id)}
-                        onChange={() => toggleOne(s.id)}
-                        onClick={e => e.stopPropagation()}
+                        checked={allCurrentSelected}
+                        onChange={toggleAllCurrent}
+                        title="Chon tat ca tren trang"
                       />
-                    </td>
-                    <td>{s.id}</td>
-                    <td>{s.ten}</td>
-                    <td className="cm-picker-muted">{s.email || '—'}</td>
+                    </th>
+                    <th>ID</th>
+                    <th>Tên</th>
+                    <th>Email</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {pickerStudents.map(s => (
+                    <tr key={s.id}
+                      style={{ background: pickerSelected.has(s.id) ? 'var(--rules-btn-hover-bg)' : 'transparent', cursor: 'pointer' }}
+                      onClick={() => toggleOne(s.id)}>
+                      <td style={{ textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={pickerSelected.has(s.id)}
+                          onChange={() => toggleOne(s.id)}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      </td>
+                      <td>{s.id}</td>
+                      <td>{s.ten}</td>
+                      <td style={{ color: 'var(--rules-text-muted)' }}>{s.email || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-        <div className="form-actions" style={{ marginTop: '14px' }}>
-          <span className="cm-picker-count">
-            Đã chọn: <strong>{pickerSelected.size}</strong>
-          </span>
-          <button type="button" onClick={onClose}>Đóng</button>
-          <button
-            type="button"
-            className="primary-btn"
-            onClick={handleAdd}
-            disabled={pickerSelected.size === 0 || pickerAdding}
-          >
-            {pickerAdding ? 'Đang thêm...' : `Thêm vào lớp${pickerSelected.size > 0 ? ` (${pickerSelected.size})` : ''}`}
-          </button>
+          <div className="form-actions">
+            <span className="help-text">
+              Đã chọn: <strong style={{ color: 'var(--rules-text-accent)' }}>{pickerSelected.size}</strong>
+            </span>
+            <button type="button" onClick={onClose} className="btn-cancel">Đóng</button>
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={handleAdd}
+              disabled={pickerSelected.size === 0 || pickerAdding}
+            >
+              {pickerAdding ? 'Đang thêm...' : `Thêm vào lớp${pickerSelected.size > 0 ? ` (${pickerSelected.size})` : ''}`}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -786,79 +829,81 @@ function GroupTab({ cls, token, onChanged }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <p className="cm-help-text">
-          Mỗi lớp có thể tạo nhiều nhóm, mỗi nhóm tối đa <strong>{MAX_MEMBERS_PER_GROUP}</strong> sinh viên.
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <p className="help-text">
+          Moi lop co the tao nhieu nhom, moi nhom toi da <strong style={{ color: 'var(--rules-text-accent)' }}>{MAX_MEMBERS_PER_GROUP}</strong> sinh vien.
         </p>
-        <button className="primary-btn" onClick={() => setShowCreateGroup(true)} style={{ fontSize: '13px', padding: '8px 14px' }}>
-          + Tạo nhóm
+        <button className="primary-btn" onClick={() => setShowCreateGroup(true)}>
+          + Tao nhom
         </button>
       </div>
 
       {loading ? (
-        <div className="loading">Đang tải nhóm...</div>
+        <div className="ai-empty-state">Dang tai nhom...</div>
       ) : groups.length === 0 ? (
-        <div className="empty-state"><p>Lớp chưa có nhóm nào. Nhấn "+ Tạo nhóm" để bắt đầu.</p></div>
+        <div className="ai-empty-state" style={{ padding: '40px' }}>
+          <p>Lớp chưa có nhóm nào. Nhấn "+ Tạo nhóm" để bắt đầu.</p>
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
           {groups.map(g => (
-            <div key={g.id} className="neo-card" style={{ padding: '12px' }}>
-              <div className="cm-group-row">
-                <div className="cm-group-row-left">
-                  <span className="cm-group-row-icon">👥</span>
+            <div key={g.id} className="group-card">
+              <div className="group-card-header">
+                <div className="group-card-title">
+                  <span>👥</span>
                   {editingGroup && editingGroup.id === g.id ? (
                     <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
-                      className="cm-group-row-edit-input" autoFocus />
+                      style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--rules-input-border)', background: 'var(--rules-input-bg)', color: 'var(--rules-input-text)' }} autoFocus />
                   ) : (
-                    <strong className="cm-group-row-name">{g.ten_nhom || g.ten_phong}</strong>
+                    <strong>{g.ten_nhom || g.ten_phong}</strong>
                   )}
                   <span className={`role-badge ${g.so_thanh_vien >= MAX_MEMBERS_PER_GROUP ? 'student' : 'teacher'}`}>
                     {g.so_thanh_vien}/{MAX_MEMBERS_PER_GROUP}
                   </span>
                 </div>
-                <div className="cm-group-actions">
+                <div className="group-actions">
                   {editingGroup && editingGroup.id === g.id ? (
-                    <><button onClick={handleSaveEdit} className="cm-btn-save">Lưu</button><button onClick={() => setEditingGroup(null)} className="cm-btn-secondary">Huỷ</button></>
+                    <><button onClick={handleSaveEdit} className="primary-btn" style={{ padding: '6px 12px' }}>Lưu</button><button onClick={() => setEditingGroup(null)} className="secondary-btn" style={{ padding: '6px 12px' }}>Hủy</button></>
                   ) : (
-                    <><button onClick={() => handleOpenGroup(g)} className="cm-btn-info">{openGroupId === g.id ? 'Đóng' : 'Thành viên'}</button><button onClick={() => handleStartEdit(g)} className="cm-btn-secondary">Sửa</button><button onClick={() => handleDeleteGroup(g)} className="cm-btn-danger">Xoá</button></>
+                    <><button onClick={() => handleOpenGroup(g)} className="btn-edit">{openGroupId === g.id ? 'Đóng' : 'Thành viên'}</button><button onClick={() => handleStartEdit(g)} className="btn-edit">Sửa</button><button onClick={() => handleDeleteGroup(g)} className="btn-delete">Xóa</button></>
                   )}
                 </div>
               </div>
 
               {openGroupId === g.id && (
-                <div className="cm-group-detail">
+                <div className="group-detail">
                   {memberLoading ? (
-                    <div className="loading">Đang tải thành viên...</div>
+                    <div className="ai-empty-state">Dang tai thanh vien...</div>
                   ) : (
                     <>
-                      <h4>Thành viên ({groupMembers.length}/{MAX_MEMBERS_PER_GROUP})</h4>
+                      <h4 style={{ color: 'var(--rules-text)', margin: '0 0 10px' }}>Thành viên ({groupMembers.length}/{MAX_MEMBERS_PER_GROUP})</h4>
                       {groupMembers.length === 0 ? (
-                        <p className="cm-group-empty-text">Chưa có thành viên nào.</p>
+                        <p style={{ color: 'var(--rules-text-muted)', fontSize: '0.85rem' }}>Chua co thanh vien nao.</p>
                       ) : (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                           {groupMembers.map(m => (
-                            <div key={m.id} className="cm-member-chip">
+                            <div key={m.id} className="member-chip">
                               <span>👤 {m.ten}</span>
-                              <button onClick={() => handleRemoveMember(m.id, m.ten)} className="cm-member-chip-remove">×</button>
+                              <button onClick={() => handleRemoveMember(m.id, m.ten)} className="member-chip-remove">×</button>
                             </div>
                           ))}
                         </div>
                       )}
                       {g.so_thanh_vien < MAX_MEMBERS_PER_GROUP && (
                         <div>
-                          <h4>+ Thêm sinh viên (chưa ở nhóm nào trong lớp)</h4>
+                          <h4 style={{ color: 'var(--rules-text)', margin: '12px 0 10px' }}>+ Thêm sinh viên (chưa ở nhóm nào trong lớp)</h4>
                           {groupStudents.length === 0 ? (
-                            <p className="cm-group-empty-text">Tất cả sinh viên trong lớp đã thuộc nhóm khác.</p>
+                            <p style={{ color: 'var(--rules-text-muted)', fontSize: '0.85rem' }}>Tất cả sinh viên trong lớp đã thuộc nhóm khác.</p>
                           ) : (
-                            <div className="cm-add-student-table">
-                              <table className="table" style={{ width: '100%' }}>
+                            <div className="users-table-container" style={{ borderRadius: '8px' }}>
+                              <table className="users-table">
                                 <tbody>
                                   {groupStudents.map(s => (
                                     <tr key={s.id}>
                                       <td>{s.ten}</td>
-                                      <td className="cm-cell-muted">{s.email || '—'}</td>
-                                      <td className="cm-cell-right">
-                                        <button onClick={() => handleAddMember(s.id)} className="cm-btn-add-student">Thêm</button>
+                                      <td style={{ color: 'var(--rules-text-muted)' }}>{s.email || '—'}</td>
+                                      <td>
+                                        <button onClick={() => handleAddMember(s.id)} className="btn-login">Thêm</button>
                                       </td>
                                     </tr>
                                   ))}
@@ -878,18 +923,18 @@ function GroupTab({ cls, token, onChanged }) {
       )}
 
       {showCreateGroup && (
-        <div className="modal-backdrop" style={{ zIndex: 1100 }}>
-          <div className="modal-content" style={{ maxWidth: 420 }}>
-            <div className="modal-header">
-              <h3>Tạo nhóm mới</h3>
-              <button onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setNewGroupDesc(''); }}>×</button>
+        <div className="rules-modal-backdrop" style={{ zIndex: 1100 }}>
+          <div className="rules-modal" style={{ maxWidth: 420 }}>
+            <div className="rules-modal-header">
+              <h3>Tao nhom moi</h3>
+              <button className="rules-modal-close" onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setNewGroupDesc(''); }}>×</button>
             </div>
-            <form className="rule-form" onSubmit={handleCreateGroup}>
+            <form className="rules-form" onSubmit={handleCreateGroup}>
               <label>Tên nhóm * <input type="text" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="VD: Nhóm 1, Nhóm Arduino" required autoFocus /></label>
-              <label>Mô tả (tuỳ chọn) <input type="text" value={newGroupDesc} onChange={e => setNewGroupDesc(e.target.value)} placeholder="VD: Nhóm làm đồ án nhúng" /></label>
+              <label>Mô tả (tùy chọn) <input type="text" value={newGroupDesc} onChange={e => setNewGroupDesc(e.target.value)} placeholder="VD: Nhóm làm đồ án nhúng" /></label>
               <div className="form-actions">
+                <button type="button" onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setNewGroupDesc(''); }}>Hủy</button>
                 <button type="submit">Tạo</button>
-                <button type="button" onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setNewGroupDesc(''); }}>Huỷ</button>
               </div>
             </form>
           </div>

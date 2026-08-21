@@ -833,7 +833,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           const SizedBox(height: 20),
         ],
 
-        // Metrics
+        // Metrics - filter by app_display_fields if configured
         if (device.hasMetrics) ...[
           const Row(
             children: [
@@ -852,21 +852,35 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 1.0,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: device.metrics.length,
-            itemBuilder: (context, index) {
-              final metric = device.metrics.values.elementAt(index);
-              return MetricCard(metric: metric);
-            },
-          ),
+          Builder(builder: (context) {
+            // Filter metrics based on app_display_fields configuration
+            final displayFields = _roomData?.appDisplayFields;
+            final filteredMetrics = displayFields == null || displayFields.isEmpty
+                ? device.metrics.entries.toList()
+                : device.metrics.entries
+                    .where((e) => displayFields.contains(e.key))
+                    .toList();
+
+            if (filteredMetrics.isEmpty) {
+              return const SizedBox.shrink();
+            }
+
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 1.0,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              itemCount: filteredMetrics.length,
+              itemBuilder: (context, index) {
+                final metric = filteredMetrics[index].value;
+                return MetricCard(metric: metric);
+              },
+            );
+          }),
         ],
       ],
     );

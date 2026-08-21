@@ -188,97 +188,175 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange,
 
   if (loading) {
     return (
-      <div className="rules-container">
-        <div style={{ textAlign: 'center', padding: '40px' }}>
-          <p>Đang tải...</p>
+      <div className="ai-page-container">
+        <div className="ai-empty-state" style={{ padding: '40px' }}>
+          <p>Đang tải dashboard...</p>
         </div>
       </div>
     );
   }
 
+  const totalDashboards = dashboards.length;
+  const totalMine = dashboards.filter(d => d.phong_id && !d.lop_hoc_id && !d.nhom_id).length;
+  const totalGroup = dashboards.filter(d => d.nhom_id != null).length;
+  const totalClass = dashboards.filter(d => d.lop_hoc_id).length;
+
   return (
-    <div className="rules-container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <button className="back-btn-ghost" onClick={onBack}>
-          ← Quay lại
-        </button>
-        <button
-          onClick={handleOpenAdd}
-          className="dm-create-btn"
-        >
-          + Tạo Dashboard Mới
-        </button>
+    <div className="ai-page-container">
+      <div className="ai-page-header">
+        <div className="ai-page-header-left">
+          <button type="button" className="back-btn" onClick={onBack}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Quay lại
+          </button>
+          <div className="ai-page-header-title">
+            <div
+              className="ai-page-header-icon"
+              style={{
+                background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.15), rgba(6, 182, 212, 0.05))',
+                color: '#0891b2',
+                border: '1px solid rgba(6, 182, 212, 0.2)',
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="7" height="9"/>
+                <rect x="14" y="3" width="7" height="5"/>
+                <rect x="14" y="12" width="7" height="9"/>
+                <rect x="3" y="16" width="7" height="5"/>
+              </svg>
+            </div>
+            <div>
+              <h1>Quản lý Dashboard</h1>
+              <p className="ai-page-subtitle-text">Tạo, chỉnh sửa và chia sẻ dashboard với lớp/nhóm</p>
+            </div>
+          </div>
+        </div>
+        <div className="rules-actions">
+          <button onClick={handleOpenAdd} className="primary-btn" style={{ padding: '10px 18px' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Tạo Dashboard
+          </button>
+        </div>
       </div>
 
+      <div className="ai-page-content">
+
       {error && (
-        <div className="dm-error-box">
-          {error}
+        <div className="import-result error" style={{ marginBottom: '16px' }}>
+          <p>{error}</p>
         </div>
       )}
 
-      {/* Filter chips - Phase 5 */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="ai-stats-grid">
+        <div className="ai-stat-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <span className="ai-stat-label">Tổng dashboard</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--rules-text-accent)' }}>
+              <rect x="3" y="3" width="7" height="9"/>
+              <rect x="14" y="3" width="7" height="5"/>
+              <rect x="14" y="12" width="7" height="9"/>
+              <rect x="3" y="16" width="7" height="5"/>
+            </svg>
+          </div>
+          <span className="ai-stat-value">{totalDashboards}</span>
+        </div>
+        <div className="ai-stat-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <span className="ai-stat-label">Cá nhân</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#22c55e' }}>
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <span className="ai-stat-value" style={{ color: '#22c55e' }}>{totalMine}</span>
+        </div>
+        <div className="ai-stat-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <span className="ai-stat-label">Nhóm</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#8b5cf6' }}>
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <span className="ai-stat-value" style={{ color: '#8b5cf6' }}>{totalGroup}</span>
+        </div>
+        <div className="ai-stat-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <span className="ai-stat-label">Lớp học</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#f59e0b' }}>
+              <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+              <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+            </svg>
+          </div>
+          <span className="ai-stat-value" style={{ color: '#f59e0b' }}>{totalClass}</span>
+        </div>
+      </div>
+
+      <div className="ai-filter-bar" style={{ background: 'transparent', padding: 0, marginBottom: '20px' }}>
         {[
-          { key: 'all', label: `Tất cả (${dashboards.length})` },
-          { key: 'mine', label: `Cá nhân (${dashboards.filter(d => d.phong_id && !d.lop_hoc_id && !d.nhom_id).length})` },
-          { key: 'group', label: `Nhóm (${dashboards.filter(d => d.nhom_id != null).length})` },
-          { key: 'class', label: `Lớp (${dashboards.filter(d => d.lop_hoc_id).length})` },
+          { key: 'all', label: `Tất cả (${totalDashboards})` },
+          { key: 'mine', label: `Cá nhân (${totalMine})` },
+          { key: 'group', label: `Nhóm (${totalGroup})` },
+          { key: 'class', label: `Lớp (${totalClass})` },
         ].map((chip) => (
           <button
             key={chip.key}
             onClick={() => setContextFilter(chip.key)}
-            className={`dm-filter-chip${contextFilter === chip.key ? ' active' : ''}`}
+            className={`secondary-btn ${contextFilter === chip.key ? 'active' : ''}`}
+            style={{
+              padding: '8px 16px',
+              fontSize: '0.85rem',
+              borderRadius: '20px',
+              background: contextFilter === chip.key ? 'var(--rules-text-accent)' : 'var(--rules-card-bg)',
+              borderColor: contextFilter === chip.key ? 'var(--rules-text-accent)' : 'var(--rules-card-border)',
+              color: contextFilter === chip.key ? '#ffffff' : 'var(--rules-text-secondary)',
+              fontWeight: contextFilter === chip.key ? 600 : 500,
+              boxShadow: contextFilter === chip.key ? '0 2px 8px rgba(8, 145, 178, 0.25)' : 'none',
+              transition: 'all 0.2s',
+            }}
           >
             {chip.label}
           </button>
         ))}
       </div>
 
-      {/* Dashboard Form Modal */}
       {formVisible && (
-        <div className="dm-modal-backdrop">
-          <div className="dm-modal">
-            <h2>
-              {editingDashboard ? 'Chỉnh sửa Dashboard' : 'Tạo Dashboard Mới'}
-            </h2>
-            <form onSubmit={handleSave}>
-              <div className="dm-form-row">
-                <label className="dm-form-label">
-                  Tên Dashboard *
-                </label>
+        <div className="rules-modal-backdrop">
+          <div className="rules-modal" style={{ maxWidth: 600 }}>
+            <div className="rules-modal-header">
+              <h3>{editingDashboard ? 'Chỉnh sửa Dashboard' : 'Tạo Dashboard Mới'}</h3>
+              <button className="rules-modal-close" onClick={() => { resetForm(); setFormVisible(false); }}>×</button>
+            </div>
+            <form className="rules-form" onSubmit={handleSave}>
+              <label>
+                Tên Dashboard *
                 <input
                   type="text"
                   value={formData.ten_dashboard}
                   onChange={(e) => setFormData({ ...formData, ten_dashboard: e.target.value })}
                   required
-                  className="dm-form-input"
                   placeholder="Ví dụ: Lớp học thông minh"
                 />
-              </div>
+              </label>
 
-              <div className="dm-form-row">
-                <label className="dm-form-label">
-                  Mô tả
-                </label>
+              <label>
+                Mô tả
                 <textarea
                   value={formData.mo_ta}
                   onChange={(e) => setFormData({ ...formData, mo_ta: e.target.value })}
                   rows={3}
-                  className="dm-form-textarea"
                   placeholder="Mô tả về dashboard này..."
+                  style={{ resize: 'vertical' }}
                 />
-              </div>
+              </label>
 
-
-
-              <div className="dm-form-row">
-                <label className="dm-form-label">
-                  Gắn với phòng (tuỳ chọn - để trống = cá nhân)
-                </label>
+              <label>
+                Gan voi phong (tuy chon - de trong = ca nhan)
                 <select
                   value={formData.phong_id}
                   onChange={(e) => setFormData({ ...formData, phong_id: e.target.value, lop_hoc_id: '' })}
-                  className="dm-form-select"
                 >
                   <option value="">-- Không gắn với phòng cụ thể --</option>
                   {rooms.map((r) => (
@@ -287,82 +365,78 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange,
                     </option>
                   ))}
                 </select>
-              </div>
+              </label>
 
-              <div className="dm-form-row">
-                <label className="dm-form-label">
-                  Gắn với lớp (tuỳ chọn - chia sẻ với cả lớp)
-                </label>
+              <label>
+                Gan voi lop (tuy chon - chia se voi ca lop)
                 <select
                   value={formData.lop_hoc_id}
                   onChange={(e) => setFormData({ ...formData, lop_hoc_id: e.target.value, phong_id: '' })}
-                  className="dm-form-select"
                 >
                   <option value="">-- Không gắn với lớp --</option>
                   {classes.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.ten_lop || `Lớp #${c.id}`}
+                      {c.ten_lop || `Lop #${c.id}`}
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="dm-form-row">
-                <label className="dm-form-label">
-                  Màu sắc
-                </label>
-                <div className="dm-form-color">
+              </label>
+
+              <label>
+                Màu sắc
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <input
                     type="color"
                     value={formData.mau_sac}
                     onChange={(e) => setFormData({ ...formData, mau_sac: e.target.value })}
-                    className="dm-form-color-picker"
+                    style={{ width: '50px', height: '40px', padding: '4px', borderRadius: '8px' }}
                   />
                   <input
                     type="text"
                     value={formData.mau_sac}
                     onChange={(e) => setFormData({ ...formData, mau_sac: e.target.value })}
-                    className="dm-form-color-text"
                     placeholder="#22d3ee"
+                    style={{ flex: 1 }}
                   />
                 </div>
-              </div>
+              </label>
 
-              <div className="dm-form-actions">
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetForm();
-                    setFormVisible(false);
-                  }}
-                  className="dm-form-cancel"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="dm-form-submit"
-                >
-                  {editingDashboard ? 'Cập nhật' : 'Tạo'}
-                </button>
+              <div className="form-actions">
+                <button type="button" onClick={() => { resetForm(); setFormVisible(false); }}>Hủy</button>
+                <button type="submit">{editingDashboard ? 'Cập nhật' : 'Tạo'}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Dashboards Grid */}
       {dashboards.length === 0 ? (
-        <div className="dm-empty">
-          <div className="dm-empty-icon">📊</div>
-          <h3>Chưa có dashboard nào</h3>
-          <p>Bấm nút "Tạo Dashboard Mới" để bắt đầu</p>
+        <div className="ai-empty-state" style={{ padding: '80px 24px', background: 'var(--rules-card-bg)', borderRadius: '16px', border: '1px dashed var(--rules-card-border)' }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ width: '80px', height: '80px', color: 'var(--rules-text-accent)', opacity: 0.6, marginBottom: '20px' }}>
+            <rect x="3" y="3" width="7" height="9"/>
+            <rect x="14" y="3" width="7" height="5"/>
+            <rect x="14" y="12" width="7" height="9"/>
+            <rect x="3" y="16" width="7" height="5"/>
+          </svg>
+          <h3 style={{ margin: '0 0 8px', color: 'var(--rules-text)', fontSize: '1.2rem', fontWeight: 600 }}>
+            Chưa có dashboard nào
+          </h3>
+          <p style={{ margin: '0', fontSize: '0.95rem', color: 'var(--rules-text-secondary)' }}>
+            Hãy tạo dashboard đầu tiên để bắt đầu theo dõi dữ liệu IoT
+          </p>
         </div>
       ) : filteredDashboards.length === 0 ? (
-        <div className="dm-no-match">
-          <p>Không có dashboard nào khớp với bộ lọc "{contextFilter}".</p>
+        <div className="ai-empty-state" style={{ padding: '60px 24px', background: 'var(--rules-card-bg)', borderRadius: '16px', border: '1px dashed var(--rules-card-border)' }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ width: '64px', height: '64px', color: 'var(--rules-text-muted)', opacity: 0.5, marginBottom: '16px' }}>
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <p style={{ color: 'var(--rules-text-secondary)', fontSize: '0.95rem' }}>
+            Không có dashboard nào khớp với bộ lọc đã chọn
+          </p>
         </div>
       ) : (
-        <div className="dm-grid">
+        <div className="dp-profiles-grid">
           {filteredDashboards.map(dashboard => {
             const contextType = dashboard.lop_hoc_id
               ? 'lop_hoc'
@@ -378,84 +452,97 @@ export default function DashboardManagement({ token, onBack, onDashboardsChange,
                 ? dashboard.ten_phong
                 : null;
             return (
-            <div key={dashboard.id} className="dm-card">
-              <div className="dm-card-head">
-                <div className="dm-card-head-left">
-                  <div
-                    className="dm-card-icon"
-                    style={{
-                      background: `${dashboard.mau_sac}20`,
-                      border: `1px solid ${dashboard.mau_sac}40`,
-                    }}
-                  >
-                    {dashboard.ten_dashboard ? dashboard.ten_dashboard.charAt(0).toUpperCase() : 'D'}
-                  </div>
-                  <div>
-                    <h3 className="dm-card-title">
-                      {dashboard.ten_dashboard}
-                    </h3>
-                    {dashboard.mo_ta && (
-                      <p className="dm-card-desc">
-                        {dashboard.mo_ta}
-                      </p>
-                    )}
-                    <span
-                      title={contextDetail || ''}
-                      className={`dm-context-badge ${contextType}`}
+              <div key={dashboard.id} className="dp-profile-card" style={{ position: 'relative' }}>
+                <div className="dp-profile-header">
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', flex: 1 }}>
+                    <div
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '12px',
+                        background: `linear-gradient(135deg, ${dashboard.mau_sac}30, ${dashboard.mau_sac}10)`,
+                        border: `1px solid ${dashboard.mau_sac}50`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
                     >
-                      {contextLabel}{contextDetail ? `: ${contextDetail}` : ''}
-                    </span>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={dashboard.mau_sac} strokeWidth="2">
+                        <rect x="3" y="3" width="7" height="9"/>
+                        <rect x="14" y="3" width="7" height="5"/>
+                        <rect x="14" y="12" width="7" height="9"/>
+                        <rect x="3" y="16" width="7" height="5"/>
+                      </svg>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h4 className="dp-profile-title" style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--rules-text)' }}>
+                        {dashboard.ten_dashboard}
+                      </h4>
+                      {dashboard.mo_ta && (
+                        <p style={{ margin: '4px 0 8px', color: 'var(--rules-text-muted)', fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                          {dashboard.mo_ta}
+                        </p>
+                      )}
+                      <span className={`role-badge ${contextType === 'lop_hoc' ? 'admin' : contextType === 'nhom' ? 'teacher' : 'student'}`}>
+                        {contextLabel}{contextDetail ? `: ${contextDetail}` : ''}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="dm-card-actions">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleBuild(dashboard.id);
-                  }}
-                  className="dm-action-btn"
-                >
-                  🛠️ Build
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleView(dashboard.id);
-                  }}
-                  className="dm-action-btn dm-action-teal"
-                >
-                  Xem
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEdit(dashboard);
-                  }}
-                  className="dm-action-btn dm-action-teal"
-                >
-                  Sửa
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(dashboard.id);
-                  }}
-                  className="dm-action-btn dm-action-danger"
-                >
-                  Xóa
-                </button>
-              </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', paddingTop: '12px', borderTop: '1px solid var(--rules-card-border)', fontSize: '0.75rem', color: 'var(--rules-text-muted)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                      <line x1="16" y1="2" x2="16" y2="6"/>
+                      <line x1="8" y1="2" x2="8" y2="6"/>
+                      <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                    {new Date(dashboard.ngay_tao).toLocaleDateString('vi-VN')}
+                  </span>
+                </div>
 
-              <div className="dm-card-date">
-                {new Date(dashboard.ngay_tao).toLocaleDateString('vi-VN')}
+                <div className="dp-profile-actions" style={{ marginTop: '12px', gap: '8px' }}>
+                  <button
+                    onClick={() => handleBuild(dashboard.id)}
+                    className="btn-edit"
+                    title="Build dashboard"
+                    style={{ flex: 1, padding: '8px 10px', fontSize: '0.8rem' }}
+                  >
+                    Build
+                  </button>
+                  <button
+                    onClick={() => handleView(dashboard.id)}
+                    className="btn-edit"
+                    title="Xem dashboard"
+                    style={{ flex: 1, padding: '8px 10px', fontSize: '0.8rem' }}
+                  >
+                    Xem
+                  </button>
+                  <button
+                    onClick={() => handleEdit(dashboard)}
+                    className="btn-edit"
+                    title="Sửa"
+                    style={{ padding: '8px 10px', fontSize: '0.8rem' }}
+                  >
+                    Sửa
+                  </button>
+                  <button
+                    onClick={() => handleDelete(dashboard.id)}
+                    className="btn-delete"
+                    title="Xóa"
+                    style={{ padding: '8px 10px', fontSize: '0.8rem' }}
+                  >
+                    Xóa
+                  </button>
+                </div>
               </div>
-            </div>
             );
           })}
         </div>
       )}
+      </div>
     </div>
   );
 }

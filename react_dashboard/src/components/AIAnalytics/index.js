@@ -105,73 +105,77 @@ const AIDeviceList = ({ token, onBack, onSelectDevice, onOpenAlerts }) => {
   });
 
   return (
-    <div className="rules-container">
-      <div className="rules-header">
-        <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại</button>
+    <div className="ai-page-container">
+      <div className="ai-page-header">
+        <div className="ai-page-header-left">
+          <button type="button" className="back-btn" onClick={onBack}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Quay lại
+          </button>
+          <div className="ai-page-header-title">
+            <div className="ai-page-header-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10 10 10 0 0 1-10-10 10 10 0 0 1 10-10z"/>
+                <path d="M12 8v4l3 3"/>
+              </svg>
+            </div>
+            <div>
+              <h1>AI Analytics</h1>
+              <p className="ai-page-subtitle-text">Phân tích thông minh, dự đoán xu hướng và phát hiện bất thường</p>
+            </div>
+          </div>
+        </div>
         <div className="rules-actions">
           <button
             type="button"
             className="primary-btn"
             onClick={loadSummary}
             disabled={loading}
-            title="Tải lại"
+            title="Tai lai"
           >
-            <span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 4 }}>
-              refresh
-            </span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             Làm mới
           </button>
         </div>
       </div>
 
-      <div className="ai-page-title">
-        <span className="material-symbols-outlined" style={{ color: '#8b5cf6' }}>psychology</span>
-        <div>
-          <h2>AI Analytics</h2>
-          <div className="ai-page-subtitle">
-            Phân tích thông minh, dự đoán xu hướng và phát hiện bất thường
+      <div className="ai-page-content">
+        <div className="ai-stats-grid">
+          <div className="ai-stat-card">
+            <span className="ai-stat-label">Tổng thiết bị</span>
+            <span className="ai-stat-value">{summary.total}</span>
+          </div>
+          <div className="ai-stat-card online">
+            <span className="ai-stat-label">Đang online</span>
+            <span className="ai-stat-value">{summary.online_count}</span>
+          </div>
+          <div className="ai-stat-card alerts">
+            <span className="ai-stat-label">Có cảnh báo</span>
+            <span className="ai-stat-value">
+              {(summary.devices || []).filter(d =>
+                (d.anomaly_count_24h > 0) || (d.alert_unresolved_count > 0)
+              ).length}
+            </span>
           </div>
         </div>
-      </div>
 
-      <div className="ai-summary-stats">
-        <div className="ai-stat-card">
-          <span className="ai-stat-label">Tổng thiết bị</span>
-          <span className="ai-stat-value">{summary.total}</span>
+        <div className="ai-filter-bar">
+          <input
+            type="text"
+            placeholder="Tim theo ten, ma thiet bi hoac phong..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          >
+            <option value="all">Tất cả</option>
+            <option value="analyzed">Đã phân tích</option>
+            <option value="alerts">Có cảnh báo</option>
+            <option value="offline">Offline</option>
+          </select>
         </div>
-        <div className="ai-stat-card online">
-          <span className="ai-stat-label">Đang online</span>
-          <span className="ai-stat-value">{summary.online_count}</span>
-        </div>
-        <div className="ai-stat-card alerts">
-          <span className="ai-stat-label">Có cảnh báo</span>
-          <span className="ai-stat-value">
-            {(summary.devices || []).filter(d =>
-              (d.anomaly_count_24h > 0) || (d.alert_unresolved_count > 0)
-            ).length}
-          </span>
-        </div>
-      </div>
-
-      <div className="ai-filter-bar">
-        <input
-          type="text"
-          className="filter-input"
-          placeholder="Tìm theo tên, mã thiết bị hoặc phòng..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <select
-          className="filter-select"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        >
-          <option value="all">Tất cả</option>
-          <option value="analyzed">Đã phân tích</option>
-          <option value="alerts">Có cảnh báo</option>
-          <option value="offline">Offline</option>
-        </select>
-      </div>
 
       {loading ? (
         <div className="ai-device-grid">
@@ -184,14 +188,22 @@ const AIDeviceList = ({ token, onBack, onSelectDevice, onOpenAlerts }) => {
           ))}
         </div>
       ) : error ? (
-        <div className="empty-state">
-          <span className="material-symbols-outlined" style={{ color: '#fca5a5' }}>error</span>
+        <div className="ai-empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
           <p>{error}</p>
-          <button type="button" className="primary-btn" onClick={loadSummary}>Thử lại</button>
+          <button type="button" className="primary-btn" onClick={loadSummary}>Thu lai</button>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="empty-state">
-          <span className="material-symbols-outlined">devices</span>
+        <div className="ai-empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+            <line x1="8" y1="21" x2="16" y2="21"/>
+            <line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
           <p>
             {summary.total === 0
               ? 'Chưa có thiết bị nào. Hãy đăng ký thiết bị tại menu Thiết bị.'
@@ -210,6 +222,7 @@ const AIDeviceList = ({ token, onBack, onSelectDevice, onOpenAlerts }) => {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 };
@@ -250,7 +263,7 @@ const AIDeviceCard = ({ device: initialDevice, onClick, onOpenAlerts }) => {
   const totalAlerts = (device.anomaly_count_24h || 0) + (device.alert_unresolved_count || 0);
 
   return (
-    <div className={`ai-device-card ${cardClass}`} onClick={onClick} role="button" tabIndex={0}
+    <div className="ai-device-card" onClick={onClick} role="button" tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick && onClick(); } }}
     >
       <div className="ai-card-top">
@@ -285,13 +298,20 @@ const AIDeviceCard = ({ device: initialDevice, onClick, onOpenAlerts }) => {
       </div>
 
       <div className="ai-card-pills">
-        <span className="ai-stat-pill" title="Số metric đã được AI khám phá">
-          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>tune</span>
+        <span className="ai-stat-pill" title="So metric da duoc AI kham pha">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+          </svg>
           {device.metrics_count || 0} metric
         </span>
-        <span className={`ai-stat-pill ${totalAlerts > 0 ? 'has-alert' : ''}`} title="Anomaly 24h + AI alert đang mở">
-          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>warning</span>
-          {totalAlerts} cảnh báo
+        <span className={`ai-stat-pill ${totalAlerts > 0 ? 'has-alert' : ''}`} title="Anomaly 24h + AI alert dang mo">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          {totalAlerts} canh bao
         </span>
       </div>
     </div>
@@ -548,61 +568,91 @@ const AIAnalyticsDetail = ({ token, deviceId, onBack, onOpenAlerts }) => {
   });
 
   return (
-    <div className="rules-container">
-      <div className="rules-header">
-        <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại danh sách</button>
+    <div className="ai-page-container">
+      <div className="ai-page-header">
+        <div className="ai-page-header-left">
+          <button type="button" className="back-btn" onClick={onBack}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Quay lại danh sách
+          </button>
+          <div className="ai-page-header-title">
+            <div className="ai-page-header-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10 10 10 0 0 1-10-10 10 10 0 0 1 10-10z"/>
+                <path d="M12 8v4l3 3"/>
+              </svg>
+            </div>
+            <div>
+              <h1>{deviceId}</h1>
+              <p className="ai-page-subtitle-text">Phân tích AI cho thiết bị</p>
+            </div>
+          </div>
+        </div>
         <div className="rules-actions">
           <button
             type="button"
             className="primary-btn"
             onClick={fetchDeviceData}
             disabled={loading}
-            title="Tải lại"
+            title="Tai lai"
           >
-            <span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 4 }}>
-              refresh
-            </span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             Làm mới
           </button>
         </div>
       </div>
 
-      <div className="ai-page-title">
-        <span className="material-symbols-outlined" style={{ color: '#8b5cf6' }}>psychology</span>
-        <div>
-          <h2>{deviceId}</h2>
-          <div className="ai-page-subtitle">Phân tích AI cho thiết bị</div>
-        </div>
-      </div>
+      <div className="ai-page-content">
 
       {error && (
-        <div className="ai-analytics-error">
-          <span className="material-symbols-outlined">error</span>
+        <div className="ai-error-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
           {error}
         </div>
       )}
 
       <div className="ai-analytics-tabs">
         <button className={`tab-btn ${activeTab === 'payload' ? 'active' : ''}`} onClick={() => setActiveTab('payload')}>
-          <span className="material-symbols-outlined">data_object</span>
-          Dữ liệu
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+          Du lieu
         </button>
         <button className={`tab-btn ${activeTab === 'anomaly' ? 'active' : ''}`} onClick={() => setActiveTab('anomaly')}>
-          <span className="material-symbols-outlined">warning</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
           Bất thường
           {anomalies.length > 0 && <span className="tab-badge">{anomalies.length}</span>}
         </button>
         <button className={`tab-btn ${activeTab === 'trend' ? 'active' : ''}`} onClick={() => setActiveTab('trend')}>
-          <span className="material-symbols-outlined">trending_up</span>
-          Xu hướng
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+            <polyline points="17 18 23 18 23 12"/>
+          </svg>
+          Xu huong
         </button>
         <button className={`tab-btn ${activeTab === 'thresholds' ? 'active' : ''}`} onClick={() => setActiveTab('thresholds')}>
-          <span className="material-symbols-outlined">tune</span>
-          Ngưỡng
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+          </svg>
+          Nguong
         </button>
         <button className={`tab-btn ${activeTab === 'health' ? 'active' : ''}`} onClick={() => setActiveTab('health')}>
-          <span className="material-symbols-outlined">monitor_heart</span>
-          Sức khỏe cảm biến
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+          Suc khoe cam bien
           {healthIssues.length > 0 && <span className="tab-badge warning">{healthIssues.length}</span>}
         </button>
       </div>
@@ -696,6 +746,7 @@ const AIAnalyticsDetail = ({ token, deviceId, onBack, onOpenAlerts }) => {
             )}
           </>
         )}
+      </div>
       </div>
     </div>
   );

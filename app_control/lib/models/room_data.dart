@@ -9,6 +9,9 @@ class RoomData {
   final DateTime timestamp;
   /// room_total từ `phong_occupancy` (cùng GET /rooms/{id}/data).
   final int soNguoiTrongPhong;
+  /// Danh sách các field key được hiển thị trên app.
+  /// NULL/empty = hiển thị tất cả (backward compatible).
+  final List<String>? appDisplayFields;
 
   RoomData({
     required this.roomId,
@@ -17,6 +20,7 @@ class RoomData {
     this.cameras = const [],
     DateTime? timestamp,
     this.soNguoiTrongPhong = 0,
+    this.appDisplayFields,
   }) : timestamp = timestamp ?? DateTime.now();
 
   factory RoomData.fromJson(Map<String, dynamic> json) {
@@ -42,13 +46,34 @@ class RoomData {
       return int.tryParse(v.toString()) ?? 0;
     }
 
+    // Parse app_display_fields from API response
+    List<String>? parseAppDisplayFields() {
+      final fields = json['app_display_fields'];
+      if (fields == null) return null;
+      if (fields is List) {
+        return fields.map((e) => e.toString()).toList();
+      }
+      return null;
+    }
+
     return RoomData(
       roomId: json['room_id'] as int? ?? json['room']?['id'] as int,
       roomName: json['room_name'] as String? ?? json['room']?['name'] as String,
       devices: devicesList,
       cameras: camerasList,
       soNguoiTrongPhong: readSoNguoi(),
+      appDisplayFields: parseAppDisplayFields(),
     );
+  }
+
+  /// Kiểm tra xem một field key có được hiển thị không.
+  /// - Nếu appDisplayFields là NULL/empty: hiển thị tất cả (backward compatible).
+  /// - Nếu có giá trị: chỉ hiển thị các fields trong danh sách.
+  bool shouldDisplayField(String fieldKey) {
+    if (appDisplayFields == null || appDisplayFields!.isEmpty) {
+      return true; // Hiển thị tất cả
+    }
+    return appDisplayFields!.contains(fieldKey);
   }
 
   // Helper getters

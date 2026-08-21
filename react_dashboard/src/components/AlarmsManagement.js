@@ -196,21 +196,65 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
   const goNext = () => setCurrentPage((p) => Math.min(totalPages, p + 1));
 
   return (
-    <div className="rules-container">
-      <div className="rules-header">
-        <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại</button>
+    <div className="ai-page-container">
+      <div className="ai-page-header">
+        <div className="ai-page-header-left">
+          <button type="button" className="back-btn" onClick={onBack}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Quay lại
+          </button>
+          <div className="ai-page-header-title">
+            <div className="ai-page-header-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <div>
+              <h1>Quản lý Cảnh báo</h1>
+              <p className="ai-page-subtitle-text">Theo doi va xu ly canh bao he thong</p>
+            </div>
+          </div>
+        </div>
         <div className="rules-actions">
+          {showNewBadge && (
+            <span className="role-badge" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+              {newCount} canh bao moi
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="alerts-filters">
+      <div className="ai-page-content">
+
+      <div className="ai-stats-grid">
+        <div className="ai-stat-card alerts">
+          <span className="ai-stat-label">Tổng cảnh báo</span>
+          <span className="ai-stat-value">{totalAlerts}</span>
+        </div>
+        <div className="ai-stat-card">
+          <span className="ai-stat-label">Moi</span>
+          <span className="ai-stat-value">{newCount}</span>
+        </div>
+        <div className="ai-stat-card online">
+          <span className="ai-stat-label">Đã xác nhận</span>
+          <span className="ai-stat-value">{alerts.filter(a => a.trang_thai === 'acknowledged').length}</span>
+        </div>
+        <div className="ai-stat-card">
+          <span className="ai-stat-label">Đã xử lý</span>
+          <span className="ai-stat-value">{alerts.filter(a => a.trang_thai === 'resolved').length}</span>
+        </div>
+      </div>
+
+      <div className="ai-filter-bar">
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
           className="filter-select"
         >
           <option value="">Tất cả trạng thái</option>
-          <option value="new">Mới</option>
+          <option value="new">Moi</option>
           <option value="acknowledged">Đã xác nhận</option>
           <option value="resolved">Đã xử lý</option>
         </select>
@@ -264,91 +308,88 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
       </div>
 
       {loading ? (
-        <div className="loading-placeholder">
-          <p>Đang tải...</p>
+        <div className="ai-empty-state" style={{ padding: '40px' }}>
+          <p>Đang tải cảnh báo...</p>
+        </div>
+      ) : alerts.length === 0 ? (
+        <div className="ai-empty-state" style={{ padding: '60px' }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <p>Chưa có cảnh báo nào. Hệ thống đang hoạt động ổn định.</p>
         </div>
       ) : (
         <>
-          <div className="alerts-table-wrapper">
-            <table className="table alerts-table">
+          <div className="users-table-container">
+            <table className="users-table">
               <thead>
                 <tr>
                   <th>Thời gian</th>
-                  <th>Loại</th>
+                  <th>Loai</th>
                   <th>Thiết bị</th>
-                  <th>Mức độ</th>
+                  <th>Muc do</th>
                   <th>Trạng thái</th>
-                  <th>Tin nhắn</th>
-                  <th>Thao tác</th>
+                  <th>Tin nhan</th>
+                  <th>Thao tac</th>
                 </tr>
               </thead>
               <tbody>
-                {alerts.length === 0 && (
-                  <tr>
-                    <td colSpan="7" className="no-data-cell">
-                      Chưa có cảnh báo nào
-                    </td>
-                  </tr>
-                )}
                 {alerts.map((a) => (
                   <tr
                     key={a.id}
-                    role="button"
-                    tabIndex={0}
                     onClick={(e) => handleRowClick(e, a)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        if (!e.target.closest('button')) setDetailModal(a);
-                      }
-                    }}
-                    className={`alert-row alert-row-clickable status-${a.trang_thai} muc-${a.muc_do}`}
-                    title="Xem chi tiết"
+                    style={{ cursor: 'pointer' }}
+                    className={`status-${a.trang_thai} muc-${a.muc_do}`}
+                    title="Xem chi tiet"
                   >
                     <td>{a.thoi_gian_tao || '-'}</td>
                     <td>
-                      <span className="loai-badge">{LOAI_LABELS[a.loai] || a.loai}</span>
+                      <span className="role-badge student">
+                        {LOAI_LABELS[a.loai] || a.loai}
+                      </span>
                       {(a.nguon === 'ai' || a.loai?.startsWith('ai_')) && (
-                        <span 
-                          className="ai-badge" 
-                          title="Cảnh báo từ AI Analytics"
-                          style={{marginLeft: '4px'}}
-                        >
-                          <span className="material-symbols-outlined" style={{fontSize: '12px'}}>psychology</span>
+                        <span style={{ marginLeft: '6px', fontSize: '0.7rem', color: 'var(--rules-text-accent)' }}>
+                          AI
                         </span>
                       )}
                     </td>
                     <td>{a.ten_thiet_bi || a.device_id || '-'}</td>
                     <td>
-                      <span className={`muc-do-badge muc-${a.muc_do}`}>
+                      <span className={`role-badge ${a.muc_do === 'critical' ? 'admin' : a.muc_do === 'high' ? 'teacher' : 'student'}`}>
                         {MUC_DO_LABELS[a.muc_do] || a.muc_do}
                       </span>
                     </td>
                     <td>
-                      <span className={`trang-thai-badge status-${a.trang_thai}`}>
+                      <span className={`role-badge ${a.trang_thai === 'new' ? 'admin' : a.trang_thai === 'acknowledged' ? 'teacher' : 'student'}`}>
                         {TRANG_THAI_LABELS[a.trang_thai] || a.trang_thai}
                       </span>
                     </td>
-                    <td className="tin-nhan-cell">{a.tin_nhan}</td>
-                    <td className="alert-actions-cell" onClick={(e) => e.stopPropagation()}>
-                      {a.trang_thai === 'new' && (
-                        <button
-                          type="button"
-                          className="btn-sm primary-btn"
-                          onClick={() => handleAcknowledge(a.id)}
-                        >
-                          Xác nhận
-                        </button>
-                      )}
-                      {(a.trang_thai === 'new' || a.trang_thai === 'acknowledged') && (
-                        <button
-                          type="button"
-                          className="btn-sm secondary-btn"
-                          onClick={() => setResolveModal(a)}
-                        >
-                          Xử lý xong
-                        </button>
-                      )}
+                    <td style={{ color: 'var(--rules-text-muted)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {a.tin_nhan}
+                    </td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <div className="user-actions">
+                        {a.trang_thai === 'new' && (
+                          <button
+                            type="button"
+                            className="btn-edit"
+                            onClick={() => handleAcknowledge(a.id)}
+                          >
+                            Xác nhận
+                          </button>
+                        )}
+                        {(a.trang_thai === 'new' || a.trang_thai === 'acknowledged') && (
+                          <button
+                            type="button"
+                            className="btn-edit"
+                            onClick={() => setResolveModal(a)}
+                          >
+                            Xu ly xong
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -357,29 +398,19 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
           </div>
 
           {totalAlerts > 0 && (
-            <div className="alerts-pagination">
-              <span className="alerts-pagination-info">
-                Hiển thị {(currentPage - 1) * PAGE_SIZE + 1}–
-                {Math.min(currentPage * PAGE_SIZE, totalAlerts)} / {totalAlerts} cảnh báo
+            <div className="pagination-container">
+              <span className="pagination-info">
+                Hiển thị {(currentPage - 1) * PAGE_SIZE + 1}-
+                {Math.min(currentPage * PAGE_SIZE, totalAlerts)} / {totalAlerts} canh bao
               </span>
-              <div className="alerts-pagination-buttons">
-                <button
-                  type="button"
-                  className="secondary-btn"
-                  disabled={currentPage <= 1}
-                  onClick={goPrev}
-                >
-                  Trước
+              <div className="pagination-controls">
+                <button className="secondary-btn" disabled={currentPage <= 1} onClick={goPrev}>
+                  Truoc
                 </button>
-                <span className="alerts-pagination-page">
+                <span style={{ padding: '6px 12px', color: 'var(--rules-text-secondary)' }}>
                   Trang {currentPage} / {totalPages}
                 </span>
-                <button
-                  type="button"
-                  className="secondary-btn"
-                  disabled={currentPage >= totalPages}
-                  onClick={goNext}
-                >
+                <button className="secondary-btn" disabled={currentPage >= totalPages} onClick={goNext}>
                   Sau
                 </button>
               </div>
@@ -387,88 +418,90 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
           )}
         </>
       )}
+      </div>
 
       {detailModal && (
         <div
-          className="modal-backdrop"
+          className="rules-modal-backdrop"
           onClick={(e) => {
             if (e.target === e.currentTarget) setDetailModal(null);
           }}
         >
-          <div className="modal-content alerts-detail-modal">
-            <div className="modal-header">
-              <h3>Chi tiết cảnh báo #{detailModal.id}</h3>
-              <button type="button" onClick={() => setDetailModal(null)} aria-label="Đóng">
-                ×
-              </button>
+          <div className="rules-modal" style={{ maxWidth: 640 }}>
+            <div className="rules-modal-header">
+              <h3>Chi tiet canh bao #{detailModal.id}</h3>
+              <button className="rules-modal-close" type="button" onClick={() => setDetailModal(null)}>×</button>
             </div>
-            <div className="modal-body alerts-detail-body">
-              <dl className="alerts-detail-dl">
-                <dt>Thời gian</dt>
-                <dd>{detailModal.thoi_gian_tao || '—'}</dd>
-                <dt>Loại</dt>
-                <dd>{LOAI_LABELS[detailModal.loai] || detailModal.loai}</dd>
-                <dt>Thiết bị</dt>
-                <dd>{detailModal.ten_thiet_bi || detailModal.device_id || '—'}</dd>
-                <dt>Mã thiết bị</dt>
-                <dd>{detailModal.device_id || '—'}</dd>
-                {detailModal.ten_phong && (
-                  <>
-                    <dt>Phòng</dt>
-                    <dd>{detailModal.ten_phong}</dd>
-                  </>
-                )}
-                {detailModal.ten_lop && (
-                  <>
-                    <dt>Lớp</dt>
-                    <dd>{detailModal.ten_lop}</dd>
-                  </>
-                )}
-                {detailModal.rule_id != null && (
-                  <>
-                    <dt>Rule ID</dt>
-                    <dd>{detailModal.rule_id}</dd>
-                  </>
-                )}
-                <dt>Mức độ</dt>
-                <dd>{MUC_DO_LABELS[detailModal.muc_do] || detailModal.muc_do}</dd>
-                <dt>Trạng thái</dt>
-                <dd>{TRANG_THAI_LABELS[detailModal.trang_thai] || detailModal.trang_thai}</dd>
-                {detailModal.thoi_gian_giai_quyet && (
-                  <>
-                    <dt>Thời gian xử lý</dt>
-                    <dd>{detailModal.thoi_gian_giai_quyet}</dd>
-                  </>
-                )}
-                <dt>Tin nhắn</dt>
-                <dd className="alerts-detail-message">{detailModal.tin_nhan || '—'}</dd>
-                {formatDataContext(detailModal.data_context) && (
-                  <>
-                    <dt>Dữ liệu kèm (data_context)</dt>
-                    <dd>
-                      <pre className="alerts-detail-pre">
-                        {formatDataContext(detailModal.data_context)}
-                      </pre>
-                    </dd>
-                  </>
-                )}
-              </dl>
-            </div>
-            <div className="form-actions">
-              <button type="button" className="primary-btn" onClick={() => setDetailModal(null)}>
-                Đóng
-              </button>
+            <div className="rules-form">
+              <div className="alerts-detail-body">
+                <dl className="alerts-detail-dl">
+                  <dt>Thời gian</dt>
+                  <dd>{detailModal.thoi_gian_tao || '—'}</dd>
+                  <dt>Loai</dt>
+                  <dd>{LOAI_LABELS[detailModal.loai] || detailModal.loai}</dd>
+                  <dt>Thiết bị</dt>
+                  <dd>{detailModal.ten_thiet_bi || detailModal.device_id || '—'}</dd>
+                  <dt>Mã thiết bị</dt>
+                  <dd>{detailModal.device_id || '—'}</dd>
+                  {detailModal.ten_phong && (
+                    <>
+                      <dt>Phong</dt>
+                      <dd>{detailModal.ten_phong}</dd>
+                    </>
+                  )}
+                  {detailModal.ten_lop && (
+                    <>
+                      <dt>Lop</dt>
+                      <dd>{detailModal.ten_lop}</dd>
+                    </>
+                  )}
+                  {detailModal.rule_id != null && (
+                    <>
+                      <dt>Rule ID</dt>
+                      <dd>{detailModal.rule_id}</dd>
+                    </>
+                  )}
+                  <dt>Muc do</dt>
+                  <dd>{MUC_DO_LABELS[detailModal.muc_do] || detailModal.muc_do}</dd>
+                  <dt>Trạng thái</dt>
+                  <dd>{TRANG_THAI_LABELS[detailModal.trang_thai] || detailModal.trang_thai}</dd>
+                  {detailModal.thoi_gian_giai_quyet && (
+                    <>
+                      <dt>Thời gian xử lý</dt>
+                      <dd>{detailModal.thoi_gian_giai_quyet}</dd>
+                    </>
+                  )}
+                  <dt>Tin nhan</dt>
+                  <dd className="alerts-detail-message">{detailModal.tin_nhan || '—'}</dd>
+                  {formatDataContext(detailModal.data_context) && (
+                    <>
+                      <dt>Du lieu kem (data_context)</dt>
+                      <dd>
+                        <pre className="alerts-detail-pre">
+                          {formatDataContext(detailModal.data_context)}
+                        </pre>
+                      </dd>
+                    </>
+                  )}
+                </dl>
+              </div>
+              <div className="form-actions">
+                <button type="button" className="primary-btn" onClick={() => setDetailModal(null)}>
+                  Đóng
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {resolveModal && (
-        <div className="modal-backdrop">
-          <div className="modal-content" style={{ maxWidth: 500 }}>
-            <div className="modal-header">
-              <h3>Xử lý cảnh báo</h3>
+        <div className="rules-modal-backdrop">
+          <div className="rules-modal" style={{ maxWidth: 500 }}>
+            <div className="rules-modal-header">
+              <h3>Xu ly canh bao</h3>
               <button
+                className="rules-modal-close"
                 type="button"
                 onClick={() => {
                   setResolveModal(null);
@@ -478,8 +511,8 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
                 ×
               </button>
             </div>
-            <div className="modal-body">
-              <p className="alert-preview">{resolveModal.tin_nhan}</p>
+            <div className="rules-form">
+              <p style={{ color: 'var(--rules-text)', padding: '8px 0' }}>{resolveModal.tin_nhan}</p>
               <label>
                 Ghi chú (tùy chọn)
                 <textarea
@@ -487,23 +520,16 @@ export default function AlarmsManagement({ token, onBack, workspaceContext = 'ca
                   onChange={(e) => setResolveNote(e.target.value)}
                   placeholder="Ghi chú khi xử lý..."
                   rows={3}
-                  style={{ width: '100%', marginTop: 8 }}
+                  style={{ resize: 'vertical' }}
                 />
               </label>
-            </div>
-            <div className="form-actions">
-              <button type="button" className="primary-btn" onClick={handleResolve}>
-                Xác nhận xử lý
-              </button>
-              <button
-                type="button"
-                onClick={() => {
+              <div className="form-actions">
+                <button type="button" onClick={() => {
                   setResolveModal(null);
                   setResolveNote('');
-                }}
-              >
-                Hủy
-              </button>
+                }}>Hủy</button>
+                <button type="button" className="primary-btn" onClick={handleResolve}>Xác nhận xử lý</button>
+              </div>
             </div>
           </div>
         </div>

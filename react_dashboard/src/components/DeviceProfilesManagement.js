@@ -224,133 +224,125 @@ export default function DeviceProfilesManagement({ token, onBack, workspaceConte
   };
 
   return (
-    <div className="rules-page">
-      {/* Header */}
-      <div className="rules-header">
-        <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại</button>
+    <div className="ai-page-container">
+      <div className="ai-page-header">
+        <div className="ai-page-header-left">
+          <button type="button" className="back-btn" onClick={onBack}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Quay lại
+          </button>
+          <div className="ai-page-header-title">
+            <div className="ai-page-header-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+            </div>
+            <div>
+              <h1>Quản lý Profile</h1>
+              <p className="ai-page-subtitle-text">Map field, convert unit cho thiet bi</p>
+            </div>
+          </div>
+        </div>
         <div className="rules-actions">
-          <button onClick={() => { setEditId(null); resetForm(); setFormVisible(true); }} className="primary">
-            + Tạo Profile
+          <button onClick={() => { setEditId(null); resetForm(); setFormVisible(true); }} className="primary-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Tạo Profile
           </button>
         </div>
       </div>
 
-      {/* Search & Filter */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        <input
-          type="text"
-          placeholder="Tìm kiếm profile..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="dp-search-input"
-          style={{
-            flex: 1,
-            minWidth: '200px',
-            padding: '10px 14px',
-            borderRadius: '8px',
-            fontSize: '14px',
-          }}
-        />
-        <div style={{ display: 'flex', gap: '6px' }}>
-          {[
-            { key: 'all', label: 'Tất cả' },
-            { key: 'device', label: 'Theo thiết bị' },
-            { key: 'type', label: 'Theo loại' },
-            { key: 'default', label: 'Mặc định' },
-          ].map(f => (
-            <button
-              key={f.key}
-              onClick={() => setFilterType(f.key)}
-              className={`dp-filter-btn${filterType === f.key ? ' active' : ''}`}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '13px',
-              }}
-            >
-              {f.label} ({typeCounts[f.key]})
-            </button>
-          ))}
+      <div className="ai-page-content">
+        <div className="ai-filter-bar">
+          <input
+            type="text"
+            placeholder="Tìm kiếm profile..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <div className="tab-buttons">
+            {[
+              { key: 'all', label: 'Tất cả' },
+              { key: 'device', label: 'Theo thiet bi' },
+              { key: 'type', label: 'Theo loai' },
+              { key: 'default', label: 'Mặc định' },
+            ].map(f => (
+              <button
+                key={f.key}
+                onClick={() => setFilterType(f.key)}
+                className={filterType === f.key ? 'active' : ''}
+              >
+                {f.label} ({typeCounts[f.key]})
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Profile Grid */}
       {loading ? (
-        <div className="dp-loading" style={{ textAlign: 'center', padding: '40px' }}>Đang tải...</div>
+        <div className="ai-empty-state" style={{ padding: '40px' }}>Đang tải...</div>
       ) : filteredProfiles.length === 0 ? (
-        <div className="dp-loading" style={{ textAlign: 'center', padding: '40px' }}>
-          {profiles.length === 0 ? 'Chưa có profile nào. Tạo profile để map field, convert unit.' : 'Không tìm thấy profile nào.'}
+        <div className="ai-empty-state" style={{ padding: '40px' }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+            <line x1="8" y1="21" x2="16" y2="21"/>
+            <line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+          <p>{profiles.length === 0 ? 'Chưa có profile nào. Tạo profile để map field, convert unit.' : 'Không tìm thấy profile nào.'}</p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+        <div className="dp-profiles-grid">
           {filteredProfiles.map((p) => {
             const cfg = parseConfig(p.config);
             const fieldCount = Object.keys(cfg.field_mapping || {}).length;
             const unitCount = Object.keys(cfg.unit_convert || {}).length;
             return (
-              <div key={p.id} className="rule-card" style={{ display: 'flex', flexDirection: 'column' }}>
-                {/* Card Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+              <div key={p.id} className="dp-profile-card">
+                <div className="dp-profile-header">
                   <div>
-                    <h4 className="dp-card-title" style={{ margin: 0, fontSize: '16px' }}>{p.ten_profile || `Profile #${p.id}`}</h4>
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                    <h4 className="dp-profile-title">{p.ten_profile || `Profile #${p.id}`}</h4>
+                    <div className="dp-profile-chips">
                       {p.device_id && (
-                        <span className="dp-chip-device" style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>
-                          📱 {p.device_id}
-                        </span>
+                        <span className="dp-chip">📱 {p.device_id}</span>
                       )}
                       {p.device_type && (
-                        <span className="dp-chip-type" style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>
-                          🏷️ {p.device_type}
-                        </span>
+                        <span className="dp-chip">🏷️ {p.device_type}</span>
                       )}
                       {!p.device_id && !p.device_type && (
-                        <span className="dp-chip-default" style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>
-                          ⭐ Mặc định
-                        </span>
+                        <span className="dp-chip">⭐ Mặc định</span>
                       )}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => handleEdit(p)} className="dp-btn-edit" style={{ padding: '6px 12px', fontSize: '12px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                      Sửa
-                    </button>
-                    <button onClick={() => handleDelete(p.id)} className="dp-btn-delete" style={{ padding: '6px 12px', fontSize: '12px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                      Xóa
-                    </button>
+                  <div className="dp-profile-actions">
+                    <button onClick={() => handleEdit(p)} className="dp-btn-edit">Sửa</button>
+                    <button onClick={() => handleDelete(p.id)} className="dp-btn-delete">Xóa</button>
                   </div>
                 </div>
 
-                {/* Config Summary */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: 'auto' }}>
-                  <div className="dp-summary" style={{ padding: '10px', borderRadius: '6px' }}>
-                    <div className="dp-summary-label" style={{ fontSize: '11px', marginBottom: '4px' }}>Field Mapping</div>
-                    <div className="dp-summary-value-blue" style={{ fontSize: '18px', fontWeight: '600' }}>{fieldCount}</div>
-                    <div className="dp-summary-sub" style={{ fontSize: '10px' }}>fields mapped</div>
+                <div className="dp-profile-stats">
+                  <div className="dp-stat-box">
+                    <div className="dp-stat-value" style={{ color: '#0ea5e9' }}>{fieldCount}</div>
+                    <div className="dp-stat-label">Fields mapped</div>
                   </div>
-                  <div className="dp-summary" style={{ padding: '10px', borderRadius: '6px' }}>
-                    <div className="dp-summary-label" style={{ fontSize: '11px', marginBottom: '4px' }}>Unit Convert</div>
-                    <div className="dp-summary-value-green" style={{ fontSize: '18px', fontWeight: '600' }}>{unitCount}</div>
-                    <div className="dp-summary-sub" style={{ fontSize: '10px' }}>units converted</div>
+                  <div className="dp-stat-box">
+                    <div className="dp-stat-value" style={{ color: '#22c55e' }}>{unitCount}</div>
+                    <div className="dp-stat-label">Units converted</div>
                   </div>
                 </div>
 
-                {/* Timestamp Format */}
-                <div className="dp-timestamp-line" style={{ marginTop: '8px', fontSize: '12px' }}>
-                  Timestamp: <code className="dp-timestamp-code" style={{ padding: '2px 6px', borderRadius: '3px' }}>{cfg.timestamp_format || 'unix'}</code>
+                <div style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--rules-text-muted)' }}>
+                  Timestamp: <code style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--rules-chip-bg)' }}>{cfg.timestamp_format || 'unix'}</code>
                 </div>
 
-                {/* Preview Field Mappings */}
                 {fieldCount > 0 && (
-                  <div className="dp-preview" style={{ marginTop: '10px', padding: '8px', borderRadius: '4px', fontSize: '11px' }}>
-                    <div className="dp-preview-muted" style={{ marginBottom: '4px' }}>Mappings:</div>
+                  <div style={{ marginTop: '10px', padding: '10px', background: 'var(--rules-chip-bg)', borderRadius: '8px', fontSize: '0.75rem' }}>
+                    <div style={{ marginBottom: '6px', color: 'var(--rules-text-muted)' }}>Mappings:</div>
                     {Object.entries(cfg.field_mapping || {}).slice(0, 3).map(([k, v]) => (
-                      <span key={k} className="dp-preview-arrow" style={{ marginRight: '8px' }}>
-                        {k} → <span className="dp-preview-value">{v}</span>
+                      <span key={k} style={{ marginRight: '10px', color: 'var(--rules-text-secondary)' }}>
+                        {k} → <span style={{ color: 'var(--rules-text)' }}>{v}</span>
                       </span>
                     ))}
-                    {fieldCount > 3 && <span className="dp-preview-muted">+{fieldCount - 3} more</span>}
+                    {fieldCount > 3 && <span style={{ color: 'var(--rules-text-muted)' }}>+{fieldCount - 3} more</span>}
                   </div>
                 )}
               </div>
@@ -358,284 +350,247 @@ export default function DeviceProfilesManagement({ token, onBack, workspaceConte
           })}
         </div>
       )}
+      </div>
 
       {/* Modal Form */}
       {formVisible && (
-        <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && setFormVisible(false)}>
-          <div className="modal" style={{ maxWidth: '700px', maxHeight: '90vh', overflow: 'auto' }}>
-            <div className="modal-header">
+        <div className="rules-modal-backdrop" onClick={(e) => e.target === e.currentTarget && setFormVisible(false)}>
+          <div className="rules-modal" style={{ maxWidth: '700px', maxHeight: '90vh', overflow: 'auto' }}>
+            <div className="rules-modal-header">
               <h3>{editId ? 'Sửa Profile' : 'Tạo Profile Mới'}</h3>
-              <button onClick={() => setFormVisible(false)}>✕</button>
+              <button className="rules-modal-close" onClick={() => setFormVisible(false)}>×</button>
             </div>
             
-            <form onSubmit={handleSave} className="rule-form">
-              {/* Tab Navigation */}
-              <div className="dp-modal-tabs" style={{ display: 'flex', marginBottom: '20px' }}>
+            <form onSubmit={handleSave} className="rules-form">
+              <div className="modal-tabs">
                 {[
-                  { key: 'basic', label: '📋 Cơ bản', icon: '📋' },
-                  { key: 'fields', label: '🔗 Field Mapping', icon: '🔗' },
-                  { key: 'units', label: '⚡ Unit Convert', icon: '⚡' },
-                  { key: 'advanced', label: '⚙️ Nâng cao', icon: '⚙️' },
+                  { key: 'basic', label: 'Cơ bản' },
+                  { key: 'fields', label: 'Field Mapping' },
+                  { key: 'units', label: 'Unit Convert' },
+                  { key: 'advanced', label: 'Nang cao' },
                 ].map(tab => (
                   <button
                     key={tab.key}
                     type="button"
                     onClick={() => setActiveTab(tab.key)}
-                    className={`dp-modal-tab${activeTab === tab.key ? ' active' : ''}`}
-                    style={{
-                      padding: '10px 16px',
-                      background: 'none',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                    }}
+                    className={activeTab === tab.key ? 'active' : ''}
                   >
                     {tab.label}
                   </button>
                 ))}
               </div>
 
-              {/* Tab: Basic */}
               {activeTab === 'basic' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <span className="dp-form-label">Tên profile <span className="dp-required-mark">*</span></span>
+                  <label>
+                    Tên profile <span style={{ color: '#f87171' }}>*</span>
                     <input
                       value={form.ten_profile}
                       onChange={(e) => setForm({ ...form, ten_profile: e.target.value })}
-                      placeholder="VD: Cảm biến nhiệt độ"
-                      className="dp-form-input"
-                      style={{ padding: '10px', borderRadius: '6px' }}
+                      placeholder="VD: Cam bien nhiet do"
+                      style={{ padding: '12px', borderRadius: '10px' }}
                     />
                   </label>
 
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <span className="dp-form-label">Áp dụng cho thiết bị cụ thể</span>
+                  <label>
+                    Ap dung cho thiet bi cu the
                     <select
                       value={form.device_id}
                       onChange={(e) => setForm({ ...form, device_id: e.target.value })}
-                      className="dp-form-select"
-                      style={{ padding: '10px', borderRadius: '6px' }}
+                      style={{ padding: '12px', borderRadius: '10px' }}
                     >
                       <option value="">-- Tất cả thiết bị --</option>
                       {devices.map((d) => (
                         <option key={d.ma_thiet_bi} value={d.ma_thiet_bi}>{d.ten_thiet_bi || d.ma_thiet_bi}</option>
                       ))}
                     </select>
-                    <small className="dp-form-help" style={{ fontSize: '12px' }}>Để trống nếu muốn áp dụng cho tất cả hoặc theo loại thiết bị</small>
+                    <small className="help-text">De trong neu muon ap dung cho tat ca hoac theo loai thiet bi</small>
                   </label>
 
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <span className="dp-form-label">Áp dụng cho loại thiết bị</span>
+                  <label>
+                    Ap dung cho loai thiet bi
                     <input
                       value={form.device_type}
                       onChange={(e) => setForm({ ...form, device_type: e.target.value })}
                       placeholder="VD: temperature_sensor, power_meter"
-                      className="dp-form-input"
-                      style={{ padding: '10px', borderRadius: '6px' }}
+                      style={{ padding: '12px', borderRadius: '10px' }}
                     />
-                    <small className="dp-form-help" style={{ fontSize: '12px' }}>Để trống nếu chỉ áp dụng cho thiết bị cụ thể</small>
+                    <small className="help-text">De trong neu chi ap dung cho thiet bi cu the</small>
                   </label>
                 </div>
               )}
 
-              {/* Tab: Field Mapping */}
               {activeTab === 'fields' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div className="dp-form-section" style={{ padding: '16px', borderRadius: '8px' }}>
-                    <h4 style={{ margin: '0 0 12px 0' }}>Thêm Field Mapping</h4>
-                    <p style={{ fontSize: '13px', marginBottom: '12px' }}>
-                      Map field từ thiết bị sang tên chuẩn. VD: <code className="dp-form-section-code" style={{ padding: '2px 6px' }}>temp</code> → <code className="dp-form-section-code" style={{ padding: '2px 6px' }}>temperature</code>
-                    </p>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <div className="form-section">
+                    <h4>Thêm Field Mapping</h4>
+                    <p>Map field tu thiet bi sang ten chuan. VD: temp → temperature</p>
+                    <div className="mapping-row">
                       <input
                         value={newMappingFrom}
                         onChange={(e) => setNewMappingFrom(e.target.value)}
-                        placeholder="Field gốc (VD: temp)"
-                        className="dp-form-input"
-                        style={{ flex: 1, minWidth: '120px', padding: '8px', borderRadius: '4px' }}
+                        placeholder="Field goc"
+                        style={{ padding: '10px', borderRadius: '8px' }}
                       />
-                      <span className="dp-form-section-arrow" style={{ display: 'flex', alignItems: 'center' }}>→</span>
+                      <span className="mapping-arrow">→</span>
                       <input
                         value={newMappingTo}
                         onChange={(e) => setNewMappingTo(e.target.value)}
-                        placeholder="Field chuẩn (VD: temperature)"
-                        className="dp-form-input"
-                        style={{ flex: 1, minWidth: '120px', padding: '8px', borderRadius: '4px' }}
+                        placeholder="Field chuan"
+                        style={{ padding: '10px', borderRadius: '8px' }}
                       />
-                      <button type="button" onClick={addFieldMapping} className="dp-btn-add" style={{ padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                      <button type="button" onClick={addFieldMapping} className="primary-btn" style={{ padding: '10px 16px' }}>
                         Thêm
                       </button>
                     </div>
                   </div>
 
                   {Object.keys(form.field_mapping).length > 0 && (
-                    <div>
-                      <h4 className="dp-form-label" style={{ marginBottom: '8px' }}>Danh sách Field Mapping ({Object.keys(form.field_mapping).length})</h4>
-                      <table className="dp-list-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ padding: '8px', textAlign: 'left' }}>Field gốc</th>
-                            <th style={{ padding: '8px', textAlign: 'left' }}>Field chuẩn</th>
-                            <th style={{ padding: '8px', width: '60px' }}></th>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ padding: '10px', textAlign: 'left', color: 'var(--rules-text-secondary)' }}>Field goc</th>
+                          <th style={{ padding: '10px', textAlign: 'left', color: 'var(--rules-text-secondary)' }}>Field chuan</th>
+                          <th style={{ padding: '10px', width: '60px' }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(form.field_mapping).map(([from, to]) => (
+                          <tr key={from}>
+                            <td style={{ padding: '10px' }}>
+                              <code style={{ padding: '4px 8px', borderRadius: '4px', background: 'var(--rules-chip-bg)' }}>{from}</code>
+                            </td>
+                            <td style={{ padding: '10px' }}>
+                              <code style={{ padding: '4px 8px', borderRadius: '4px', background: 'rgba(14, 165, 233, 0.1)', color: '#0ea5e9' }}>{to}</code>
+                            </td>
+                            <td style={{ padding: '10px' }}>
+                              <button type="button" onClick={() => removeFieldMapping(from)} className="dp-btn-delete" style={{ padding: '6px 12px' }}>
+                                Xóa
+                              </button>
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(form.field_mapping).map(([from, to]) => (
-                            <tr key={from}>
-                              <td style={{ padding: '8px' }}>
-                                <code className="dp-table-code" style={{ padding: '2px 6px', borderRadius: '3px' }}>{from}</code>
-                              </td>
-                              <td style={{ padding: '8px' }}>
-                                <code className="dp-table-code dp-table-code-blue" style={{ padding: '2px 6px', borderRadius: '3px' }}>{to}</code>
-                              </td>
-                              <td style={{ padding: '8px' }}>
-                                <button type="button" onClick={() => removeFieldMapping(from)} className="dp-table-row-delete" style={{ border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>
-                                  Xóa
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                        ))}
+                      </tbody>
+                    </table>
                   )}
 
                   {Object.keys(form.field_mapping).length === 0 && (
-                    <div className="dp-list-empty" style={{ textAlign: 'center', padding: '30px', borderRadius: '8px' }}>
-                      Chưa có field mapping nào
+                    <div className="ai-empty-state" style={{ padding: '40px' }}>
+                      <p>Chua co field mapping nao</p>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Tab: Unit Convert */}
               {activeTab === 'units' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div className="dp-form-section" style={{ padding: '16px', borderRadius: '8px' }}>
-                    <h4 style={{ margin: '0 0 12px 0' }}>Thêm Unit Conversion</h4>
-                    <p style={{ fontSize: '13px', marginBottom: '12px' }}>
-                      Chuyển đổi giá trị: <code className="dp-form-section-code" style={{ padding: '2px 6px' }}>value = raw * factor + offset</code>
-                    </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: '8px', alignItems: 'end' }}>
-                      <div>
-                        <label className="dp-grid-label" style={{ fontSize: '11px', display: 'block', marginBottom: '4px' }}>Field</label>
+                  <div className="form-section">
+                    <h4>Thêm Unit Conversion</h4>
+                    <p>Chuyen doi gia tri: value = raw * factor + offset</p>
+                    <div className="unit-grid">
+                      <label><span>Field</span>
                         <input
                           value={newUnitField}
                           onChange={(e) => setNewUnitField(e.target.value)}
                           placeholder="VD: temperature"
-                          className="dp-form-input"
-                          style={{ width: '100%', padding: '8px', borderRadius: '4px' }}
+                          style={{ padding: '10px', borderRadius: '8px' }}
                         />
-                      </div>
-                      <div>
-                        <label className="dp-grid-label" style={{ fontSize: '11px', display: 'block', marginBottom: '4px' }}>Factor</label>
+                      </label>
+                      <label><span>Factor</span>
                         <input
                           value={newUnitFactor}
                           onChange={(e) => setNewUnitFactor(e.target.value)}
                           placeholder="1"
                           type="number"
                           step="0.1"
-                          className="dp-form-input"
-                          style={{ width: '100%', padding: '8px', borderRadius: '4px' }}
+                          style={{ padding: '10px', borderRadius: '8px' }}
                         />
-                      </div>
-                      <div>
-                        <label className="dp-grid-label" style={{ fontSize: '11px', display: 'block', marginBottom: '4px' }}>Offset</label>
+                      </label>
+                      <label><span>Offset</span>
                         <input
                           value={newUnitOffset}
                           onChange={(e) => setNewUnitOffset(e.target.value)}
                           placeholder="0"
                           type="number"
                           step="0.1"
-                          className="dp-form-input"
-                          style={{ width: '100%', padding: '8px', borderRadius: '4px' }}
+                          style={{ padding: '10px', borderRadius: '8px' }}
                         />
-                      </div>
-                      <div>
-                        <label className="dp-grid-label" style={{ fontSize: '11px', display: 'block', marginBottom: '4px' }}>Unit</label>
+                      </label>
+                      <label><span>Unit</span>
                         <input
                           value={newUnitUnit}
                           onChange={(e) => setNewUnitUnit(e.target.value)}
                           placeholder="VD: °C"
-                          className="dp-form-input"
-                          style={{ width: '100%', padding: '8px', borderRadius: '4px' }}
+                          style={{ padding: '10px', borderRadius: '8px' }}
                         />
-                      </div>
-                      <button type="button" onClick={addUnitConvert} className="dp-btn-add" style={{ padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer', height: '38px' }}>
+                      </label>
+                      <button type="button" onClick={addUnitConvert} className="primary-btn">
                         Thêm
                       </button>
                     </div>
-                    <div className="dp-example-box" style={{ marginTop: '12px', padding: '8px', borderRadius: '4px', fontSize: '12px' }}>
-                      <strong>Ví dụ:</strong> Raw sensor = 320, factor = 0.1, offset = -50 → Output = 320 * 0.1 - 50 = -18 °C
+                    <div className="help-text" style={{ marginTop: '12px' }}>
+                      <strong>Vi du:</strong> Raw sensor = 320, factor = 0.1, offset = -50 → Output = 320 * 0.1 - 50 = -18 °C
                     </div>
                   </div>
 
                   {Object.keys(form.unit_convert).length > 0 && (
-                    <div>
-                      <h4 className="dp-form-label" style={{ marginBottom: '8px' }}>Danh sách Unit Conversion ({Object.keys(form.unit_convert).length})</h4>
-                      <table className="dp-list-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ padding: '8px', textAlign: 'left' }}>Field</th>
-                            <th style={{ padding: '8px', textAlign: 'left' }}>Factor</th>
-                            <th style={{ padding: '8px', textAlign: 'left' }}>Offset</th>
-                            <th style={{ padding: '8px', textAlign: 'left' }}>Unit</th>
-                            <th style={{ padding: '8px', width: '60px' }}></th>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ padding: '10px', textAlign: 'left', color: 'var(--rules-text-secondary)' }}>Field</th>
+                          <th style={{ padding: '10px', textAlign: 'left', color: 'var(--rules-text-secondary)' }}>Factor</th>
+                          <th style={{ padding: '10px', textAlign: 'left', color: 'var(--rules-text-secondary)' }}>Offset</th>
+                          <th style={{ padding: '10px', textAlign: 'left', color: 'var(--rules-text-secondary)' }}>Unit</th>
+                          <th style={{ padding: '10px', width: '60px' }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(form.unit_convert).map(([field, conv]) => (
+                          <tr key={field}>
+                            <td style={{ padding: '10px' }}>
+                              <code style={{ padding: '4px 8px', borderRadius: '4px', background: 'var(--rules-chip-bg)' }}>{field}</code>
+                            </td>
+                            <td style={{ padding: '10px', color: '#22c55e' }}>{conv.factor}</td>
+                            <td style={{ padding: '10px', color: '#f59e0b' }}>{conv.offset}</td>
+                            <td style={{ padding: '10px', color: '#a78bfa' }}>{conv.unit || '-'}</td>
+                            <td style={{ padding: '10px' }}>
+                              <button type="button" onClick={() => removeUnitConvert(field)} className="dp-btn-delete" style={{ padding: '6px 12px' }}>
+                                Xóa
+                              </button>
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(form.unit_convert).map(([field, conv]) => (
-                            <tr key={field}>
-                              <td style={{ padding: '8px' }}>
-                                <code className="dp-table-code" style={{ padding: '2px 6px', borderRadius: '3px' }}>{field}</code>
-                              </td>
-                              <td className="dp-table-value-green" style={{ padding: '8px' }}>{conv.factor}</td>
-                              <td className="dp-table-value-amber" style={{ padding: '8px' }}>{conv.offset}</td>
-                              <td className="dp-table-value-purple" style={{ padding: '8px' }}>{conv.unit || '-'}</td>
-                              <td style={{ padding: '8px' }}>
-                                <button type="button" onClick={() => removeUnitConvert(field)} className="dp-table-row-delete" style={{ border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>
-                                  Xóa
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                        ))}
+                      </tbody>
+                    </table>
                   )}
 
                   {Object.keys(form.unit_convert).length === 0 && (
-                    <div className="dp-list-empty" style={{ textAlign: 'center', padding: '30px', borderRadius: '8px' }}>
-                      Chưa có unit conversion nào
+                    <div className="ai-empty-state" style={{ padding: '40px' }}>
+                      <p>Chua co unit conversion nao</p>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Tab: Advanced */}
               {activeTab === 'advanced' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <span className="dp-form-label">Timestamp Format</span>
+                  <label>
+                    Timestamp Format
                     <select
                       value={form.timestamp_format}
                       onChange={(e) => setForm({ ...form, timestamp_format: e.target.value })}
-                      className="dp-form-select"
-                      style={{ padding: '10px', borderRadius: '6px' }}
+                      style={{ padding: '12px', borderRadius: '10px' }}
                     >
-                      <option value="unix">Unix timestamp (giây)</option>
+                      <option value="unix">Unix timestamp (giay)</option>
                       <option value="unix_ms">Unix timestamp (milliseconds)</option>
                       <option value="iso8601">ISO 8601</option>
                     </select>
-                    <small className="dp-form-help" style={{ fontSize: '12px' }}>Định dạng timestamp từ thiết bị</small>
+                    <small className="help-text">Dinh dang timestamp tu thiet bi</small>
                   </label>
 
-                  {/* JSON Preview */}
-                  <div className="dp-json-preview" style={{ padding: '16px', borderRadius: '8px' }}>
-                    <h4 style={{ margin: '0 0 8px 0' }}>Config JSON Preview</h4>
-                    <pre style={{ margin: 0, fontSize: '12px', overflow: 'auto', maxHeight: '200px' }}>
-                      {JSON.stringify(buildConfig(), null, 2)}
-                    </pre>
+                  <div className="json-preview">
+                    <h4 style={{ margin: '0 0 12px 0', color: 'var(--rules-text)' }}>Config JSON Preview</h4>
+                    <pre>{JSON.stringify(buildConfig(), null, 2)}</pre>
                   </div>
                 </div>
               )}

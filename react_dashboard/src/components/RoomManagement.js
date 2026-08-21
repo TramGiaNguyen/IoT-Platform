@@ -361,102 +361,136 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
   const devicesByRoom = (roomId) => devices.filter((d) => String(d.phong_id) === String(roomId));
 
   return (
-    <div className="rules-container">
-      <div className="rules-header">
-        <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại</button>
-        <div className="rules-actions">
-          <button className="primary-btn" onClick={handleOpenAdd}>Thêm phòng</button>
+    <div className="room-management">
+      <div className="room-management-header">
+        <div className="room-management-header-left">
+          <div className="room-management-title">
+            <div className="icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+            </div>
+            <h1>Quản lý phòng</h1>
+          </div>
+          <div className="room-management-stats">
+            <span><span className="count">{rooms.length}</span> phong</span>
+            <span><span className="count">{devices.filter(d => d.phong_id !== null && d.phong_id !== undefined).length}</span> thiet bi</span>
+          </div>
+        </div>
+        <div className="room-management-actions">
+          <button className="back-btn" onClick={onBack}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Quay lại
+          </button>
+          <button className="primary-btn" onClick={handleOpenAdd}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Thêm phòng
+          </button>
         </div>
       </div>
 
-      <div className="room-grid">
-        {rooms.map((room) => {
-          return (
-          <div key={room.id} className="room-card">
-            <div className="room-card-header">
-              <div className="room-info">
-                <h3
-                  className="room-card-title"
-                  title="Nhap vao de xem chi tiet phong"
-                  onClick={() => window.location.hash = `#/rooms/${room.id}`}
-                >
-                  {room.ten_phong}
-                </h3>
-                <div className="room-meta">
-                  {room.ma_phong && <span>Mã: {room.ma_phong}</span>}
-                  {room.vi_tri && <span> • {room.vi_tri}</span>}
+      <div className="room-management-content">
+        <div className="room-grid">
+          {rooms.map((room) => {
+            const roomDevices = devicesByRoom(room.id);
+            return (
+              <div key={room.id} className="room-card">
+                <div className="room-card-header">
+                  <div className="room-card-header-top">
+                    <div className="room-info">
+                      <h3
+                        className="room-card-title"
+                        title="Nhập vào để xem chi tiết phòng"
+                        onClick={() => window.location.hash = `#/rooms/${room.id}`}
+                      >
+                        {room.ten_phong}
+                      </h3>
+                      <div className="room-meta">
+                        {room.ma_phong && <span className="room-meta-item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg>{room.ma_phong}</span>}
+                        {room.vi_tri && <span className="room-meta-item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>{room.vi_tri}</span>}
+                      </div>
+                    </div>
+                    <div className="room-actions-btn">
+                      <button className="btn-icon" onClick={() => handleDownloadApiDocs(room)} title="Tai API Docs">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      </button>
+                      <button className="btn-icon" onClick={() => handleCopyApiUrl(room.id)} title="Copy API Data">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      </button>
+                      <button className="btn-icon" onClick={() => handleEditRoom(room)} title="Sửa">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      <button className="btn-icon danger" onClick={() => handleDeleteRoom(room.id)} title="Xóa">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="room-card-body">
+                  <div className="room-devices-section">
+                    <div className="section-title">
+                      Thiết bị
+                      <span className="badge">{roomDevices.length}</span>
+                    </div>
+                    <div className="device-chips-container">
+                      {roomDevices.length === 0 && <span className="no-devices">Chua co thiet bi</span>}
+                      {roomDevices.map((d) => (
+                        <div key={d.ma_thiet_bi} className="device-chip">
+                          <span className={`status-dot ${d.trang_thai === 'online' ? 'online' : 'offline'}`}></span>
+                          <span className="device-name" title={d.ten_thiet_bi || d.ma_thiet_bi}>{d.ten_thiet_bi || d.ma_thiet_bi}</span>
+                          <button className="remove-device-btn" onClick={() => handleAssign(d.ma_thiet_bi, null)} title="Bo gan">×</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="room-assign-section">
+                    <div className="room-assign-action">
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handleAssign(e.target.value, room.id);
+                            e.target.value = "";
+                          }
+                        }}
+                        defaultValue=""
+                      >
+                        <option value="" disabled>Gan thiet bi...</option>
+                        {unassignedDevices.map((d) => (
+                          <option key={d.ma_thiet_bi} value={d.ma_thiet_bi}>
+                            {d.ten_thiet_bi || d.ma_thiet_bi}
+                          </option>
+                        ))}
+                        {unassignedDevices.length === 0 && <option disabled>Het thiet bi trong</option>}
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="room-actions-btn">
-                <button className="btn-icon" onClick={() => handleDownloadApiDocs(room)} title="Tải API Docs">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                </button>
-                <button className="btn-icon" onClick={() => handleCopyApiUrl(room.id)} title="Copy API Data">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                </button>
-                <button className="btn-icon" onClick={() => handleEditRoom(room)} title="Sửa">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                </button>
-                <button className="btn-icon danger" onClick={() => handleDeleteRoom(room.id)} title="Xóa">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                </button>
-              </div>
+            );
+          })}
+          {rooms.length === 0 && (
+            <div className="no-data-placeholder">
+              <div className="icon" style={{ fontSize: '3rem' }}>🏠</div>
+              <p>
+                {isGroupContext
+                  ? 'Ban chua tham gia nhom nao, hoac lop cua ban chua co phong nhom.'
+                  : 'Chua co phong nao. Hay tao phong moi!'}
+              </p>
             </div>
-
-            <div className="room-devices-section">
-              <div className="section-title">Thiết bị ({devicesByRoom(room.id).length})</div>
-              <div className="device-chips-container">
-                {devicesByRoom(room.id).length === 0 && <span className="no-devices">Trống</span>}
-                {devicesByRoom(room.id).map((d) => (
-                  <div key={d.ma_thiet_bi} className="device-chip">
-                    <span className={`status-dot ${d.trang_thai === 'online' ? 'online' : 'offline'}`}></span>
-                    <span className="device-name">{d.ten_thiet_bi || d.ma_thiet_bi}</span>
-                    <button className="remove-device-btn" onClick={() => handleAssign(d.ma_thiet_bi, null)} title="Bỏ gán">×</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="room-assign-action">
-              <select
-                onChange={(e) => {
-                  if (e.target.value) {
-                    handleAssign(e.target.value, room.id);
-                    e.target.value = ""; // Reset select
-                  }
-                }}
-                defaultValue=""
-              >
-                <option value="" disabled>Gán thiết bị...</option>
-                {unassignedDevices.map((d) => (
-                  <option key={d.ma_thiet_bi} value={d.ma_thiet_bi}>
-                    {d.ten_thiet_bi || d.ma_thiet_bi}
-                  </option>
-                ))}
-                {unassignedDevices.length === 0 && <option disabled>Hết thiết bị trống</option>}
-              </select>
-            </div>
-          </div>
-        );
-        })}
-        {rooms.length === 0 && (
-          <div className="no-data-placeholder">
-            <p>
-              {isGroupContext
-                ? 'Bạn chưa tham gia nhóm nào, hoặc lớp của bạn chưa có phòng nhóm.'
-                : 'Chưa có phòng nào. Hãy tạo phòng mới!'}
-            </p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Modal Form */}
       {formVisible && (
-        <div className="modal-backdrop">
-          <div className="modal-content" style={{ maxWidth: 500 }}>
-            <div className="modal-header">
+        <div className="room-modal-backdrop">
+          <div className="room-modal-content">
+            <div className="room-modal-header">
               <h3>{selectedRoom ? 'Cập nhật phòng' : 'Thêm phòng mới'}</h3>
-              <button onClick={() => setFormVisible(false)}>×</button>
+              <button className="room-modal-close" onClick={() => setFormVisible(false)}>×</button>
             </div>
             <form className="rule-form" onSubmit={handleSaveRoom}>
               <div className="form-row">
@@ -480,7 +514,7 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
               </div>
 
               <label>
-                Vị trí
+                Vi tri
                 <input
                   value={roomForm.vi_tri}
                   onChange={(e) => setRoomForm({ ...roomForm, vi_tri: e.target.value })}
@@ -499,8 +533,8 @@ export default function RoomManagement({ token, onBack, workspaceContext = 'ca_n
               </label>
 
               <div className="form-actions">
-                <button type="submit">{selectedRoom ? 'Cập nhật' : 'Tạo mới'}</button>
                 <button type="button" onClick={() => setFormVisible(false)}>Hủy</button>
+                <button type="submit">{selectedRoom ? 'Cập nhật' : 'Tạo mới'}</button>
               </div>
             </form>
           </div>

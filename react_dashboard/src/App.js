@@ -24,7 +24,7 @@ import { RealtimeProvider, useRealtime } from './context/RealtimeProvider';
 import './styles/style.css';
 
 // Sync realtime WS connection state len App-level `wsConnected` (cho AppHeader badge)
-// Dong thoi expose forceReconnect de AppHeader nut "Reconnect ngay" co the goi.
+// Đồng thời expose forceReconnect de AppHeader nut "Kết nối lại ngay" co the goi.
 function useRealtimeSync(setWsConnected) {
   const { connected, forceReconnect } = useRealtime();
   useEffect(() => {
@@ -112,7 +112,7 @@ function InsecureContextBanner() {
           fontSize: '12px'
         }}
       >
-        Dong
+        Đóng
       </button>
     </div>
   );
@@ -254,7 +254,7 @@ function App() {
       const devicesList = Array.isArray(r.data.devices) ? r.data.devices : [];
       setDevices(devicesList);
     } catch (err) {
-      console.error('Khong tai duoc danh sach thiet bi', err);
+      console.error('Không tải được danh sách thiết bị', err);
       setDevices([]);
     }
   };
@@ -304,7 +304,7 @@ function App() {
         }
       }
       if (!resolvedUserId) {
-        alert('Khong the xac dinh user_id. Vui long dang nhap lai.');
+        alert('Không thể xác định user_id. Vui lòng đăng nhập lại.');
         return;
       }
       setPendingAuth({ token: accessToken, refreshToken: refreshTk, vai_tro, pages, phaiDoiMatKhau, userId: resolvedUserId });
@@ -430,7 +430,7 @@ function App() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#1a1a2e', color: '#fff' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '24px', marginBottom: '12px' }}>BDU IoT Platform</div>
-          <div style={{ color: '#888' }}>Dang kiem tra thong tin...</div>
+          <div style={{ color: '#888' }}>Đang kiểm tra thông tin...</div>
         </div>
       </div>
     );

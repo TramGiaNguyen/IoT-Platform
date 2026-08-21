@@ -434,6 +434,9 @@ class RoomUpdate(BaseModel):
     vi_tri: Optional[str] = None
     nguoi_quan_ly_id: Optional[int] = None
     ma_phong: Optional[str] = None
+    # app_display_fields: list of data field keys to show on mobile app
+    # NULL/empty = show all fields (backward compatible)
+    app_display_fields: Optional[List[str]] = None
     # loai_phong column removed from phong table
     # lop_hoc_id also removed from phong table (classes use the nhom table)
 
@@ -3552,14 +3555,26 @@ def get_room(room_id: int, current_user: str = Depends(get_current_user)):
         user_id = user["id"]
         user_role = user["vai_tro"]
 
-        # Lay thong tin phong
+        # Lay thong tin phong (include app_display_fields)
         cursor.execute(
-            "SELECT id, nguoi_so_huu_id FROM phong WHERE id = %s",
+            "SELECT id, nguoi_so_huu_id, app_display_fields FROM phong WHERE id = %s",
             (room_id,),
         )
         room_meta = cursor.fetchone()
         if not room_meta:
             raise HTTPException(status_code=404, detail="Room not found")
+
+        # Parse app_display_fields from JSON string to list
+        raw_display = room_meta.get("app_display_fields")
+        app_display_fields = None
+        if raw_display:
+            try:
+                if isinstance(raw_display, str):
+                    app_display_fields = json.loads(raw_display)
+                elif isinstance(raw_display, (list, dict)):
+                    app_display_fields = raw_display
+            except (json.JSONDecodeError, Exception):
+                app_display_fields = None
 
         # Phan quyen: student chi xem phong cua minh, teacher/admin xem duoc moi thu
         if user_role == "student":
@@ -3570,6 +3585,7 @@ def get_room(room_id: int, current_user: str = Depends(get_current_user)):
         base_select = """
             SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta,
                    p.nguoi_quan_ly_id, p.nguoi_so_huu_id, p.ngay_tao,
+                   p.app_display_fields,
                    u.ten as nguoi_so_huu_ten, u.vai_tro as nguoi_so_huu_role,
                    COUNT(DISTINCT t.id) as device_count,
                    SUM(CASE WHEN t.trang_thai = 'online' THEN 1 ELSE 0 END) as online_count
@@ -3579,6 +3595,18 @@ def get_room(room_id: int, current_user: str = Depends(get_current_user)):
         """
         cursor.execute(base_select + " WHERE p.id = %s GROUP BY p.id", (room_id,))
         room = cursor.fetchone()
+
+        # Parse app_display_fields from JSON string to list
+        raw_display = room.get("app_display_fields")
+        app_display_fields = None
+        if raw_display:
+            try:
+                if isinstance(raw_display, str):
+                    app_display_fields = json.loads(raw_display)
+                elif isinstance(raw_display, (list, dict)):
+                    app_display_fields = raw_display
+            except (json.JSONDecodeError, Exception):
+                app_display_fields = None
 
         return {
             "id": room["id"],
@@ -3594,6 +3622,7 @@ def get_room(room_id: int, current_user: str = Depends(get_current_user)):
             "nguoi_so_huu_role": room["nguoi_so_huu_role"],
             "device_count": int(room["device_count"] or 0),
             "online_count": int(room["online_count"] or 0),
+            "app_display_fields": app_display_fields,
             "can_edit": user_role == "admin" or room["nguoi_so_huu_id"] == user_id,
             "can_delete": user_role == "admin" or room["nguoi_so_huu_id"] == user_id,
         }
@@ -3694,6 +3723,11 @@ def update_room(
     if body.ma_phong is not None:
         fields.append("ma_phong=%s")
         values.append(body.ma_phong)
+    # app_display_fields: store as JSON string
+    if body.app_display_fields is not None:
+        fields.append("app_display_fields=%s")
+        # Convert list to JSON string for MySQL JSON column
+        values.append(json.dumps(body.app_display_fields) if body.app_display_fields else None)
     # lop_hoc_id removed from phong table
 
     if not fields:
@@ -3855,11 +3889,26 @@ def get_room_device_data(
     conn = get_mysql()
     cursor = conn.cursor(dictionary=True)
     try:
-        # Get room info
-        cursor.execute("SELECT id, ten_phong, nguoi_so_huu_id FROM phong WHERE id = %s", (room_id,))
+        # Get room info (include app_display_fields)
+        cursor.execute("""
+            SELECT id, ten_phong, nguoi_so_huu_id, app_display_fields
+            FROM phong WHERE id = %s
+        """, (room_id,))
         room = cursor.fetchone()
         if not room:
             raise HTTPException(status_code=404, detail="Room not found")
+
+        # Parse app_display_fields from JSON string to list
+        app_display_fields = None
+        raw_display = room.get("app_display_fields")
+        if raw_display:
+            try:
+                if isinstance(raw_display, str):
+                    app_display_fields = json.loads(raw_display)
+                elif isinstance(raw_display, (list, dict)):
+                    app_display_fields = raw_display
+            except (json.JSONDecodeError, Exception):
+                app_display_fields = None
 
         # BẮT BUỘC login + check quyền
         role, user_id, _user_lop = _get_role_and_id(conn, current_user)
@@ -4205,6 +4254,7 @@ def get_room_device_data(
             "room_name": room["ten_phong"],
             "so_nguoi": room_so_nguoi,
             "occupancy_cap_nhat_luc": room_occ_updated,
+            "app_display_fields": app_display_fields,  # Fields to show on mobile app
             "devices": result
         }
     finally:

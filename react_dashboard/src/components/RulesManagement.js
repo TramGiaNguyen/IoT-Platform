@@ -755,11 +755,24 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
   return (
     <div className="rules-page">
       <div className="rules-header">
-        <button type="button" className="back-btn-ghost" onClick={onBack}>← Quay lại</button>
+        <div className="rules-header-left">
+          <button type="button" className="back-btn" onClick={onBack}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Quay lại
+          </button>
+          <div className="rules-header-title">
+            <div className="icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+              </svg>
+            </div>
+            <h1>Quản lý Rules</h1>
+          </div>
+        </div>
         <div className="rules-actions">
           <div className="tab-buttons">
-            <button className={activeTab === 'rules' ? 'active' : ''} onClick={() => setActiveTab('rules')}>Rule điều kiện</button>
-            <button className={activeTab === 'scheduled' ? 'active' : ''} onClick={() => setActiveTab('scheduled')}>Rule theo lịch</button>
+            <button className={activeTab === 'rules' ? 'active' : ''} onClick={() => setActiveTab('rules')}>Rule dieu kien</button>
+            <button className={activeTab === 'scheduled' ? 'active' : ''} onClick={() => setActiveTab('scheduled')}>Rule theo lich</button>
           </div>
           {activeTab === 'rules' && (
             <>
@@ -771,281 +784,287 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                   </option>
                 ))}
               </select>
-              <button onClick={() => { resetForm(); setFormVisible(true); }}>+ Tạo rule</button>
+              <button onClick={() => { resetForm(); setFormVisible(true); }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Tao rule
+              </button>
             </>
           )}
           {activeTab === 'scheduled' && (
-            <button onClick={() => { setEditScheduledId(null); setScheduledForm({ ten_rule: '', phong_id: '', cron_expression: '0 7 * * *', device_id: '', action_command: 'turn_on', action_params: '', trang_thai: 'enabled' }); setCronMode('preset'); setCronPicker({ mode: 'daily', hour: 7, minute: 0, dayOfWeek: 'everyday', intervalMinutes: 15, intervalHours: 1 }); setScheduledFormVisible(true); }}>+ Tạo rule theo lịch</button>
+            <button onClick={() => { setEditScheduledId(null); setScheduledForm({ ten_rule: '', phong_id: '', cron_expression: '0 7 * * *', device_id: '', action_command: 'turn_on', action_params: '', trang_thai: 'enabled' }); setCronMode('preset'); setCronPicker({ mode: 'daily', hour: 7, minute: 0, dayOfWeek: 'everyday', intervalMinutes: 15, intervalHours: 1 }); setScheduledFormVisible(true); }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Tao rule theo lich
+            </button>
           )}
         </div>
       </div>
 
-      {activeTab === 'scheduled' ? (
-        <>
-          {scheduledLoading ? (
-            <p>Đang tải...</p>
-          ) : (
-            <div className="rules-list">
-              {scheduledRules.length === 0 && <p>Chưa có rule theo lịch.</p>}
-              {scheduledRules.map((sr) => (
-                <div key={sr.id} className="rule-card">
-                  <div className="rule-head">
-                    <div>
-                      <h4>{sr.ten_rule || `Rule #${sr.id}`}</h4>
-                      <p className="muted">
-                        ⏱️ {getCronDescription(sr.cron_expression)}
-                      </p>
-                      <p className="muted" style={{ fontSize: '0.85rem', marginTop: 4 }}>
-                        🎯 Thiết bị: {sr.device_id} · Lệnh: {sr.action_command}
-                        {sr.last_run_at && ` · Chạy lần cuối: ${sr.last_run_at}`}
-                      </p>
-                    </div>
-                    <div className="rule-head-actions">
-                      <span className={`pill tiny ${sr.trang_thai === 'enabled' ? 'pill-online' : 'pill-offline'}`}>{sr.trang_thai}</span>
-                      <button onClick={() => handleToggleScheduled(sr)}>{sr.trang_thai === 'enabled' ? 'Tắt' : 'Bật'}</button>
-                      <button onClick={() => handleEditScheduled(sr)}>Sửa</button>
-                      <button className="danger" onClick={() => handleDeleteScheduled(sr.id)}>Xóa</button>
+      <div className="rules-content">
+        {activeTab === 'scheduled' ? (
+          <>
+            {scheduledLoading ? (
+              <div className="rules-loading">Đang tải...</div>
+            ) : (
+              <div className="rules-list">
+                {scheduledRules.length === 0 && <div className="rules-empty"><p>Chua co rule theo lich.</p></div>}
+                {scheduledRules.map((sr) => (
+                  <div key={sr.id} className="rule-card">
+                    <div className="rule-head">
+                      <div>
+                        <h4>{sr.ten_rule || `Rule #${sr.id}`}</h4>
+                        <p className="muted">
+                          ⏱️ {getCronDescription(sr.cron_expression)}
+                        </p>
+                        <p className="muted" style={{ fontSize: '0.85rem', marginTop: 4 }}>
+                          🎯 Thiết bị: {sr.device_id} · Lệnh: {sr.action_command}
+                          {sr.last_run_at && ` · Chay lan cuoi: ${sr.last_run_at}`}
+                        </p>
+                      </div>
+                      <div className="rule-head-actions">
+                        <span className={`pill tiny ${sr.trang_thai === 'enabled' ? 'pill-enabled' : 'pill-disabled'}`}>{sr.trang_thai}</span>
+                        <button onClick={() => handleToggleScheduled(sr)}>{sr.trang_thai === 'enabled' ? 'Tắt' : 'Bật'}</button>
+                        <button onClick={() => handleEditScheduled(sr)}>Sửa</button>
+                        <button className="danger" onClick={() => handleDeleteScheduled(sr.id)}>Xóa</button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {scheduledFormVisible && (
-            <div className="modal-backdrop">
-              <div className="modal">
-                <div className="modal-header">
-                  <h3>{editScheduledId ? 'Sửa Rule theo lịch' : 'Tạo Rule theo lịch'}</h3>
-                  <button onClick={() => setScheduledFormVisible(false)}>✕</button>
-                </div>
-                <form onSubmit={handleSaveScheduledRule} className="rule-form">
-                  <label>
-                    Tên rule
-                    <input value={scheduledForm.ten_rule} onChange={(e) => setScheduledForm({ ...scheduledForm, ten_rule: e.target.value })} placeholder="VD: Bật đèn 7h sáng" />
-                  </label>
-                  <label>
-                    Phòng (tùy chọn)
-                    <select value={scheduledForm.phong_id} onChange={(e) => setScheduledForm({ ...scheduledForm, phong_id: e.target.value })}>
-                      <option value="">-- Không chọn --</option>
-                      {rooms.map((r) => (
-                        <option key={r.id} value={r.id}>{r.ten_phong || r.ma_phong || `Phòng ${r.id}`}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>⏱️ Thời điểm chạy rule</span>
-                    <small className="muted" style={{ display: 'block', marginBottom: 12 }}>Chọn thời điểm rule sẽ tự động thực hiện</small>
-                    <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '8px 12px', background: cronMode === 'preset' ? 'rgba(59,130,246,0.2)' : 'rgba(30,41,59,0.5)', borderRadius: 8, border: cronMode === 'preset' ? '2px solid #3b82f6' : '2px solid transparent', transition: 'all 0.2s' }}>
-                        <input type="radio" name="cronMode" checked={cronMode === 'preset'} onChange={() => setCronMode('preset')} />
-                        <span>📋 Chọn mẫu có sẵn</span>
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '8px 12px', background: cronMode === 'custom' ? 'rgba(59,130,246,0.2)' : 'rgba(30,41,59,0.5)', borderRadius: 8, border: cronMode === 'custom' ? '2px solid #3b82f6' : '2px solid transparent', transition: 'all 0.2s' }}>
-                        <input type="radio" name="cronMode" checked={cronMode === 'custom'} onChange={() => setCronMode('custom')} />
-                        <span>⚙️ Tùy chỉnh chi tiết</span>
-                      </label>
-                    </div>
-                    {cronMode === 'preset' ? (
-                      <>
-                        <select
-                          value={CRON_PRESETS.some(p => p.value === scheduledForm.cron_expression) ? scheduledForm.cron_expression : ''}
-                          onChange={(e) => setScheduledForm({ ...scheduledForm, cron_expression: e.target.value })}
-                          style={{ width: '100%', padding: '10px 12px', fontSize: '0.95rem' }}
-                        >
-                          <option value="">-- Chọn thời điểm --</option>
-                          {CRON_PRESETS.map((ex) => (
-                            <option key={ex.value} value={ex.value}>{ex.label}</option>
-                          ))}
-                        </select>
-                        {scheduledForm.cron_expression && (
-                          <div style={{ marginTop: 12, padding: '12px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8 }}>
-                            <div style={{ fontSize: '0.9rem', color: '#86efac', marginBottom: 4 }}>✓ {getCronDescription(scheduledForm.cron_expression)}</div>
-                            <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'monospace' }}>Cron: {scheduledForm.cron_expression}</div>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div style={{ background: 'rgba(30,41,59,0.5)', padding: 16, borderRadius: 8, border: '1px solid #334155' }}>
-                        <div style={{ marginBottom: 16 }}>
-                          <span style={{ fontSize: '0.9rem', color: '#cbd5e1', fontWeight: 600, display: 'block', marginBottom: 8 }}>Kiểu lặp:</span>
-                          <select
-                            value={cronPicker.mode}
-                            onChange={(e) => {
-                              const m = e.target.value;
-                              setCronPicker(p => ({ ...p, mode: m }));
-                              setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, mode: m }) });
-                            }}
-                            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, background: '#1e293b', color: '#e2e8f0', border: '1px solid #475569', fontSize: '0.95rem' }}
-                          >
-                            <option value="daily">📅 Vào thời điểm cụ thể mỗi ngày</option>
-                            <option value="interval_min">⏱️ Lặp mỗi X phút</option>
-                            <option value="interval_hour">🕐 Lặp mỗi X giờ</option>
-                          </select>
-                        </div>
-                        {cronPicker.mode === 'daily' && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                              <span style={{ fontSize: '0.9rem', color: '#cbd5e1', minWidth: 80 }}>🕐 Thời gian:</span>
-                              <select value={cronPicker.hour} onChange={(e) => { const h = Number(e.target.value); setCronPicker(p => ({ ...p, hour: h })); setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, hour: h }) }); }} style={{ padding: '6px 10px', borderRadius: 6, background: '#1e293b', color: '#e2e8f0', border: '1px solid #475569', fontSize: '0.95rem' }}>
-                                {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{i.toString().padStart(2, '0')} giờ</option>)}
-                              </select>
-                              <select value={cronPicker.minute} onChange={(e) => { const m = Number(e.target.value); setCronPicker(p => ({ ...p, minute: m })); setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, minute: m }) }); }} style={{ padding: '6px 10px', borderRadius: 6, background: '#1e293b', color: '#e2e8f0', border: '1px solid #475569', fontSize: '0.95rem' }}>
-                                {Array.from({ length: 60 }, (_, i) => <option key={i} value={i}>{i.toString().padStart(2, '0')} phút</option>)}
-                              </select>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                              <span style={{ fontSize: '0.9rem', color: '#cbd5e1', minWidth: 80 }}>📅 Ngày:</span>
-                              <select value={cronPicker.dayOfWeek} onChange={(e) => { const d = e.target.value; setCronPicker(p => ({ ...p, dayOfWeek: d })); setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, dayOfWeek: d }) }); }} style={{ flex: 1, padding: '6px 10px', borderRadius: 6, background: '#1e293b', color: '#e2e8f0', border: '1px solid #475569', fontSize: '0.95rem' }}>
-                                <option value="everyday">Mỗi ngày</option>
-                                <option value="weekday">Thứ 2 - 6 (ngày làm việc)</option>
-                                <option value="weekend">Thứ 7, Chủ nhật</option>
-                              </select>
-                            </div>
-                          </div>
-                        )}
-                        {cronPicker.mode === 'interval_min' && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <span style={{ fontSize: '0.9rem', color: '#cbd5e1', minWidth: 80 }}>⏱️ Lặp mỗi:</span>
-                            <select value={cronPicker.intervalMinutes} onChange={(e) => { const v = Number(e.target.value); setCronPicker(p => ({ ...p, intervalMinutes: v })); setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, intervalMinutes: v }) }); }} style={{ flex: 1, padding: '6px 10px', borderRadius: 6, background: '#1e293b', color: '#e2e8f0', border: '1px solid #475569', fontSize: '0.95rem' }}>
-                              {Array.from({ length: 60 }, (_, i) => i + 1).map(n => (
-                                <option key={n} value={n}>{n} phút</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                        {cronPicker.mode === 'interval_hour' && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <span style={{ fontSize: '0.9rem', color: '#cbd5e1', minWidth: 80 }}>🕐 Lặp mỗi:</span>
-                            <select value={cronPicker.intervalHours} onChange={(e) => { const v = Number(e.target.value); setCronPicker(p => ({ ...p, intervalHours: v })); setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, intervalHours: v }) }); }} style={{ flex: 1, padding: '6px 10px', borderRadius: 6, background: '#1e293b', color: '#e2e8f0', border: '1px solid #475569', fontSize: '0.95rem' }}>
-                              {[1, 2, 6, 12].map(n => <option key={n} value={n}>{n} giờ</option>)}
-                            </select>
-                          </div>
-                        )}
-                        <div style={{ marginTop: 16, padding: '12px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8 }}>
-                          <div style={{ fontSize: '0.9rem', color: '#86efac', marginBottom: 4 }}>✓ {getCronDescription(scheduledForm.cron_expression)}</div>
-                          <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'monospace' }}>Cron expression: {scheduledForm.cron_expression}</div>
-                        </div>
-                      </div>
-                    )}
-                  </label>
-                  <label>
-                    Thiết bị
-                    {scheduledForm.phong_id && roomDevices.length > 0 ? (
-                      <select value={scheduledForm.device_id} onChange={(e) => {
-                          const v = e.target.value;
-                          setScheduledForm({ ...scheduledForm, device_id: v });
-                          loadDeviceControlLines(v);
-                      }} required>
-                        <option value="">Chọn thiết bị</option>
-                        {roomDevices.map((d) => (
-                          <option key={d.ma_thiet_bi} value={d.ma_thiet_bi}>{d.ten_thiet_bi || d.ma_thiet_bi}</option>
+                ))}
+              </div>
+            )}
+            {scheduledFormVisible && (
+              <div className="rules-modal-backdrop">
+                <div className="rules-modal">
+                  <div className="rules-modal-header">
+                    <h3>{editScheduledId ? 'Sửa Rule theo lịch' : 'Tạo Rule theo lịch'}</h3>
+                    <button className="rules-modal-close" onClick={() => setScheduledFormVisible(false)}>×</button>
+                  </div>
+                  <form onSubmit={handleSaveScheduledRule} className="rules-form">
+                    <label>
+                      Tên rule
+                      <input value={scheduledForm.ten_rule} onChange={(e) => setScheduledForm({ ...scheduledForm, ten_rule: e.target.value })} placeholder="VD: Bật đèn 7h sáng" />
+                    </label>
+                    <label>
+                      Phòng (tùy chọn)
+                      <select value={scheduledForm.phong_id} onChange={(e) => setScheduledForm({ ...scheduledForm, phong_id: e.target.value })}>
+                        <option value="">-- Không chọn --</option>
+                        {rooms.map((r) => (
+                          <option key={r.id} value={r.id}>{r.ten_phong || r.ma_phong || `Phòng ${r.id}`}</option>
                         ))}
                       </select>
-                    ) : (
-                      <input value={scheduledForm.device_id} onChange={(e) => {
-                          const v = e.target.value;
-                          setScheduledForm({ ...scheduledForm, device_id: v });
-                          loadDeviceControlLines(v);
-                      }} placeholder="Mã thiết bị (VD: device-001)" required />
-                    )}
-                    {scheduledForm.phong_id && roomDevices.length === 0 && <small className="muted">Đang tải thiết bị... Hoặc nhập mã thiết bị trực tiếp</small>}
-                    {!scheduledForm.phong_id && <small className="muted">Để trống phòng và nhập mã thiết bị trực tiếp</small>}
-                  </label>
-                  <label>
-                    Lệnh
-                    <select 
-                      value={getCommandSelectValue(scheduledForm.action_command, scheduledForm.action_params)} 
-                      onChange={(e) => handleCommandSelectChange(
-                        e.target.value, 
-                        (cmd) => setScheduledForm(prev => ({ ...prev, action_command: cmd })),
-                        (params) => setScheduledForm(prev => ({ ...prev, action_params: params }))
+                    </label>
+                    <label>
+                      <span style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>⏱️ Thoi diem chay rule</span>
+                      <small className="muted" style={{ display: 'block', marginBottom: 12 }}>Chon thoi diem rule se tu dong thuc hien</small>
+                      <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '8px 12px', background: cronMode === 'preset' ? 'rgba(59,130,246,0.2)' : 'var(--rules-chip-bg)', borderRadius: 8, border: cronMode === 'preset' ? '2px solid #3b82f6' : '2px solid transparent', transition: 'all 0.2s', flex: 1, minWidth: 150 }}>
+                          <input type="radio" name="cronMode" checked={cronMode === 'preset'} onChange={() => setCronMode('preset')} />
+                          <span>📋 Chon mau co san</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '8px 12px', background: cronMode === 'custom' ? 'rgba(59,130,246,0.2)' : 'var(--rules-chip-bg)', borderRadius: 8, border: cronMode === 'custom' ? '2px solid #3b82f6' : '2px solid transparent', transition: 'all 0.2s', flex: 1, minWidth: 150 }}>
+                          <input type="radio" name="cronMode" checked={cronMode === 'custom'} onChange={() => setCronMode('custom')} />
+                          <span>⚙️ Tuy chinh chi tiet</span>
+                        </label>
+                      </div>
+                      {cronMode === 'preset' ? (
+                        <>
+                          <select
+                            value={CRON_PRESETS.some(p => p.value === scheduledForm.cron_expression) ? scheduledForm.cron_expression : ''}
+                            onChange={(e) => setScheduledForm({ ...scheduledForm, cron_expression: e.target.value })}
+                          >
+                            <option value="">-- Chon thoi diem --</option>
+                            {CRON_PRESETS.map((ex) => (
+                              <option key={ex.value} value={ex.value}>{ex.label}</option>
+                            ))}
+                          </select>
+                          {scheduledForm.cron_expression && (
+                            <div className="cron-success-badge" style={{ marginTop: 12 }}>
+                              <div className="cron-description">✓ {getCronDescription(scheduledForm.cron_expression)}</div>
+                              <div className="cron-expression">Cron: {scheduledForm.cron_expression}</div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div style={{ background: 'var(--rules-chip-bg)', padding: 16, borderRadius: 8, border: '1px solid var(--rules-chip-border)' }}>
+                          <div style={{ marginBottom: 16 }}>
+                            <span style={{ fontSize: '0.9rem', color: 'var(--rules-text)', fontWeight: 600, display: 'block', marginBottom: 8 }}>Kieu lap:</span>
+                            <select
+                              value={cronPicker.mode}
+                              onChange={(e) => {
+                                const m = e.target.value;
+                                setCronPicker(p => ({ ...p, mode: m }));
+                                setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, mode: m }) });
+                              }}
+                            >
+                              <option value="daily">📅 Vao thoi diem cu the moi ngay</option>
+                              <option value="interval_min">⏱️ Lap moi X phut</option>
+                              <option value="interval_hour">🕐 Lap moi X gio</option>
+                            </select>
+                          </div>
+                          {cronPicker.mode === 'daily' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <span style={{ fontSize: '0.9rem', color: 'var(--rules-text)', minWidth: 80 }}>🕐 Thời gian:</span>
+                                <select value={cronPicker.hour} onChange={(e) => { const h = Number(e.target.value); setCronPicker(p => ({ ...p, hour: h })); setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, hour: h }) }); }}>
+                                  {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{i.toString().padStart(2, '0')} gio</option>)}
+                                </select>
+                                <select value={cronPicker.minute} onChange={(e) => { const m = Number(e.target.value); setCronPicker(p => ({ ...p, minute: m })); setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, minute: m }) }); }}>
+                                  {Array.from({ length: 60 }, (_, i) => <option key={i} value={i}>{i.toString().padStart(2, '0')} phut</option>)}
+                                </select>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <span style={{ fontSize: '0.9rem', color: 'var(--rules-text)', minWidth: 80 }}>📅 Ngày:</span>
+                                <select value={cronPicker.dayOfWeek} onChange={(e) => { const d = e.target.value; setCronPicker(p => ({ ...p, dayOfWeek: d })); setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, dayOfWeek: d }) }); }}>
+                                  <option value="everyday">Moi ngay</option>
+                                  <option value="weekday">Thu 2 - 6 (ngay lam viec)</option>
+                                  <option value="weekend">Thu 7, Chu nhat</option>
+                                </select>
+                              </div>
+                            </div>
+                          )}
+                          {cronPicker.mode === 'interval_min' && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <span style={{ fontSize: '0.9rem', color: 'var(--rules-text)', minWidth: 80 }}>⏱️ Lap moi:</span>
+                              <select value={cronPicker.intervalMinutes} onChange={(e) => { const v = Number(e.target.value); setCronPicker(p => ({ ...p, intervalMinutes: v })); setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, intervalMinutes: v }) }); }}>
+                                {Array.from({ length: 60 }, (_, i) => i + 1).map(n => (
+                                  <option key={n} value={n}>{n} phut</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          {cronPicker.mode === 'interval_hour' && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <span style={{ fontSize: '0.9rem', color: 'var(--rules-text)', minWidth: 80 }}>🕐 Lap moi:</span>
+                              <select value={cronPicker.intervalHours} onChange={(e) => { const v = Number(e.target.value); setCronPicker(p => ({ ...p, intervalHours: v })); setScheduledForm({ ...scheduledForm, cron_expression: buildCronFromPicker({ ...cronPicker, intervalHours: v }) }); }}>
+                                {[1, 2, 6, 12].map(n => <option key={n} value={n}>{n} gio</option>)}
+                              </select>
+                            </div>
+                          )}
+                          <div className="cron-success-badge" style={{ marginTop: 16 }}>
+                            <div className="cron-description">✓ {getCronDescription(scheduledForm.cron_expression)}</div>
+                            <div className="cron-expression">Cron expression: {scheduledForm.cron_expression}</div>
+                          </div>
+                        </div>
                       )}
-                    >
-                      <option value="">Chọn lệnh</option>
-                      {deviceControlLinesCache[scheduledForm.device_id]?.map(line => {
-                        const labelName = line.ten_duong || `Relay ${line.relay_number}`;
-                        return [
-                          <option key={`ON_${line.relay_number}`} value={`relay_ON_${line.relay_number}`}>🟢 Bật {labelName}</option>,
-                          <option key={`OFF_${line.relay_number}`} value={`relay_OFF_${line.relay_number}`}>🔴 Tắt {labelName}</option>
-                        ];
-                      })}
-                      {commandOptions.map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                      <option value="custom">Khác (nhập tay)</option>
-                    </select>
-                    {getCommandSelectValue(scheduledForm.action_command, scheduledForm.action_params) === 'custom' && (
-                      <input value={scheduledForm.action_command} onChange={(e) => setScheduledForm({ ...scheduledForm, action_command: e.target.value })} placeholder="Lệnh tùy chỉnh" style={{marginTop: 8}} />
-                    )}
-                  </label>
-                  <label>
-                    Params (JSON, tùy chọn)
-                    <input value={scheduledForm.action_params} onChange={(e) => setScheduledForm({ ...scheduledForm, action_params: e.target.value })} placeholder='{"target": 22}' />
-                  </label>
-                  <label>
-                    Trạng thái
-                    <select value={scheduledForm.trang_thai} onChange={(e) => setScheduledForm({ ...scheduledForm, trang_thai: e.target.value })}>
-                      <option value="enabled">Bật</option>
-                      <option value="disabled">Tắt</option>
-                    </select>
-                  </label>
-                  <div className="form-actions">
-                    <button type="submit">Lưu</button>
-                    <button type="button" onClick={() => setScheduledFormVisible(false)}>Hủy</button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-        </>
-      ) : loading ? (
-        <p>Đang tải...</p>
-      ) : (
-        <div className="rules-list">
-          {filteredRules.length === 0 && <p>Chưa có rule.</p>}
-          {filteredRules.map((rule) => (
-            <div key={rule.id} className="rule-card">
-              <div className="rule-head">
-                <div>
-                  <h4>{rule.ten_rule || `Rule #${rule.id}`}</h4>
-                  <p className="muted">
-                    Phòng: {rule.ten_phong || rule.phong_id || 'N/A'} · Device: {rule.condition_device_id} · {rule.field} {rule.operator} {rule.value}
-                  </p>
-                </div>
-                <div className="rule-head-actions">
-                  <span className={`pill tiny ${rule.trang_thai === 'enabled' ? 'pill-online' : 'pill-offline'}`}>{rule.trang_thai}</span>
-                  <button onClick={() => handleToggleStatus(rule)}>{rule.trang_thai === 'enabled' ? 'Disable' : 'Enable'}</button>
-                  <button onClick={() => handleEditRule(rule)}>Sửa</button>
-                  <button className="danger" onClick={() => handleDelete(rule.id)}>Xóa</button>
-                </div>
-              </div>
-              <div className="rule-actions-list">
-                {rule.actions && rule.actions.length > 0 ? (
-                  rule.actions.map((a) => (
-                    <div key={a.id} className="rule-action-chip">
-                      <div>Thiết bị: {a.device_id}</div>
-                      <div>Lệnh: {a.action_command}</div>
-                      {a.action_params && <div>Params: {JSON.stringify(a.action_params)}</div>}
-                      <div>Delay: {a.delay_seconds || 0}s · Thứ tự: {a.thu_tu || 1}</div>
+                    </label>
+                    <label>
+                      Thiết bị
+                      {scheduledForm.phong_id && roomDevices.length > 0 ? (
+                        <select value={scheduledForm.device_id} onChange={(e) => {
+                            const v = e.target.value;
+                            setScheduledForm({ ...scheduledForm, device_id: v });
+                            loadDeviceControlLines(v);
+                        }} required>
+                          <option value="">Chon thiết bị</option>
+                          {roomDevices.map((d) => (
+                            <option key={d.ma_thiet_bi} value={d.ma_thiet_bi}>{d.ten_thiet_bi || d.ma_thiet_bi}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input value={scheduledForm.device_id} onChange={(e) => {
+                            const v = e.target.value;
+                            setScheduledForm({ ...scheduledForm, device_id: v });
+                            loadDeviceControlLines(v);
+                        }} placeholder="Mã thiết bị (VD: device-001)" required />
+                      )}
+                      {scheduledForm.phong_id && roomDevices.length === 0 && <small className="muted">Đang tải thiết bị... Hoặc nhập mã thiết bị trực tiếp</small>}
+                      {!scheduledForm.phong_id && <small className="muted">De trong phong va nhap ma thiết bị truc tiep</small>}
+                    </label>
+                    <label>
+                      Lệnh
+                      <select
+                        value={getCommandSelectValue(scheduledForm.action_command, scheduledForm.action_params)}
+                        onChange={(e) => handleCommandSelectChange(
+                          e.target.value,
+                          (cmd) => setScheduledForm(prev => ({ ...prev, action_command: cmd })),
+                          (params) => setScheduledForm(prev => ({ ...prev, action_params: params }))
+                        )}
+                      >
+                        <option value="">Chon lenh</option>
+                        {deviceControlLinesCache[scheduledForm.device_id]?.map(line => {
+                          const labelName = line.ten_duong || `Relay ${line.relay_number}`;
+                          return [
+                            <option key={`ON_${line.relay_number}`} value={`relay_ON_${line.relay_number}`}>🟢 Bật {labelName}</option>,
+                            <option key={`OFF_${line.relay_number}`} value={`relay_OFF_${line.relay_number}`}>🔴 Tắt {labelName}</option>
+                          ];
+                        })}
+                        {commandOptions.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                        <option value="custom">Khac (nhap tay)</option>
+                      </select>
+                      {getCommandSelectValue(scheduledForm.action_command, scheduledForm.action_params) === 'custom' && (
+                        <input value={scheduledForm.action_command} onChange={(e) => setScheduledForm({ ...scheduledForm, action_command: e.target.value })} placeholder="Lệnh tuy chinh" style={{marginTop: 8}} />
+                      )}
+                    </label>
+                    <label>
+                      Params (JSON, tuy chon)
+                      <input value={scheduledForm.action_params} onChange={(e) => setScheduledForm({ ...scheduledForm, action_params: e.target.value })} placeholder='{"target": 22}' />
+                    </label>
+                    <label>
+                      Trạng thái
+                      <select value={scheduledForm.trang_thai} onChange={(e) => setScheduledForm({ ...scheduledForm, trang_thai: e.target.value })}>
+                        <option value="enabled">Bật</option>
+                        <option value="disabled">Tắt</option>
+                      </select>
+                    </label>
+                    <div className="form-actions">
+                      <button type="button" onClick={() => setScheduledFormVisible(false)}>Hủy</button>
+                      <button type="submit">Lưu</button>
                     </div>
-                  ))
-                ) : (
-                  <div className="muted">Chưa có action</div>
-                )}
+                  </form>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            )}
+          </>
+        ) : loading ? (
+          <div className="rules-loading">Đang tải...</div>
+        ) : (
+          <div className="rules-list">
+            {filteredRules.length === 0 && <div className="rules-empty"><p>Chua co rule.</p></div>}
+            {filteredRules.map((rule) => (
+              <div key={rule.id} className="rule-card">
+                <div className="rule-head">
+                  <div>
+                    <h4>{rule.ten_rule || `Rule #${rule.id}`}</h4>
+                    <p className="muted">
+                      Phòng: {rule.ten_phong || rule.phong_id || 'N/A'} · Device: {rule.condition_device_id} · {rule.field} {rule.operator} {rule.value}
+                    </p>
+                  </div>
+                  <div className="rule-head-actions">
+                    <span className={`pill tiny ${rule.trang_thai === 'enabled' ? 'pill-enabled' : 'pill-disabled'}`}>{rule.trang_thai}</span>
+                    <button onClick={() => handleToggleStatus(rule)}>{rule.trang_thai === 'enabled' ? 'Disable' : 'Enable'}</button>
+                    <button onClick={() => handleEditRule(rule)}>Sửa</button>
+                    <button className="danger" onClick={() => handleDelete(rule.id)}>Xóa</button>
+                  </div>
+                </div>
+                <div className="rule-actions-list">
+                  {rule.actions && rule.actions.length > 0 ? (
+                    rule.actions.map((a) => (
+                      <div key={a.id} className="rule-action-chip">
+                        <div>Thiết bị: {a.device_id}</div>
+                        <div>Lệnh: {a.action_command}</div>
+                        {a.action_params && <div>Params: {JSON.stringify(a.action_params)}</div>}
+                        <div>Delay: {a.delay_seconds || 0}s · Thu tu: {a.thu_tu || 1}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="muted">Chua co action</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {roomModalVisible && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <div className="modal-header">
-              <h3>Tạo phòng</h3>
-              <button onClick={() => setRoomModalVisible(false)}>✕</button>
+        <div className="rules-modal-backdrop">
+          <div className="rules-modal">
+            <div className="rules-modal-header">
+              <h3>Tao phong</h3>
+              <button className="rules-modal-close" onClick={() => setRoomModalVisible(false)}>×</button>
             </div>
-            <form className="rule-form" onSubmit={handleCreateRoomFull}>
+            <form className="rules-form" onSubmit={handleCreateRoomFull}>
               <label>
                 Tên phòng
                 <input
@@ -1055,22 +1074,24 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                   required
                 />
               </label>
-              <label>
-                Mã phòng
-                <input
-                  value={roomForm.ma_phong}
-                  onChange={(e) => setRoomForm({ ...roomForm, ma_phong: e.target.value })}
-                  placeholder="VD: LAB-01"
-                />
-              </label>
-              <label>
-                Vị trí
-                <input
-                  value={roomForm.vi_tri}
-                  onChange={(e) => setRoomForm({ ...roomForm, vi_tri: e.target.value })}
-                  placeholder="Tầng 2, khu A"
-                />
-              </label>
+              <div className="form-row">
+                <label>
+                  Mã phòng
+                  <input
+                    value={roomForm.ma_phong}
+                    onChange={(e) => setRoomForm({ ...roomForm, ma_phong: e.target.value })}
+                    placeholder="VD: LAB-01"
+                  />
+                </label>
+                <label>
+                  Vi tri
+                  <input
+                    value={roomForm.vi_tri}
+                    onChange={(e) => setRoomForm({ ...roomForm, vi_tri: e.target.value })}
+                    placeholder="Tầng 2, khu A"
+                  />
+                </label>
+              </div>
               <label>
                 Mô tả
                 <input
@@ -1080,18 +1101,18 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                 />
               </label>
               <label>
-                Người quản lý ID
+                Nguoi quan ly ID
                 <input
                   type="number"
                   value={roomForm.nguoi_quan_ly_id}
                   onChange={(e) => setRoomForm({ ...roomForm, nguoi_quan_ly_id: e.target.value })}
-                  placeholder="ID user (tùy chọn)"
+                  placeholder="ID user (tuy chon)"
                   min={0}
                 />
               </label>
               <div className="form-actions">
-                <button type="submit">Lưu phòng</button>
                 <button type="button" onClick={() => setRoomModalVisible(false)}>Hủy</button>
+                <button type="submit">Lưu phòng</button>
               </div>
             </form>
           </div>
@@ -1099,15 +1120,15 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
       )}
 
       {formVisible && (
-        <div className="modal-backdrop">
-          <div className="modal rule-modal-large">
-            <div className="modal-header">
+        <div className="rules-modal-backdrop">
+          <div className="rules-modal large">
+            <div className="rules-modal-header">
               <h3>{editRuleId ? 'Sửa Rule' : 'Tạo Rule'}</h3>
               <div className="form-mode-toggle">
                 <button type="button" className={formMode === 'form' ? 'active' : ''} onClick={() => setFormMode('form')}>Form</button>
-                <button type="button" className={formMode === 'visual' ? 'active' : ''} onClick={() => setFormMode('visual')}>Visual (Rule Chain)</button>
+                <button type="button" className={formMode === 'visual' ? 'active' : ''} onClick={() => setFormMode('visual')}>Visual</button>
               </div>
-              <button onClick={() => setFormVisible(false)}>✕</button>
+              <button className="rules-modal-close" onClick={() => setFormVisible(false)}>×</button>
             </div>
             {formMode === 'visual' ? (
               <div className="rule-visual-form">
@@ -1119,14 +1140,14 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                   <label>
                     Phòng
                     <select value={formData.phong_id} onChange={(e) => { const v = e.target.value; setFormData({ ...formData, phong_id: v }); loadDevicesByRoom(v); }}>
-                      <option value="">Chọn phòng</option>
+                      <option value="">Chon phong</option>
                       {rooms.map((r) => (
                         <option key={r.id} value={r.id}>{r.ten_phong || r.ma_phong || `Phòng ${r.id}`}</option>
                       ))}
                     </select>
                   </label>
                   <label>
-                    Mức độ ưu tiên
+                    Muc do uu tien
                     <input type="number" value={formData.muc_do_uu_tien} onChange={(e) => setFormData({ ...formData, muc_do_uu_tien: e.target.value })} min={1} />
                   </label>
                 </div>
@@ -1140,12 +1161,12 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                   commandOptions={commandOptions}
                 />
                 <div className="form-actions">
-                  <button type="button" onClick={handleSaveRule}>Lưu rule</button>
                   <button type="button" onClick={() => { resetForm(); setFormVisible(false); }}>Hủy</button>
+                  <button type="button" onClick={handleSaveRule}>Lưu rule</button>
                 </div>
               </div>
             ) : (
-            <form onSubmit={handleSaveRule} className="rule-form">
+            <form onSubmit={handleSaveRule} className="rules-form">
               <label>
                 Tên rule
                 <input
@@ -1154,88 +1175,88 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                   placeholder="VD: Bật AC khi nóng"
                 />
               </label>
-              <label>
-                Phòng
-                <select
-                  value={formData.phong_id}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormData({ ...formData, phong_id: val, condition_device_id: '' });
-                    loadDevicesByRoom(val);
-                    setConditionFields([]);
-                  }}
-                >
-                  <option value="">Chọn phòng</option>
-                  {rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.ten_phong || r.ma_phong || `Phòng ${r.id}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Thiết bị điều kiện
-                <select
-                  value={formData.condition_device_id}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormData({ ...formData, condition_device_id: val });
-                    loadDeviceFields(val);
-                  }}
-                  disabled={!formData.phong_id}
-                >
-                  <option value="">Chọn thiết bị</option>
-                  {roomDevices.map((d) => (
-                    <option key={d.ma_thiet_bi} value={d.ma_thiet_bi}>
-                      {d.ten_thiet_bi || d.ma_thiet_bi}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <div className="form-row">
                 <label>
-                  Điều kiện
-                  <div className="conditions-block">
-                    {formData.conditions.map((c, idx) => (
-                      <div className="condition-row" key={idx}>
-                        <select
-                          value={c.field}
-                          onChange={(e) => handleConditionChange(idx, 'field', e.target.value)}
-                        >
-                          <option value="">Chọn field</option>
-                          {conditionLoading && <option disabled>Đang tải field...</option>}
-                          {!conditionLoading && conditionFields.length === 0 && <option disabled>(Chưa có dữ liệu thiết bị)</option>}
-                          {conditionFields.map((f) => (
-                            <option key={f} value={f}>
-                              {f}
-                            </option>
-                          ))}
-                        </select>
-                        <select value={c.operator} onChange={(e) => handleConditionChange(idx, 'operator', e.target.value)}>
-                          {operatorOptions.map((op) => (
-                            <option key={op} value={op}>
-                              {op}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          value={c.value}
-                          onChange={(e) => handleConditionChange(idx, 'value', e.target.value)}
-                          placeholder="Giá trị"
-                        />
-                        <button type="button" className="danger" onClick={() => handleRemoveCondition(idx)}>
-                          X
-                        </button>
-                      </div>
+                  Phòng
+                  <select
+                    value={formData.phong_id}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormData({ ...formData, phong_id: val, condition_device_id: '' });
+                      loadDevicesByRoom(val);
+                      setConditionFields([]);
+                    }}
+                  >
+                    <option value="">Chon phong</option>
+                    {rooms.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.ten_phong || r.ma_phong || `Phòng ${r.id}`}
+                      </option>
                     ))}
-                    <button type="button" onClick={handleAddCondition}>
-                      + Thêm điều kiện
-                    </button>
-                  </div>
+                  </select>
+                </label>
+                <label>
+                  Thiết bị điều kiện
+                  <select
+                    value={formData.condition_device_id}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormData({ ...formData, condition_device_id: val });
+                      loadDeviceFields(val);
+                    }}
+                    disabled={!formData.phong_id}
+                  >
+                    <option value="">Chon thiết bị</option>
+                    {roomDevices.map((d) => (
+                      <option key={d.ma_thiet_bi} value={d.ma_thiet_bi}>
+                        {d.ten_thiet_bi || d.ma_thiet_bi}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
               <label>
-                Mức độ ưu tiên
+                Dieu kien
+                <div className="conditions-block">
+                  {formData.conditions.map((c, idx) => (
+                    <div className="condition-row" key={idx}>
+                      <select
+                        value={c.field}
+                        onChange={(e) => handleConditionChange(idx, 'field', e.target.value)}
+                      >
+                        <option value="">Chon field</option>
+                        {conditionLoading && <option disabled>Đang tai field...</option>}
+                        {!conditionLoading && conditionFields.length === 0 && <option disabled>(Chua co du lieu thiết bị)</option>}
+                        {conditionFields.map((f) => (
+                          <option key={f} value={f}>
+                            {f}
+                          </option>
+                        ))}
+                      </select>
+                      <select value={c.operator} onChange={(e) => handleConditionChange(idx, 'operator', e.target.value)}>
+                        {operatorOptions.map((op) => (
+                          <option key={op} value={op}>
+                            {op}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={c.value}
+                        onChange={(e) => handleConditionChange(idx, 'value', e.target.value)}
+                        placeholder="Gia tri"
+                      />
+                      <button type="button" className="danger" onClick={() => handleRemoveCondition(idx)}>
+                        X
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={handleAddCondition}>
+                    + Thêm điều kiện
+                  </button>
+                </div>
+              </label>
+              <label>
+                Muc do uu tien
                 <input
                   type="number"
                   value={formData.muc_do_uu_tien}
@@ -1264,7 +1285,7 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                         }}
                         disabled={!formData.phong_id}
                       >
-                        <option value="">Chọn thiết bị</option>
+                        <option value="">Chon thiết bị</option>
                         {roomDevices.map((d) => (
                           <option key={d.ma_thiet_bi} value={d.ma_thiet_bi}>
                             {d.ten_thiet_bi || d.ma_thiet_bi}
@@ -1282,7 +1303,7 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                           (params) => handleActionChange(idx, 'action_params', params)
                         )}
                       >
-                        <option value="">Chọn lệnh</option>
+                        <option value="">Chon lenh</option>
                         {deviceControlLinesCache[a.device_id]?.map(line => {
                           const labelName = line.ten_duong || `Relay ${line.relay_number}`;
                           return [
@@ -1295,7 +1316,7 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                             {c}
                           </option>
                         ))}
-                        <option value="custom">Khác (nhập tay)</option>
+                        <option value="custom">Khac (nhap tay)</option>
                       </select>
                       {getCommandSelectValue(a.action_command, a.action_params) === 'custom' && (
                         <input
@@ -1314,7 +1335,6 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                         <input
                           type="number"
                           value={
-                            // Extract numeric value from JSON or use raw value
                             (() => {
                               try {
                                 const parsed = JSON.parse(a.action_params);
@@ -1325,7 +1345,6 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                             })()
                           }
                           onChange={(e) => {
-                            // Store as JSON format internally
                             const val = e.target.value;
                             handleActionChange(idx, 'action_params', val ? `{"target":${val}}` : '');
                           }}
@@ -1349,7 +1368,7 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
                       />
                     </label>
                     <label>
-                      Thứ tự
+                      Thu tu
                       <input
                         type="number"
                         value={a.thu_tu}
@@ -1365,10 +1384,10 @@ export default function RulesManagement({ token, onBack, userInfo = null, worksp
               </div>
 
               <div className="form-actions">
-                <button type="submit">{editRuleId ? 'Cập nhật rule' : 'Lưu rule'}</button>
                 <button type="button" onClick={() => { resetForm(); setFormVisible(false); }}>
                   Hủy
                 </button>
+                <button type="submit">{editRuleId ? 'Cập nhật rule' : 'Lưu rule'}</button>
               </div>
             </form>
             )}
