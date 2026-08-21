@@ -248,6 +248,22 @@ export const deleteUser = (userId, token) =>
     headers: { Authorization: `Bearer ${token}` },
   });
 
+// User assigned rooms (admin -> teacher/student)
+export const fetchUserAssignedRooms = (userId, token) =>
+  axios.get(`${API_BASE}/users/${userId}/assigned-rooms`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const updateUserAssignedRooms = (userId, roomIds, token, quyen = 'view') =>
+  axios.put(`${API_BASE}/users/${userId}/assigned-rooms`, { room_ids: roomIds, quyen }, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+export const removeUserAssignedRoom = (userId, roomId, token) =>
+  axios.delete(`${API_BASE}/users/${userId}/assigned-rooms/${roomId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
 // User Permissions
 export const fetchUserPermissions = (userId, token) =>
   axios.get(`${API_BASE}/users/${userId}/permissions`, {

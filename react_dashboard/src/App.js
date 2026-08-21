@@ -859,7 +859,7 @@ function AppContentWithTracker({
     activeTab = 'device-profiles';
   } else if (currentView === 'users') {
     if (isAdmin) {
-      content = <UserManagement token={token} onBack={handleBackToDashboard} />;
+      content = <UserManagement token={token} onBack={handleBackToDashboard} userInfo={userInfo} />;
       activeTab = 'users';
     } else {
       content = <Dashboard token={token} devices={devices} onOpenRules={openRules} onOpenRooms={openRooms} workspaceContext={workspaceContext} userInfo={userInfo} userRole={userRole} isAdmin={isAdmin} isTeacher={isTeacher} teacherRooms={teacherRooms} />;

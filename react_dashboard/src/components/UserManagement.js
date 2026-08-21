@@ -1,10 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { fetchUsers, createUser, updateUser, deleteUser, impersonateUser, bulkImportUsers } from '../services';
+import {
+    fetchUsers, createUser, updateUser, deleteUser, impersonateUser, bulkImportUsers,
+    fetchUserAssignedRooms, updateUserAssignedRooms,
+    fetchRooms,
+} from '../services';
 import { useCrudVersion, useRealtimePolling } from '../context/RealtimeProvider';
 
 const PAGE_SIZE = 15;
 
-export default function UserManagement({ token, onBack }) {
+export default function UserManagement({ token, onBack, userInfo }) {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(false);
     // Realtime: tu refetch khi co CRUD user tu tab khac
@@ -18,6 +22,11 @@ export default function UserManagement({ token, onBack }) {
     const [bulkLoading, setBulkLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
+    // State for room assignment (admin only)
+    const [myRooms, setMyRooms] = useState([]);                  // rooms owned by current admin
+    const [assignedRoomIds, setAssignedRoomIds] = useState([]); // ids assigned to edited user
+    const [assignmentLoading, setAssignmentLoading] = useState(false);
+
     // Pagination & filter state
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
@@ -28,6 +37,25 @@ export default function UserManagement({ token, onBack }) {
     const [formData, setFormData] = useState({
         ten: '', email: '', password: '', vai_tro: 'student',
     });
+
+    // Load admin's own rooms (for the assignment picker). Admin sees all rooms,
+    // so we filter client-side by nguoi_so_huu_id === current admin id.
+    const loadMyRooms = useCallback(async () => {
+        try {
+            const res = await fetchRooms(token);
+            const all = res.data?.rooms || [];
+            const adminId = userInfo?.id;
+            const owned = adminId ? all.filter(r => r.nguoi_so_huu_id === adminId) : all;
+            setMyRooms(owned);
+        } catch (err) {
+            console.error('Load my rooms failed', err);
+            setMyRooms([]);
+        }
+    }, [token, userInfo]);
+
+    useEffect(() => {
+        if (userInfo?.id) loadMyRooms();
+    }, [loadMyRooms, userInfo]);
 
     const loadUsers = useCallback(async (page = 1) => {
         setLoading(true);
@@ -59,14 +87,38 @@ export default function UserManagement({ token, onBack }) {
     const resetForm = () => {
         setFormData({ ten: '', email: '', password: '', vai_tro: 'student' });
         setEditUserId(null);
+        setAssignedRoomIds([]);
     };
 
     const handleOpenAdd = () => { resetForm(); setFormVisible(true); };
 
-    const handleEdit = (user) => {
+    const handleEdit = async (user) => {
         setFormData({ ten: user.ten, email: user.email, password: '', vai_tro: user.vai_tro });
         setEditUserId(user.id);
         setFormVisible(true);
+        // Load existing assigned rooms for this user
+        setAssignmentLoading(true);
+        try {
+            // Prefer embedded field from list payload; fall back to API call
+            const initial = Array.isArray(user.assigned_room_ids) ? user.assigned_room_ids : null;
+            if (initial !== null) {
+                setAssignedRoomIds(initial);
+            } else {
+                const res = await fetchUserAssignedRooms(user.id, token);
+                setAssignedRoomIds((res.data?.rooms || []).map(r => r.id));
+            }
+        } catch (err) {
+            console.error('Load assigned rooms failed', err);
+            setAssignedRoomIds([]);
+        } finally {
+            setAssignmentLoading(false);
+        }
+    };
+
+    const toggleAssignedRoom = (roomId) => {
+        setAssignedRoomIds(prev => prev.includes(roomId)
+            ? prev.filter(id => id !== roomId)
+            : [...prev, roomId]);
     };
 
     const handleDelete = async (user) => {
@@ -107,6 +159,13 @@ export default function UserManagement({ token, onBack }) {
                 const updateData = { ten: formData.ten, email: formData.email, vai_tro: formData.vai_tro };
                 if (formData.password) updateData.password = formData.password;
                 await updateUser(editUserId, updateData, token);
+                // Sync assigned rooms if user is teacher/student
+                if (formData.vai_tro === 'teacher' || formData.vai_tro === 'student') {
+                    await updateUserAssignedRooms(editUserId, assignedRoomIds, token, 'view');
+                } else {
+                    // Clear assignments if user is no longer teacher/student
+                    await updateUserAssignedRooms(editUserId, [], token, 'view');
+                }
             } else {
                 await createUser({ ten: formData.ten, email: formData.email, password: formData.password, vai_tro: formData.vai_tro }, token);
             }
@@ -344,6 +403,42 @@ export default function UserManagement({ token, onBack }) {
                                     <option value="admin">Admin</option>
                                 </select>
                             </label>
+                            {editUserId && (formData.vai_tro === 'teacher' || formData.vai_tro === 'student') && (
+                                <div className="user-rooms-assignment">
+                                    <div className="user-rooms-assignment-header">
+                                        <strong>Phòng được gán quyền sử dụng</strong>
+                                        <span className="user-rooms-assignment-count">
+                                            {assignedRoomIds.length} / {myRooms.length} phòng
+                                        </span>
+                                    </div>
+                                    <p className="help-text" style={{ marginTop: 4, marginBottom: 8 }}>
+                                        Chọn các phòng bạn sở hữu để cấp quyền sử dụng cho user này. User chỉ có quyền xem và tương tác thiết bị, không thể sửa hoặc xóa phòng.
+                                    </p>
+                                    {assignmentLoading ? (
+                                        <div className="help-text">Đang tải...</div>
+                                    ) : myRooms.length === 0 ? (
+                                        <div className="help-text">Bạn chưa sở hữu phòng nào để gán. Hãy tạo phòng trước.</div>
+                                    ) : (
+                                        <div className="user-rooms-assignment-list">
+                                            {myRooms.map(room => (
+                                                <label key={room.id} className="user-rooms-assignment-item">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={assignedRoomIds.includes(room.id)}
+                                                        onChange={() => toggleAssignedRoom(room.id)}
+                                                    />
+                                                    <span className="user-rooms-assignment-item-name">
+                                                        {room.ten_phong || room.name}
+                                                    </span>
+                                                    {room.ma_phong && (
+                                                        <span className="user-rooms-assignment-item-code">{room.ma_phong}</span>
+                                                    )}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                             <div className="form-actions">
                                 <button type="button" onClick={() => { resetForm(); setFormVisible(false); }}>Hủy</button>
                                 <button type="submit">{editUserId ? 'Cập nhật' : 'Tạo người dùng'}</button>

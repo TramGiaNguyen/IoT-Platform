@@ -512,6 +512,11 @@ class UserUpdate(BaseModel):
     lop_hoc_id: Optional[int] = None
 
 
+class AssignedRoomsUpdate(BaseModel):
+    room_ids: List[int]
+    quyen: Optional[str] = 'view'  # MVP chi ho tro 'view'
+
+
 class ClassCreate(BaseModel):
     ten_lop: str = Field(..., min_length=1, max_length=100)
     giao_vien_id: Optional[int] = None
@@ -1012,6 +1017,19 @@ def _user_can_access_device(
     """
     if role == "admin":
         return True
+
+    # User được admin gán phòng chứa thiết bị này (read-only → vẫn cho tương tác)
+    if device.get("phong_id"):
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT 1 FROM phong_user_permissions WHERE phong_id = %s AND nguoi_dung_id = %s LIMIT 1",
+                (device["phong_id"], user_id),
+            )
+            if cursor.fetchone():
+                return True
+        finally:
+            cursor.close()
 
     # Thiết bị cá nhân (không có nhom_id)
     if device.get("nhom_id") is None:
@@ -3412,7 +3430,7 @@ def list_rooms(
         if user_role == "admin":
             # Admin sees all rooms
             base_query = """
-                SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta, 
+                SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta,
                        p.nguoi_quan_ly_id, p.nguoi_so_huu_id, p.nhom_id, p.ngay_tao,
                        u.ten as nguoi_so_huu_ten, u.vai_tro as nguoi_so_huu_role,
                        COUNT(DISTINCT t.id) as device_count,
@@ -3425,6 +3443,7 @@ def list_rooms(
             cursor.execute(base_query)
         elif user_role == "teacher":
             # Teacher sees own rooms + rooms of students in their classes + rooms of groups in their classes
+            # + rooms assigned to this teacher by admin (phong_user_permissions)
             base_query = """
                 SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta,
                        p.nguoi_quan_ly_id, p.nguoi_so_huu_id, p.nhom_id, p.ngay_tao,
@@ -3445,11 +3464,16 @@ def list_rooms(
                        INNER JOIN lop_hoc lh ON n.lop_hoc_id = lh.id
                        WHERE lh.giao_vien_id = %s
                    )
+                   OR p.id IN (
+                       SELECT phong_id FROM phong_user_permissions
+                       WHERE nguoi_dung_id = %s
+                   )
                 GROUP BY p.id ORDER BY p.ten_phong
             """
-            cursor.execute(base_query, (user_id, user_id, user_id))
+            cursor.execute(base_query, (user_id, user_id, user_id, user_id))
         else:
             # Student: phòng cá nhân HOẶC phòng thuộc nhóm mà user là thành viên
+            # + phòng được admin gán cho student này (phong_user_permissions)
             base_query = """
                 SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta,
                        p.nguoi_quan_ly_id, p.nguoi_so_huu_id, p.nhom_id, p.ngay_tao,
@@ -3463,11 +3487,24 @@ def list_rooms(
                    OR p.nhom_id IN (
                        SELECT ntv.nhom_id FROM nhom_thanh_vien ntv WHERE ntv.user_id = %s
                    )
+                   OR p.id IN (
+                       SELECT phong_id FROM phong_user_permissions
+                       WHERE nguoi_dung_id = %s
+                   )
                 GROUP BY p.id ORDER BY p.ten_phong
             """
-            cursor.execute(base_query, (user_id, user_id))
+            cursor.execute(base_query, (user_id, user_id, user_id))
         
         rooms = cursor.fetchall()
+
+        # Lay danh sach phong duoc admin gan cho user (neu co)
+        assigned_room_ids: set = set()
+        if user_role in ("teacher", "student"):
+            cursor.execute(
+                "SELECT phong_id FROM phong_user_permissions WHERE nguoi_dung_id = %s",
+                (user_id,),
+            )
+            assigned_room_ids = {row["phong_id"] for row in cursor.fetchall()}
 
         # Workspace-based filtering: workspace_id = nhom_id -> workspace "Nhom"
         if workspace_id is not None:
@@ -3489,12 +3526,13 @@ def list_rooms(
                             occ_by_phong[rid] = occ_by_phong.get(rid, 0) + item.get("so_nguoi", 0)
             except Exception:
                 pass  # fallback: occ_by_phong = {}
-        
+
         # Format for mobile app
         formatted_rooms = []
         for room in rooms:
             so_nguoi = occ_by_phong.get(room["id"], 0)
-            # can_edit/can_delete: admin hoặc owner
+            # can_edit/can_delete: admin hoặc owner (user được gán = read-only)
+            is_assigned = room["id"] in assigned_room_ids
             can_edit = user_role == "admin" or room["nguoi_so_huu_id"] == user_id
             can_delete = user_role == "admin" or room["nguoi_so_huu_id"] == user_id
             formatted_rooms.append({
@@ -3520,6 +3558,7 @@ def list_rooms(
                 "lop_hoc_id": None,
                 "can_edit": can_edit,
                 "can_delete": can_delete,
+                "is_assigned": is_assigned,
             })
         
         result = {"rooms": formatted_rooms}
@@ -3576,11 +3615,46 @@ def get_room(room_id: int, current_user: str = Depends(get_current_user)):
             except (json.JSONDecodeError, Exception):
                 app_display_fields = None
 
-        # Phan quyen: student chi xem phong cua minh, teacher/admin xem duoc moi thu
+        # Phan quyen: student chi xem phong cua minh HOAC phong duoc admin gan
         if user_role == "student":
             if room_meta["nguoi_so_huu_id"] != user_id:
-                raise HTTPException(status_code=403, detail="Bạn không có quyền xem phòng này")
-        # admin/teacher: pass
+                cursor.execute(
+                    "SELECT 1 FROM phong_user_permissions WHERE phong_id = %s AND nguoi_dung_id = %s LIMIT 1",
+                    (room_id, user_id),
+                )
+                if not cursor.fetchone():
+                    raise HTTPException(status_code=403, detail="Bạn không có quyền xem phòng này")
+        elif user_role == "teacher":
+            # Teacher: xem neu la owner, hoc sinh trong lop, hoặc được admin gán
+            if room_meta["nguoi_so_huu_id"] != user_id:
+                cursor.execute(
+                    "SELECT 1 FROM phong_user_permissions WHERE phong_id = %s AND nguoi_dung_id = %s LIMIT 1",
+                    (room_id, user_id),
+                )
+                if not cursor.fetchone():
+                    # Check teacher class ownership as fallback
+                    cursor.execute(
+                        """
+                        SELECT 1 FROM nguoi_dung nd
+                        INNER JOIN lop_hoc lh ON nd.lop_hoc_id = lh.id
+                        WHERE nd.id = %s AND lh.giao_vien_id = %s
+                        LIMIT 1
+                        """,
+                        (room_meta["nguoi_so_huu_id"], user_id),
+                    )
+                    if not cursor.fetchone():
+                        raise HTTPException(status_code=403, detail="Bạn không có quyền xem phòng này")
+        # admin: pass
+
+        # Check if user is assigned to this room (read-only)
+        is_assigned = False
+        if user_role in ("teacher", "student") and room_meta["nguoi_so_huu_id"] != user_id:
+            cursor.execute(
+                "SELECT 1 FROM phong_user_permissions WHERE phong_id = %s AND nguoi_dung_id = %s LIMIT 1",
+                (room_id, user_id),
+            )
+            if cursor.fetchone():
+                is_assigned = True
 
         base_select = """
             SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta,
@@ -3625,6 +3699,7 @@ def get_room(room_id: int, current_user: str = Depends(get_current_user)):
             "app_display_fields": app_display_fields,
             "can_edit": user_role == "admin" or room["nguoi_so_huu_id"] == user_id,
             "can_delete": user_role == "admin" or room["nguoi_so_huu_id"] == user_id,
+            "is_assigned": is_assigned,
         }
     finally:
         cursor.close()
@@ -6985,6 +7060,15 @@ def list_users(
         for user in users:
             if user.get("ngay_tao"):
                 user["ngay_tao"] = user["ngay_tao"].isoformat()
+            # Admin thấy danh sách phòng được gán cho mỗi user
+            if actor["vai_tro"] == "admin" and user["vai_tro"] in ("teacher", "student"):
+                cursor.execute(
+                    "SELECT phong_id FROM phong_user_permissions WHERE nguoi_dung_id = %s",
+                    (user["id"],),
+                )
+                user["assigned_room_ids"] = [row["phong_id"] for row in cursor.fetchall()]
+            else:
+                user["assigned_room_ids"] = []
 
         return {
             "users": users,
@@ -7005,8 +7089,8 @@ def get_user(user_id: int, current_user: str = Depends(get_current_user)):
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("""
-            SELECT id, ten, email, vai_tro, ngay_tao 
-            FROM nguoi_dung 
+            SELECT id, ten, email, vai_tro, ngay_tao
+            FROM nguoi_dung
             WHERE id = %s
         """, (user_id,))
         user = cursor.fetchone()
@@ -7014,6 +7098,17 @@ def get_user(user_id: int, current_user: str = Depends(get_current_user)):
             raise HTTPException(status_code=404, detail="User not found")
         if user.get("ngay_tao"):
             user["ngay_tao"] = user["ngay_tao"].isoformat()
+        # Admin/teacher: include assigned_room_ids
+        cursor.execute("SELECT id, vai_tro FROM nguoi_dung WHERE email = %s", (current_user,))
+        actor = cursor.fetchone()
+        if actor and actor["vai_tro"] == "admin":
+            cursor.execute(
+                "SELECT phong_id FROM phong_user_permissions WHERE nguoi_dung_id = %s",
+                (user_id,),
+            )
+            user["assigned_room_ids"] = [row["phong_id"] for row in cursor.fetchall()]
+        else:
+            user["assigned_room_ids"] = []
         return user
     finally:
         cursor.close()
@@ -7282,6 +7377,159 @@ def update_user(user_id: int, body: UserUpdate, current_user: str = Depends(get_
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"Update user failed: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _require_admin(current_user_email: str) -> int:
+    """Helper: tra ve id cua admin hien tai, raise 403 neu khong phai admin."""
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, vai_tro FROM nguoi_dung WHERE email = %s", (current_user_email,))
+        user = cursor.fetchone()
+        if not user or user.get("vai_tro") != "admin":
+            raise HTTPException(status_code=403, detail="Admin role required")
+        return user["id"]
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/users/{user_id}/assigned-rooms")
+def get_assigned_rooms(
+    user_id: int,
+    current_user: str = Depends(get_current_user),
+):
+    """Lay danh sach phong admin da gan cho user (teacher/student)."""
+    admin_id = _require_admin(current_user)
+
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Verify target user exists and is teacher/student
+        cursor.execute("SELECT id, vai_tro, ten FROM nguoi_dung WHERE id = %s", (user_id,))
+        target = cursor.fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found")
+        if target["vai_tro"] not in ("teacher", "student"):
+            raise HTTPException(status_code=400, detail="Chi gan phong cho teacher hoac student")
+
+        cursor.execute(
+            """
+            SELECT p.id, p.ten_phong, p.ma_phong, p.vi_tri, p.mo_ta,
+                   pup.quyen, pup.nguoi_gan_id, pup.ngay_gan
+            FROM phong_user_permissions pup
+            JOIN phong p ON p.id = pup.phong_id
+            WHERE pup.nguoi_dung_id = %s AND p.nguoi_so_huu_id = %s
+            ORDER BY p.ten_phong ASC
+            """,
+            (user_id, admin_id),
+        )
+        rows = cursor.fetchall()
+        for r in rows:
+            if r.get("ngay_gan"):
+                r["ngay_gan"] = r["ngay_gan"].isoformat()
+        return {"rooms": rows, "user_id": user_id, "total": len(rows)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.put("/users/{user_id}/assigned-rooms")
+def update_assigned_rooms(
+    user_id: int,
+    body: AssignedRoomsUpdate,
+    current_user: str = Depends(get_current_user),
+):
+    """Thay the danh sach phong admin gan cho user (teacher/student)."""
+    admin_id = _require_admin(current_user)
+
+    quyen = body.quyen or "view"
+    if quyen not in ("view", "edit", "owner"):
+        raise HTTPException(status_code=400, detail="quyen must be view|edit|owner")
+
+    conn = get_mysql()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, vai_tro FROM nguoi_dung WHERE id = %s", (user_id,))
+        target = cursor.fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found")
+        if target["vai_tro"] not in ("teacher", "student"):
+            raise HTTPException(status_code=400, detail="Chi gan phong cho teacher hoac student")
+
+        # Validate all room ids belong to admin
+        if body.room_ids:
+            placeholders = ",".join(["%s"] * len(body.room_ids))
+            cursor.execute(
+                f"SELECT id, ten_phong FROM phong WHERE id IN ({placeholders}) AND nguoi_so_huu_id = %s",
+                tuple(list(body.room_ids) + [admin_id]),
+            )
+            valid = {row["id"] for row in cursor.fetchall()}
+            invalid = [rid for rid in body.room_ids if rid not in valid]
+            if invalid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cac phong khong thuoc so huu cua admin: {invalid}",
+                )
+
+        # Wipe + reinsert in a transaction
+        cursor.execute("DELETE FROM phong_user_permissions WHERE nguoi_dung_id = %s", (user_id,))
+        for rid in body.room_ids:
+            cursor.execute(
+                """
+                INSERT INTO phong_user_permissions (phong_id, nguoi_dung_id, quyen, nguoi_gan_id)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (rid, user_id, quyen, admin_id),
+            )
+        conn.commit()
+        try:
+            _ws_publish_crud(entity="user_assigned_rooms", action="update", entity_id=user_id, actor_id=admin_id)
+        except Exception:
+            pass
+        return {"message": "Assigned rooms updated", "user_id": user_id, "count": len(body.room_ids)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Update assigned rooms failed: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.delete("/users/{user_id}/assigned-rooms/{room_id}")
+def remove_assigned_room(
+    user_id: int,
+    room_id: int,
+    current_user: str = Depends(get_current_user),
+):
+    """Go mot phong khoi danh sach admin da gan cho user."""
+    admin_id = _require_admin(current_user)
+
+    conn = get_mysql()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM phong_user_permissions WHERE nguoi_dung_id = %s AND phong_id = %s AND phong_id IN (SELECT id FROM phong WHERE nguoi_so_huu_id = %s)",
+            (user_id, room_id, admin_id),
+        )
+        conn.commit()
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Assignment not found")
+        try:
+            _ws_publish_crud(entity="user_assigned_rooms", action="delete", entity_id=user_id, actor_id=admin_id)
+        except Exception:
+            pass
+        return {"message": "Assignment removed"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Remove assigned room failed: {e}")
     finally:
         cursor.close()
         conn.close()

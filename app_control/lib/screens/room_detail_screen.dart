@@ -395,21 +395,48 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                         letterSpacing: -0.02,
                         color: Color(0xFF003345),
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (widget.room.isAssigned)
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFE0B2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.lock_outline, size: 14, color: Color(0xFF6D4C41)),
+                          SizedBox(width: 4),
+                          Text(
+                            'Phòng được gán',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF6D4C41),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   IconButton(
                     icon: const Icon(
                       Icons.rule,
                       color: Color(0xFF006a6a),
                     ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => RulesScreen(roomId: widget.room.id),
-                        ),
-                      );
-                    },
+                    onPressed: widget.room.canEdit
+                        ? () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => RulesScreen(roomId: widget.room.id),
+                              ),
+                            );
+                          }
+                        : null,
                   ),
                   IconButton(
                     icon: const Icon(
@@ -418,17 +445,43 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                     ),
                     onPressed: _loadRoomData,
                   ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.video_settings,
-                      color: Color(0xFF006a6a),
+                  if (widget.room.canEdit)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.video_settings,
+                        color: Color(0xFF006a6a),
+                      ),
+                      tooltip: 'Quan ly Camera',
+                      onPressed: _showCameraSetup,
                     ),
-                    tooltip: 'Quan ly Camera',
-                    onPressed: _showCameraSetup,
-                  ),
                 ],
               ),
             ),
+
+            // Banner cho phong duoc gan (read-only)
+            if (widget.room.isAssigned)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFFB74D)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Color(0xFFE65100)),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Phòng này được admin gán cho bạn. Bạn có thể xem và tương tác thiết bị, nhưng không thể sửa hoặc xóa phòng.',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF6D4C41)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             // Content
             Expanded(

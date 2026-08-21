@@ -95,6 +95,37 @@ class RoomCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (room.isAssigned) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3E0),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFFB74D)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.lock_outline, size: 14, color: Color(0xFFE65100)),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            room.nguoiSoHuuTen != null
+                                ? 'Phòng được gán bởi ${room.nguoiSoHuuTen}'
+                                : 'Phòng được gán',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF6D4C41),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
 
                 // Device stats - pill shaped chips with dot indicator
