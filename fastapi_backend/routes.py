@@ -1053,6 +1053,94 @@ def _user_can_access_device(
     return False
 
 
+def _check_device_access_or_403(
+    conn,
+    user_id: int,
+    role: str,
+    device_id_or_ma: str,
+    by: str = "ma",
+) -> dict:
+    """
+    Look up thiết bị theo ma_thiet_bi (default) hoặc id rồi gọi
+    _user_can_access_device. Nếu user không có quyền → raise HTTPException(403).
+
+    by='ma'  (default): tìm theo thiet_bi.ma_thiet_bi (device_id string)
+    by='id'           : tìm theo thiet_bi.id (int)
+
+    Trả về dict của thiết bị (id, ma_thiet_bi, phong_id, nhom_id, nguoi_so_huu_id).
+    """
+    cursor = conn.cursor(dictionary=True)
+    try:
+        if by == "id":
+            cursor.execute(
+                """
+                SELECT t.id, t.ma_thiet_bi, t.ten_thiet_bi, t.trang_thai,
+                       t.phong_id, t.nhom_id, t.nguoi_so_huu_id,
+                       n.giao_vien_id as giao_vien_lop_id
+                FROM thiet_bi t
+                LEFT JOIN nhom n ON t.nhom_id = n.id
+                WHERE t.id = %s
+                """,
+                (device_id_or_ma,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT t.id, t.ma_thiet_bi, t.ten_thiet_bi, t.trang_thai,
+                       t.phong_id, t.nhom_id, t.nguoi_so_huu_id,
+                       n.giao_vien_id as giao_vien_lop_id
+                FROM thiet_bi t
+                LEFT JOIN nhom n ON t.nhom_id = n.id
+                WHERE t.ma_thiet_bi = %s
+                """,
+                (device_id_or_ma,),
+            )
+        device = cursor.fetchone()
+    finally:
+        cursor.close()
+
+    if device is None:
+        raise HTTPException(status_code=404, detail="Thiết bị không tồn tại")
+
+    if not _user_can_access_device(conn, user_id, role, device):
+        raise HTTPException(
+            status_code=403,
+            detail="Bạn không có quyền truy cập thiết bị này",
+        )
+    return device
+
+
+def _user_can_access_room(
+    conn,
+    user_id: int,
+    role: str,
+    room: dict,
+) -> bool:
+    """
+    Check user có quyền xem/tương tác với 1 phòng hay không.
+    Quy tắc:
+    - admin: luôn OK
+    - teacher/student: là chủ phòng (nguoi_so_huu_id) HOẶC có row trong
+      phong_user_permissions (phong_id, nguoi_dung_id) — bất kể quyen.
+    """
+    if role == "admin":
+        return True
+    if room.get("nguoi_so_huu_id") == user_id:
+        return True
+    room_id = room.get("id")
+    if room_id is None:
+        return False
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT 1 FROM phong_user_permissions WHERE phong_id = %s AND nguoi_dung_id = %s LIMIT 1",
+            (room_id, user_id),
+        )
+        return bool(cursor.fetchone())
+    finally:
+        cursor.close()
+
+
 @router.get("/devices")
 def list_devices(
     workspace_id: Optional[int] = Query(None),
@@ -1082,8 +1170,14 @@ def list_devices(
 
         # Personal: device do user tạo (nguoi_so_huu_id hoặc nguoi_tao_id = user)
         # Group: device thuộc nhóm (t.nhom_id) mà user là thành viên
+        # Assigned: device nằm trong phòng admin đã gán cho user
+        #   (dùng cho teacher/student — admin xem mọi thiết bị nên không cần)
         personal_cond = "(t.nguoi_so_huu_id = %s OR t.nguoi_tao_id = %s)"
         group_cond = "t.nhom_id IN (SELECT ntv.nhom_id FROM nhom_thanh_vien ntv WHERE ntv.user_id = %s)"
+        assigned_cond = (
+            "t.phong_id IN (SELECT phong_id FROM phong_user_permissions "
+            "WHERE nguoi_dung_id = %s)"
+        )
 
         if role == "admin":
             # Admin: workspace_id (optional) hoặc tất cả
@@ -1102,9 +1196,13 @@ def list_devices(
                     ws_params = []
         elif role == "teacher":
             # Teacher: cá nhân + mọi thiết bị do SV trong lớp mình dạy tạo ra
+            # + thiết bị trong phòng admin gán cho mình
             if scope == "personal":
-                ws_cond = personal_cond
-                ws_params = [workspace_id or user_id, workspace_id or user_id]
+                ws_cond = f"({personal_cond} OR ({assigned_cond}))"
+                ws_params = [
+                    workspace_id or user_id, workspace_id or user_id,
+                    user_id,
+                ]
             elif scope == "group":
                 ws_cond = (
                     "(t.nhom_id IN (SELECT n.id FROM nhom n WHERE n.lop_hoc_id IN "
@@ -1121,19 +1219,21 @@ def list_devices(
                         "(t.nguoi_so_huu_id = %s "
                         " OR t.nguoi_tao_id = %s "
                         " OR t.nhom_id IN (SELECT n.id FROM nhom n WHERE n.lop_hoc_id IN "
-                        "     (SELECT id FROM lop_hoc WHERE giao_vien_id = %s)))"
+                        "     (SELECT id FROM lop_hoc WHERE giao_vien_id = %s))"
+                        f" OR ({assigned_cond}))"
                     )
-                    ws_params = [user_id, user_id, user_id]
+                    ws_params = [user_id, user_id, user_id, user_id]
         else:
-            # Student: hỗ trợ cả workspace "Ca nhan" (workspace_id == user_id) và workspace "Nhom" (workspace_id = nhom_id)
+            # Student: thiết bị cá nhân + thiết bị trong nhóm mình tham gia
+            # + thiết bị trong phòng admin gán cho mình
             if workspace_id is not None:
                 get_authorized_workspace_id(cursor, current_user, workspace_id)
             if scope == "personal":
-                # Chỉ thiết bị do chính user tạo
-                ws_cond = personal_cond
-                ws_params = [user_id, user_id]
+                # Chỉ thiết bị do chính user tạo + thiết bị trong phòng được gán
+                ws_cond = f"({personal_cond} OR ({assigned_cond}))"
+                ws_params = [user_id, user_id, user_id]
             elif scope == "group":
-                # Chỉ thiết bị trong nhóm mà user là thành viên; nếu workspace_id cũng truyền thì scope theo nhóm đó
+                # Chỉ thiết bị trong nhóm mà user là thành viên
                 if workspace_id is not None:
                     ws_cond = "t.nhom_id = %s"
                     ws_params = [workspace_id]
@@ -1141,13 +1241,14 @@ def list_devices(
                     ws_cond = group_cond
                     ws_params = [user_id]
             else:
-                # Default: cá nhân + nhóm
+                # Default: cá nhân + nhóm + phòng được gán
                 ws_cond = (
                     "(t.nguoi_so_huu_id = %s "
                     " OR t.nguoi_tao_id = %s "
-                    " OR t.nhom_id IN (SELECT ntv.nhom_id FROM nhom_thanh_vien ntv WHERE ntv.user_id = %s))"
+                    " OR t.nhom_id IN (SELECT ntv.nhom_id FROM nhom_thanh_vien ntv WHERE ntv.user_id = %s)"
+                    f" OR ({assigned_cond}))"
                 )
-                ws_params = [user_id, user_id, user_id]
+                ws_params = [user_id, user_id, user_id, user_id]
 
         query = f"""
             SELECT t.id, t.ma_thiet_bi, t.ten_thiet_bi, t.loai_thiet_bi,
@@ -3889,12 +3990,11 @@ def list_devices_by_room(room_id: int, current_user: str = Depends(get_current_u
         room = cursor.fetchone()
         if not room:
             raise HTTPException(status_code=404, detail="Room not found")
-        
-        # Student chi xem phong cua minh
-        if role == "student":
-            if room["nguoi_so_huu_id"] != user_id:
-                raise HTTPException(status_code=403, detail="Bạn không có quyền xem phòng này")
-        # admin/teacher: pass
+
+        # Admin: pass. Teacher/Student: cho phép nếu là chủ phòng HOẶC
+        # phòng được admin gán cho user (phong_user_permissions).
+        if not _user_can_access_room(conn, user_id, role, room):
+            raise HTTPException(status_code=403, detail="Bạn không có quyền xem phòng này")
 
         cursor.execute(
             """
@@ -3989,10 +4089,10 @@ def get_room_device_data(
         role, user_id, _user_lop = _get_role_and_id(conn, current_user)
         if role is None:
             raise HTTPException(status_code=401, detail="User not found")
-        if role == "student":
-            if room["nguoi_so_huu_id"] != user_id:
-                raise HTTPException(status_code=403, detail="Bạn không có quyền xem phòng này")
-        # admin/teacher: pass
+        # Admin/Teacher/Student: cho phép nếu là chủ phòng HOẶC
+        # phòng được admin gán cho user (phong_user_permissions).
+        if not _user_can_access_room(conn, user_id, role, room):
+            raise HTTPException(status_code=403, detail="Bạn không có quyền xem phòng này")
 
         # Get real-time occupancy from ai_analyst (không dùng bảng phong_occupancy nữa)
         room_so_nguoi = 0
@@ -10295,6 +10395,10 @@ def get_device_components(
     Returns list of components with their type, hardware model, and health status.
     """
     conn = get_mysql()
+    # Permission check: user phải có quyền truy cập thiết bị (owner, group,
+    # hoặc thiết bị nằm trong phòng được admin gán qua phong_user_permissions).
+    _check_device_access_or_403(conn, ctx.user_id, ctx.role, device_id, by="ma")
+
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("""
@@ -10358,6 +10462,8 @@ def get_hardware_profile(
     Includes all detected components and inferred device type.
     """
     conn = get_mysql()
+    _check_device_access_or_403(conn, ctx.user_id, ctx.role, device_id, by="ma")
+
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("""
@@ -10446,6 +10552,8 @@ def get_component_health(
     Returns health score, issues, alerts, metrics, and trend data.
     """
     conn = get_mysql()
+    _check_device_access_or_403(conn, ctx.user_id, ctx.role, device_id, by="ma")
+
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("""
@@ -10647,6 +10755,8 @@ def get_component_anomalies(
     Uses Z-score and IQR for outlier detection.
     """
     conn = get_mysql()
+    _check_device_access_or_403(conn, ctx.user_id, ctx.role, device_id, by="ma")
+
     cursor = conn.cursor(dictionary=True)
     try:
         # First get component to find field_name
@@ -10722,6 +10832,8 @@ def get_component_trend(
     Returns time-series data with anomaly markers.
     """
     conn = get_mysql()
+    _check_device_access_or_403(conn, ctx.user_id, ctx.role, device_id, by="ma")
+
     cursor = conn.cursor(dictionary=True)
     try:
         # Get component
@@ -10859,7 +10971,12 @@ def trigger_hardware_scan(
     Reads events from Redis cache and runs hardware detection.
     """
     import redis
-    
+
+    # Permission check: user phải có quyền truy cập thiết bị (owner, group,
+    # hoặc thiết bị nằm trong phòng được admin gán qua phong_user_permissions).
+    conn = get_mysql()
+    _check_device_access_or_403(conn, ctx.user_id, ctx.role, device_id, by="ma")
+
     # Read from Redis cache (ws:latest_events)
     redis_host = os.getenv("REDIS_HOST", "redis")
     redis_port = int(os.getenv("REDIS_PORT", 6379))
@@ -10884,15 +11001,15 @@ def trigger_hardware_scan(
     
     # Use most recent event for hardware detection
     recent_event = device_events[0]
-    payload = {k: v for k, v in recent_event.items() 
+    payload = {k: v for k, v in recent_event.items()
                if k not in ('device_id', 'timestamp', 'time')}
-    
+
     # Run hardware detection
     from services.ai_analytics.hardware_detector import HardwareDetector
     detector = HardwareDetector()
     profile = detector.detect_from_payload(device_id, payload)
-    
-    conn = get_mysql()
+
+    # Reuse the connection opened above for the permission check
     cursor = conn.cursor(dictionary=True)
     
     try:
@@ -10938,6 +11055,8 @@ def get_component_events(
     Get component events for a device.
     """
     conn = get_mysql()
+    _check_device_access_or_403(conn, ctx.user_id, ctx.role, device_id, by="ma")
+
     cursor = conn.cursor(dictionary=True)
     
     try:
@@ -10997,6 +11116,9 @@ def run_component_health_analysis(
     """
     Trigger health analysis for all components of a device.
     """
+    conn = get_mysql()
+    _check_device_access_or_403(conn, ctx.user_id, ctx.role, device_id, by="ma")
+
     analyzer = ComponentHealthAnalyzer()
     
     try:
@@ -11110,6 +11232,8 @@ def get_component_widget_summary(
     Returns: overall_health_score, component_count, issues_count, status, top_components
     """
     conn = get_mysql()
+    _check_device_access_or_403(conn, ctx.user_id, ctx.role, device_id, by="ma")
+
     cursor = conn.cursor(dictionary=True)
     try:
         # Get all components for this device

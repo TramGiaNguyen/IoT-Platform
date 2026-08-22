@@ -405,14 +405,15 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFE0B2),
                         borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFFFB74D), width: 1),
                       ),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.lock_outline, size: 14, color: Color(0xFF6D4C41)),
+                          Icon(Icons.lock_open, size: 14, color: Color(0xFF6D4C41)),
                           SizedBox(width: 4),
                           Text(
-                            'Phòng được gán',
+                            'Được gán',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
@@ -458,25 +459,45 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               ),
             ),
 
-            // Banner cho phong duoc gan (read-only)
+            // Banner cho phong duoc gan (read-only ngoại trừ thiết bị)
             if (widget.room.isAssigned)
               Container(
                 width: double.infinity,
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF3E0),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFFF3E0), Color(0xFFFFE0B2)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0xFFFFB74D)),
                 ),
                 child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.info_outline, color: Color(0xFFE65100)),
-                    SizedBox(width: 8),
+                    Icon(Icons.lock_open, color: Color(0xFFE65100), size: 20),
+                    SizedBox(width: 10),
                     Expanded(
-                      child: Text(
-                        'Phòng này được admin gán cho bạn. Bạn có thể xem và tương tác thiết bị, nhưng không thể sửa hoặc xóa phòng.',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF6D4C41)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Phòng được admin gán',
+                            style: TextStyle(
+                              fontFamily: 'Manrope',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFE65100),
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Bạn có thể xem và tương tác với các thiết bị trong phòng, nhưng không thể thêm/sửa/xóa phòng hay thay đổi rule/camera.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF6D4C41), height: 1.4),
+                          ),
+                        ],
                       ),
                     ),
                   ],

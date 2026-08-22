@@ -129,4 +129,9 @@ class Room {
     if (occupancy == 1) return '1 nguoi';
     return '$occupancy nguoi';
   }
+
+  /// Có thể tương tác thiết bị trong phòng hay không: true nếu là chủ phòng
+  /// (canEdit) hoặc phòng được admin gán (isAssigned). Tương ứng với
+  /// quyền read-only được cấp qua phong_user_permissions.
+  bool get canControl => canEdit || isAssigned;
 }
