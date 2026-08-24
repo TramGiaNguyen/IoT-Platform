@@ -1175,9 +1175,30 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
       for (const [k, v] of Object.entries(latest)) {
         flatData[k] = typeof v === 'object' ? v.value : v;
       }
-      return { ...prev, last_seen: Math.floor(ts), data: { ...(prev.data || {}), ...flatData } };
+      return { ...prev, data: { ...(prev.data || {}), ...flatData } };
+    });
+
+    // Cap nhat last_seen truc tiep tu timestamp cua event vua nhan
+    // (khong phu thuoc getLatest vi getLatest co the tra ve {} neu key khong khop)
+    setDevice(prev => {
+      if (!prev) return prev;
+      return { ...prev, last_seen: Math.floor(ts) };
     });
   }, [lastEventAt, deviceId, maThietBi, getDeviceLatest, latestByDevice]);
+
+  // Cap nhat last_seen tu events array: lay timestamp moi nhat cua event
+  // dam bao last_seen luon dong bo voi nhat ky hoat dong (duoi cung trang)
+  useEffect(() => {
+    if (!events || events.length === 0) return;
+    const newest = events[0];
+    if (!newest?.timestamp) return;
+    setDevice(prev => {
+      if (!prev) return prev;
+      // Chi update neu timestamp moi hon
+      if (prev.last_seen && prev.last_seen >= newest.timestamp) return prev;
+      return { ...prev, last_seen: newest.timestamp };
+    });
+  }, [events]);
 
   // --- Status helpers ---
   const getStatus = (deviceObj) => {
