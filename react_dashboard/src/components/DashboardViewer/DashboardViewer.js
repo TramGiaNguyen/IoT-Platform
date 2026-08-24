@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import GridLayout, { WidthProvider } from 'react-grid-layout';
 import { fetchDashboard } from '../../services';
 import WidgetRenderer from './WidgetRenderer';
-import { getWsUrl } from '../../config/api';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import '../../styles/dashboard-builder.css';
@@ -36,72 +35,9 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
     loadDashboard();
   }, [loadDashboard]);
 
-  // WebSocket for real-time updates with reconnection
-  useEffect(() => {
-    if (!token || widgets.length === 0) return;
-
-    let ws = null;
-    let reconnectTimer = null;
-    let reconnectAttempts = 0;
-    const MAX_RECONNECT_ATTEMPTS = 5;
-    const RECONNECT_DELAY = 3000;
-
-    const connect = () => {
-      try {
-        ws = new WebSocket(getWsUrl());
-        
-        ws.onopen = () => {
-          console.log('[DashboardViewer] WebSocket connected');
-          reconnectAttempts = 0;
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            // WebSocket data will trigger widget re-fetch automatically
-            // Widgets have their own refresh intervals
-          } catch (err) {
-            console.error('WebSocket parse error:', err);
-          }
-        };
-
-        ws.onerror = (err) => {
-          console.error('WebSocket error:', err);
-        };
-
-        ws.onclose = () => {
-          console.log('[DashboardViewer] WebSocket disconnected');
-          ws = null;
-          
-          // Reconnect logic
-          if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-            reconnectAttempts++;
-            reconnectTimer = setTimeout(() => {
-              console.log(`[DashboardViewer] Reconnecting... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-              connect();
-            }, RECONNECT_DELAY);
-          } else {
-            console.warn('[DashboardViewer] Max reconnection attempts reached');
-          }
-        };
-      } catch (err) {
-        console.error('[DashboardViewer] WebSocket connection error:', err);
-      }
-    };
-
-    connect();
-
-    return () => {
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (ws) {
-        try {
-          ws.close();
-        } catch (e) {
-          // Ignore
-        }
-      }
-    };
-  }, [token, widgets.length]);
+  // Note: WebSocket realtime da duoc RealtimeProvider xu ly o root.
+  // Widget con lay du lieu qua hook useDeviceRealtime -> useRealtime().
+  // Khong can mo WS rieng de tranh reconnect storm.
 
   if (loading) {
     return (

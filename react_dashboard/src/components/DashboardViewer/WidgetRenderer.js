@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ResponsiveContainer, LineChart, AreaChart, BarChart, PieChart, Pie, Cell, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ComposedChart } from 'recharts';
 import { fetchWidgetData, controlRelay } from '../../services';
-import { API_BASE, getWsUrl } from '../../config/api';
+import { API_BASE } from '../../config/api';
+import { useRealtime } from '../../context/RealtimeProvider';
 import { useRealtime } from '../../context/RealtimeProvider';
 import { getCameraStream } from '../../utils/media';
 import '../../styles/dashboard-builder.css';
@@ -1154,6 +1155,8 @@ export function RelayButtonWidget({ widget, token, dashboardId }) {
   const [controlling, setControlling] = useState(false);
   const deviceId = widget.cau_hinh?.device_id;
   const relayNumber = widget.cau_hinh?.relay_number || 1;
+  // Lay realtime qua hook chung de tranh mo nhieu WebSocket
+  const { lastEventAt, getDeviceLatest } = useRealtime();
 
   const loadData = async () => {
     if (!deviceId) { setLoading(false); return; }
@@ -1179,39 +1182,26 @@ export function RelayButtonWidget({ widget, token, dashboardId }) {
   };
   useEffect(() => { loadData(); const i = setInterval(loadData, 5000); return () => clearInterval(i); }, [widget.id, deviceId, relayNumber]);
 
-  // WebSocket realtime
+  // Realtime: cap nhat relayState khi co event moi tu RealtimeProvider
   useEffect(() => {
-    if (!deviceId || !token) return;
-    let ws = null;
-    const connect = () => {
-      try {
-        ws = new WebSocket(getWsUrl());
-        ws.onmessage = (event) => {
-          try {
-            const d = JSON.parse(event.data);
-            if (d.device_id !== deviceId) return;
-
-            // Tìm relay theo nhiều pattern: relay_1, relay1, relay_1_pump, relay_1_light, ...
-            let raw = d[`relay_${relayNumber}`] ?? d[`relay${relayNumber}`];
-
-            // Nếu không tìm thấy, tìm các key bắt đầu bằng relay_N_
-            if (raw == null) {
-              const relayPrefix = `relay_${relayNumber}_`;
-              const matchedKey = Object.keys(d).find(k => k.startsWith(relayPrefix));
-              if (matchedKey) {
-                raw = d[matchedKey];
-              }
-            }
-
-            if (raw != null) setRelayState(['1', 'true', 'on'].includes(String(raw).toLowerCase()) ? 'ON' : 'OFF');
-          } catch (e) {}
-        };
-        ws.onclose = () => setTimeout(connect, 3000);
-      } catch (e) {}
-    };
-    connect();
-    return () => { if (ws) try { ws.close(); } catch (e) {} };
-  }, [deviceId, token, relayNumber]);
+    if (!deviceId || !lastEventAt) return;
+    const latest = getDeviceLatest(deviceId);
+    if (!latest) return;
+    // Tìm relay theo nhiều pattern: relay_1, relay1, relay_1_pump, relay_1_light, ...
+    let raw = latest[`relay_${relayNumber}`]?.value
+      ?? latest[`relay${relayNumber}`]?.value
+      ?? latest[`relay_${relayNumber}`]
+      ?? latest[`relay${relayNumber}`];
+    if (raw == null) {
+      const relayPrefix = `relay_${relayNumber}_`;
+      const matchedKey = Object.keys(latest).find(k => k.startsWith(relayPrefix));
+      if (matchedKey) {
+        const entry = latest[matchedKey];
+        raw = entry && typeof entry === 'object' ? entry.value : entry;
+      }
+    }
+    if (raw != null) setRelayState(['1', 'true', 'on'].includes(String(raw).toLowerCase()) ? 'ON' : 'OFF');
+  }, [lastEventAt, deviceId, relayNumber, getDeviceLatest]);
 
   const handleToggle = async () => {
     if (!deviceId || controlling) return;

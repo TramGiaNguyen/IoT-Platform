@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { fetchDevicesLatestAll, fetchDeviceData } from '../services'; // Assuming fetchDeviceData exists or we use fetchDevicesLatestAll
 import SmartClassroomDashboard from './SmartClassroomDashboard';
 import axios from 'axios';
-import { API_BASE, getWsUrl } from '../config/api';
+import { API_BASE } from '../config/api';
+import { useRealtime } from '../context/RealtimeProvider';
 
 const SmartClassroom = ({ token, onBack }) => {
     const [devices, setDevices] = useState([]);
@@ -10,6 +11,8 @@ const SmartClassroom = ({ token, onBack }) => {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    // Dung chung WebSocket tu RealtimeProvider thay vi mo rieng de tranh reconnect storm
+    const { lastEventAt, getDeviceLatest } = useRealtime();
 
     // 1. Fetch all devices and filter for 'smart_classroom_energy'
     useEffect(() => {
@@ -60,40 +63,26 @@ const SmartClassroom = ({ token, onBack }) => {
 
         loadLogs();
 
-        // WebSocket for real-time updates
-        const ws = new WebSocket(getWsUrl());
-
-        ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                const deviceCode = selectedDevice.device_id || selectedDevice.ma_thiet_bi;
-
-                if (data.device_id === deviceCode) {
-                    // Add new event to beginning of logs
-                    setLogs(prev => {
-                        const newEvent = { ...data };
-                        const updated = [newEvent, ...prev].slice(0, 100); // Keep max 100
-                        return updated;
-                    });
-                }
-            } catch (e) {
-                console.error('WS parse error', e);
-            }
-        };
-
-        ws.onerror = (err) => {
-            console.error('WebSocket error:', err);
-        };
-
         // Fallback polling every 10s (in case WebSocket fails)
         const interval = setInterval(loadLogs, 10000);
 
-        return () => {
-            ws.close();
-            clearInterval(interval);
-        };
+        return () => clearInterval(interval);
 
     }, [selectedDevice, token]);
+
+    // Realtime: lang nghe tu RealtimeProvider chung, them event moi vao logs khi co
+    useEffect(() => {
+        if (!selectedDevice) return;
+        const deviceCode = selectedDevice.device_id || selectedDevice.ma_thiet_bi;
+        const latest = getDeviceLatest(deviceCode);
+        if (!latest) return;
+        const newEvent = { device_id: deviceCode, timestamp: Date.now() / 1000, ...latest };
+        setLogs(prev => {
+            // Tranh duplicate: chi them neu event moi hon event dau tien
+            if (prev.length > 0 && prev[0].timestamp >= newEvent.timestamp) return prev;
+            return [newEvent, ...prev].slice(0, 100);
+        });
+    }, [lastEventAt, selectedDevice, getDeviceLatest]);
 
     if (loading && !selectedDevice && devices.length === 0) {
         return (
