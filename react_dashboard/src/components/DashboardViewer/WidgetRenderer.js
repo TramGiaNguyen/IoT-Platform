@@ -3,7 +3,6 @@ import { ResponsiveContainer, LineChart, AreaChart, BarChart, PieChart, Pie, Cel
 import { fetchWidgetData, controlRelay } from '../../services';
 import { API_BASE } from '../../config/api';
 import { useRealtime } from '../../context/RealtimeProvider';
-import { useRealtime } from '../../context/RealtimeProvider';
 import { getCameraStream } from '../../utils/media';
 import '../../styles/dashboard-builder.css';
 
