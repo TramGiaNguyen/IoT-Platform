@@ -964,20 +964,39 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
                 http_api_key: cfg?.data?.credentials?.http_api_key || data.http_api_key,
                 secret_key: cfg?.data?.credentials?.secret_key || data.secret_key,
               };
-              setDevice(merged);
+              setDevice(prev => ({
+                ...(prev || {}),
+                ...merged,
+                // Giữ last_seen mới nhất giữa WS event và API response
+                last_seen: (prev?.last_seen && prev.last_seen > (merged.last_seen || 0))
+                  ? prev.last_seen
+                  : merged.last_seen,
+              }));
               // Track ma_thiet_bi de lookup realtime events
               if (merged.ma_thiet_bi) setMaThietBi(merged.ma_thiet_bi);
               setLoading(false);
             })
             .catch(() => {
               if (!abortCtrl.signal.aborted) {
-                setDevice(data);
+                setDevice(prev => ({
+                  ...(prev || {}),
+                  ...data,
+                  last_seen: (prev?.last_seen && prev.last_seen > (data.last_seen || 0))
+                    ? prev.last_seen
+                    : data.last_seen,
+                }));
                 if (data.ma_thiet_bi) setMaThietBi(data.ma_thiet_bi);
                 setLoading(false);
               }
             });
         } else {
-          setDevice(data);
+          setDevice(prev => ({
+            ...(prev || {}),
+            ...data,
+            last_seen: (prev?.last_seen && prev.last_seen > (data.last_seen || 0))
+              ? prev.last_seen
+              : data.last_seen,
+          }));
           if (data.ma_thiet_bi) setMaThietBi(data.ma_thiet_bi);
           setLoading(false);
         }
