@@ -1194,8 +1194,8 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
     if (!newest?.timestamp) return;
     setDevice(prev => {
       if (!prev) return prev;
-      // Chi update neu timestamp moi hon
-      if (prev.last_seen && prev.last_seen >= newest.timestamp) return prev;
+      // Luon dong bo last_seen voi timestamp moi nhat cua event
+      // Dam bao "Cap nhat" luon khop voi dong dau tien trong nhat ky hoat dong
       return { ...prev, last_seen: newest.timestamp };
     });
   }, [events]);
