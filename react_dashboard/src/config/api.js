@@ -29,14 +29,17 @@ export const WS_URL = process.env.REACT_APP_WS_URL || (
  */
 export function getWsUrl() {
   if (typeof window === 'undefined') return WS_URL;
+  // Cho phep override bang env var (hoac .env.local)
   const envUrl = process.env.REACT_APP_WS_URL;
   if (envUrl) return envUrl;
   const host = window.location.hostname || 'localhost';
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  // Trong dev mode, đi qua webpack-dev-server proxy để tránh vấn đề firewall/CORS
-  if (process.env.NODE_ENV === 'development') {
-    return `${proto}://${window.location.host}/ws/events`;
-  }
+  // QUAN TRONG: KHONG dung webpack-dev-server proxy cho WebSocket.
+  // http-proxy-middleware trong webpack-dev-server proxy /ws rat khong on dinh
+  // (test: ws upgrade request tu container timeout, browser bi code 1006).
+  // Thay vao do, goi truc tiep den backend port 8000.
+  // Backend FastAPI da duoc docker-compose expose "8000:8000" ra host
+  // nen browser tren host co the mo ws://<host>:8000/ws/events truc tiep.
   return `${proto}://${host}:8000/ws/events`;
 }
 
