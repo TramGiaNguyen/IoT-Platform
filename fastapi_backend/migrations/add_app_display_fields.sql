@@ -6,6 +6,3 @@
 ALTER TABLE phong
 ADD COLUMN app_display_fields JSON DEFAULT NULL
 COMMENT 'JSON array of field keys to display on mobile app. NULL = show all.';
-
--- Create index for faster lookups
-CREATE INDEX idx_phong_app_display ON phong(app_display_fields(100));

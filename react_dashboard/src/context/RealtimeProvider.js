@@ -151,9 +151,6 @@ export function RealtimeProvider({ children }) {
           if (!mountedRef.current) return;
           try {
             const msg = JSON.parse(e.data);
-            // #region agent debug
-            fetch('http://127.0.0.1:7721/ingest/65710bb3-39d6-4a6e-af4f-54599ce6de3b',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5618e8'},body:JSON.stringify({sessionId:'5618e8',location:'RealtimeProvider.js:ws.onmessage',message:'WS message received',data:{deviceId:msg.device_id,msgKeys:Object.keys(msg)},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
             handleEvent(msg);
           } catch (err) {
             console.warn('[Realtime] Cannot parse message:', err);

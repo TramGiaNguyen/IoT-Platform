@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ResponsiveContainer, LineChart, AreaChart, BarChart, PieChart, Pie, Cell, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ComposedChart } from 'recharts';
 import { fetchWidgetData, controlRelay } from '../../services';
-import { API_BASE } from '../../config/api';
+import { API_BASE, getWsUrl } from '../../config/api';
 import { useRealtime } from '../../context/RealtimeProvider';
 import { getCameraStream } from '../../utils/media';
 import '../../styles/dashboard-builder.css';
@@ -1185,7 +1185,7 @@ export function RelayButtonWidget({ widget, token, dashboardId }) {
     let ws = null;
     const connect = () => {
       try {
-        ws = new WebSocket(WS_URL);
+        ws = new WebSocket(getWsUrl());
         ws.onmessage = (event) => {
           try {
             const d = JSON.parse(event.data);

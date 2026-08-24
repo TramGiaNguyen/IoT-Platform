@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import GridLayout, { WidthProvider } from 'react-grid-layout';
 import { fetchDashboard } from '../../services';
 import WidgetRenderer from './WidgetRenderer';
-import { WS_URL } from '../../config/api';
+import { getWsUrl } from '../../config/api';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import '../../styles/dashboard-builder.css';
@@ -48,7 +48,7 @@ export default function DashboardViewer({ dashboardId, token, onBack }) {
 
     const connect = () => {
       try {
-        ws = new WebSocket(WS_URL);
+        ws = new WebSocket(getWsUrl());
         
         ws.onopen = () => {
           console.log('[DashboardViewer] WebSocket connected');

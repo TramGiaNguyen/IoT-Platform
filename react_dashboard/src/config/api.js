@@ -31,10 +31,12 @@ export function getWsUrl() {
   if (typeof window === 'undefined') return WS_URL;
   const envUrl = process.env.REACT_APP_WS_URL;
   if (envUrl) return envUrl;
-  // Re-derive tu hostname hien tai (khong capture luc module load)
   const host = window.location.hostname || 'localhost';
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  // Mac dinh backend listen port 8000 (cung voi API_BASE)
+  // Trong dev mode, đi qua webpack-dev-server proxy để tránh vấn đề firewall/CORS
+  if (process.env.NODE_ENV === 'development') {
+    return `${proto}://${window.location.host}/ws/events`;
+  }
   return `${proto}://${host}:8000/ws/events`;
 }
 
