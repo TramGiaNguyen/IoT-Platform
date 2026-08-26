@@ -1186,16 +1186,17 @@ ${isHttp ? '      setupWebServer();\n      sendDataToIoTPlatform();\n' : ''}${is
     });
   }, [lastEventAt, deviceId, maThietBi, getDeviceLatest, latestByDevice]);
 
-  // Cap nhat last_seen tu events array: lay MAX timestamp (vi API tra ve sorted desc,
-  // events[0] la record cuoi cung cua page 1, khong phai record moi nhat tren server)
-  // dam bao last_seen luon la timestamp moi nhat bat ke vi tri cua no trong array
+  // Cap nhat last_seen tu events array: lay timestamp moi nhat cua event
+  // dam bao last_seen luon dong bo voi nhat ky hoat dong (duoi cung trang)
   useEffect(() => {
     if (!events || events.length === 0) return;
-    const maxTs = Math.max(...events.map(e => e.timestamp || 0));
-    if (!maxTs || maxTs < 1000000000) return;
+    const newest = events[0];
+    if (!newest?.timestamp) return;
     setDevice(prev => {
       if (!prev) return prev;
-      return { ...prev, last_seen: maxTs };
+      // Luon dong bo last_seen voi timestamp moi nhat cua event
+      // Dam bao "Cap nhat" luon khop voi dong dau tien trong nhat ky hoat dong
+      return { ...prev, last_seen: newest.timestamp };
     });
   }, [events]);
 

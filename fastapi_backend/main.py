@@ -4,9 +4,25 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from routes import router
 from routes_ai_analytics import router as ai_analytics_router
 from websocket import websocket_endpoint, _redis_subscriber_loop
+
+
+class ForceJSONCharsetMiddleware(BaseHTTPMiddleware):
+    """Bắt buộc Content-Type: application/json; charset=utf-8 cho mọi JSON response.
+
+    Fix mojibake tiếng Việt trên client (Flutter `package:http` decode response.body bằng
+    latin1 nếu thiếu charset header).
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        ct = response.headers.get("content-type", "")
+        if ct.startswith("application/json") and "charset" not in ct.lower():
+            response.headers["content-type"] = "application/json; charset=utf-8"
+        return response
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -121,6 +137,9 @@ else:
 
 app.include_router(router)
 app.include_router(ai_analytics_router)
+
+# Force UTF-8 charset cho mọi JSON response (fix tieng Viet mobile app)
+app.add_middleware(ForceJSONCharsetMiddleware)
 
 # Mount Public API Sub-application
 from public_api import public_router

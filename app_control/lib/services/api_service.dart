@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/room.dart';
 import '../models/room_data.dart';
 import '../models/camera.dart';
@@ -16,6 +17,21 @@ class ApiService {
   
   final storage = const FlutterSecureStorage();
   String? _token;
+
+  /// Decode response body as UTF-8 để tránh mojibake tiếng Việt.
+  /// `package:http` mặc định decode response.body bằng latin1 nếu server thiếu
+  /// charset header, gây lỗi font. Dùng bodyBytes + utf8.decode là an toàn tuyệt đối.
+  static String _decodeBody(http.Response response) {
+    final bytes = response.bodyBytes;
+    if (bytes.isEmpty) return '';
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xEF &&
+        bytes[1] == 0xBB &&
+        bytes[2] == 0xBF) {
+      return utf8.decode(bytes.sublist(3));
+    }
+    return utf8.decode(bytes);
+  }
 
   // Login
   // Hits POST /auth/login on backend_app_control, which forwards credentials
@@ -36,7 +52,7 @@ class ApiService {
           .timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(_decodeBody(response));
         _token = data['access_token'];
 
         // backend_app_control wraps user fields in `user_info`:
@@ -56,13 +72,16 @@ class ApiService {
             'allowed_pages': allowedPages,
           }),
         );
+        // Lưu credentials để dùng lại khi đăng nhập bằng vân tay.
+        await storage.write(key: 'saved_username', value: username);
+        await storage.write(key: 'saved_password', value: password);
 
         return data;
       }
 
       if (response.statusCode == 401) {
         try {
-          final error = jsonDecode(response.body);
+          final error = jsonDecode(_decodeBody(response));
           final msg = error['detail']?.toString();
           if (msg != null && msg.isNotEmpty) {
             throw Exception(msg);
@@ -77,7 +96,7 @@ class ApiService {
 
       if (response.statusCode == 422) {
         try {
-          final error = jsonDecode(response.body);
+          final error = jsonDecode(_decodeBody(response));
           final msgs = error['detail'];
           if (msgs is List && msgs.isNotEmpty) {
             throw Exception(msgs.first.toString());
@@ -90,7 +109,7 @@ class ApiService {
       }
 
       try {
-        final error = jsonDecode(response.body);
+        final error = jsonDecode(_decodeBody(response));
         throw Exception(error['detail'] ?? 'Đăng nhập thất bại (HTTP ${response.statusCode})');
       } catch (e) {
         if (e.toString().startsWith('Exception: ')) rethrow;
@@ -125,6 +144,10 @@ class ApiService {
     _token = null;
     await storage.delete(key: 'auth_token');
     await storage.delete(key: 'user_info');
+    await storage.delete(key: 'saved_username');
+    await storage.delete(key: 'saved_password');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('biometric_enabled', false);
   }
 
   // Get relay status
@@ -139,7 +162,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(_decodeBody(response));
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
@@ -170,7 +193,7 @@ class ApiService {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final error = jsonDecode(response.body);
+      final error = jsonDecode(_decodeBody(response));
       throw Exception(error['detail'] ?? 'Điều khiển thất bại');
     }
   }
@@ -196,12 +219,12 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(_decodeBody(response));
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final error = jsonDecode(response.body);
+      final error = jsonDecode(_decodeBody(response));
       throw Exception(error['detail'] ?? 'Không lấy được trạng thái máy lạnh');
     }
   }
@@ -220,12 +243,12 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(_decodeBody(response));
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final error = jsonDecode(response.body);
+      final error = jsonDecode(_decodeBody(response));
       throw Exception(error['detail'] ?? 'Điều khiển máy lạnh thất bại');
     }
   }
@@ -252,7 +275,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(_decodeBody(response));
       final roomsList = <Room>[];
 
       for (var roomJson in data['rooms'] as List) {
@@ -280,7 +303,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      return jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
@@ -303,12 +326,12 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      return jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final err = jsonDecode(response.body);
+      final err = jsonDecode(_decodeBody(response));
       throw Exception(err['detail'] ?? 'Không thêm được sinh viên');
     }
   }
@@ -323,7 +346,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      return jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
@@ -344,13 +367,13 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(_decodeBody(response));
       return RoomData.fromJson(data);
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final error = jsonDecode(response.body);
+      final error = jsonDecode(_decodeBody(response));
       throw Exception(error['detail'] ?? 'Không lấy được dữ liệu phòng');
     }
   }
@@ -367,7 +390,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
       // Platform trả `so_nguoi` (xem GET /rooms/{id}/occupancy trong FastAPI).
       final raw = data['so_nguoi'] ?? data['occupancy'];
       if (raw is int) return raw;
@@ -393,7 +416,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(_decodeBody(response));
       final camerasList = <RoomCamera>[];
 
       final rawList = data['cameras'] as List<dynamic>? ?? [];
@@ -425,7 +448,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
       final url = data['stream_url'] as String?;
       if (url == null || url.isEmpty) return null;
       return url;
@@ -456,7 +479,7 @@ class ApiService {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      throw Exception('Lưu zones thất bại (HTTP ${response.statusCode}): ${response.body}');
+      throw Exception('Lưu zones thất bại (HTTP ${response.statusCode}): ${_decodeBody(response)}');
     }
   }
 
@@ -472,7 +495,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(_decodeBody(response));
       final zonesList = data['zones'] as List<dynamic>? ?? [];
       return zonesList
           .map((z) => ZoneDefinition.fromJson(z as Map<String, dynamic>))
@@ -497,7 +520,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(_decodeBody(response));
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
@@ -520,13 +543,13 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(_decodeBody(response));
       return RoomCamera.fromJson(data['camera'] as Map<String, dynamic>);
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      throw Exception('Tạo camera thất bại (HTTP ${response.statusCode}): ${response.body}');
+      throw Exception('Tạo camera thất bại (HTTP ${response.statusCode}): ${_decodeBody(response)}');
     }
   }
 
@@ -602,7 +625,7 @@ class ApiService {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final error = jsonDecode(response.body);
+      final error = jsonDecode(_decodeBody(response));
       throw Exception(error['detail'] ?? 'Điều khiển thất bại');
     }
   }
@@ -619,7 +642,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(_decodeBody(response));
       final devicesList = data['devices'] as List<dynamic>? ?? [];
       return devicesList.whereType<Map>().map((d) {
         final ma = d['ma_thiet_bi']?.toString() ?? '';
@@ -654,7 +677,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      return jsonDecode(_decodeBody(response)) as Map<String, dynamic>;
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
@@ -675,7 +698,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(_decodeBody(response));
       final devicesList = data['devices'] as List<dynamic>? ?? [];
       return devicesList
           .whereType<Map>()
@@ -710,7 +733,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = json.decode(response.body);
+        final data = json.decode(_decodeBody(response));
       return (data['devices'] as List<dynamic>? ?? [])
           .whereType<Map>()
           .map((d) => {
@@ -742,7 +765,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(_decodeBody(response));
       final lines = data['control_lines'] as List<dynamic>? ?? [];
       final out = <Map<String, dynamic>>[];
       for (final raw in lines.whereType<Map>()) {
@@ -787,7 +810,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(_decodeBody(response));
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
@@ -818,7 +841,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(_decodeBody(response));
       return data['rules'] ?? [];
     } else if (response.statusCode == 401) {
       await logout();
@@ -842,12 +865,12 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(_decodeBody(response));
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final error = jsonDecode(response.body);
+      final error = jsonDecode(_decodeBody(response));
       throw Exception(error['detail'] ?? 'Tạo rule thất bại');
     }
   }
@@ -867,12 +890,12 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(_decodeBody(response));
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final error = jsonDecode(response.body);
+      final error = jsonDecode(_decodeBody(response));
       throw Exception(error['detail'] ?? 'Cập nhật rule thất bại');
     }
   }
@@ -894,7 +917,7 @@ class ApiService {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final error = jsonDecode(response.body);
+      final error = jsonDecode(_decodeBody(response));
       throw Exception(error['detail'] ?? 'Xóa rule thất bại');
     }
   }
@@ -922,7 +945,7 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(_decodeBody(response));
       return data['scheduled_rules'] ?? [];
     } else if (response.statusCode == 401) {
       await logout();
@@ -947,12 +970,12 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(_decodeBody(response));
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final error = jsonDecode(response.body);
+      final error = jsonDecode(_decodeBody(response));
       throw Exception(error['detail'] ?? 'Tạo scheduled rule thất bại');
     }
   }
@@ -972,12 +995,12 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(response.body);
+      return jsonDecode(_decodeBody(response));
     } else if (response.statusCode == 401) {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final error = jsonDecode(response.body);
+      final error = jsonDecode(_decodeBody(response));
       throw Exception(error['detail'] ?? 'Cập nhật scheduled rule thất bại');
     }
   }
@@ -999,8 +1022,38 @@ class ApiService {
       await logout();
       throw Exception('Phiên đăng nhập hết hạn');
     } else {
-      final error = jsonDecode(response.body);
+      final error = jsonDecode(_decodeBody(response));
       throw Exception(error['detail'] ?? 'Xóa scheduled rule thất bại');
     }
+  }
+
+  // ========== BIOMETRIC AUTH HELPERS ==========
+
+  /// Trả về username đã lưu khi login gần nhất (dùng cho fingerprint).
+  Future<String?> getSavedUsername() async {
+    return await storage.read(key: 'saved_username');
+  }
+
+  /// Trả về password đã lưu khi login gần nhất (dùng cho fingerprint).
+  Future<String?> getSavedPassword() async {
+    return await storage.read(key: 'saved_password');
+  }
+
+  /// Xóa credentials đã lưu (gọi khi user tắt đăng nhập vân tay).
+  Future<void> clearSavedCredentials() async {
+    await storage.delete(key: 'saved_username');
+    await storage.delete(key: 'saved_password');
+  }
+
+  /// Bật/tắt flag đăng nhập bằng vân tay.
+  Future<void> setBiometricEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('biometric_enabled', enabled);
+  }
+
+  /// Kiểm tra flag đăng nhập bằng vân tay đã bật chưa.
+  Future<bool> isBiometricEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('biometric_enabled') ?? false;
   }
 }
